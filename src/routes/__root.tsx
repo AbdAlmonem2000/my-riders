@@ -77,9 +77,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "استعلام تقارير المناديب" },
+      { title: "نظام مندوبي" },
       { name: "description", content: "نظام إدارة واستعلام تقارير أداء ورواتب المناديب الشهرية." },
-      { property: "og:title", content: "استعلام تقارير المناديب" },
+      { property: "og:title", content: "نظام مندوبي" },
       {
         property: "og:description",
         content: "نظام إدارة واستعلام تقارير أداء ورواتب المناديب الشهرية.",
@@ -90,7 +90,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-      { name: "apple-mobile-web-app-title", content: "تقارير المناديب" },
+      { name: "apple-mobile-web-app-title", content: "مندوبي" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
