@@ -56,7 +56,7 @@ function AuthPage() {
         <CardHeader className="text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform duration-300 hover:scale-105">
             {/* <ShieldCheck className="h-6 w-6" /> */}
-            <img src="/public/logo.png" alt="logo" />
+            <img src="/logo.png" alt="logo" />
           </div>
           <CardTitle>{t("auth.title")}</CardTitle>
           <CardDescription>
