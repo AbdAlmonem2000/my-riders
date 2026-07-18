@@ -12,10 +12,10 @@ const dict = {
   "index.liveBadge": { ar: "نظام مباشر ومحدث شهرياً", en: "Live system, updated monthly" },
   "index.heroTitle": { ar: "تقارير المناديب من نظام مندوبي", en: "Rider Reports From My Riders System" },
   "index.heroDesc": {
-    ar: "أدخل رقم الإقامة أو رقم الهوية الخاص بك لعرض تقاريرك الشهرية من الأداء والرواتب.",
-    en: "Enter your Iqama or National ID number to view your monthly performance and salary reports.",
+    ar: "أدخل رقم الإقامة أو ID الخاص بك لعرض تقاريرك الشهرية من الأداء والرواتب.",
+    en: "Enter your Iqama or ID number to view your monthly performance and salary reports.",
   },
-  "index.searchPlaceholder": { ar: "رقم الإقامة أو الهوية", en: "Iqama or ID number" },
+  "index.searchPlaceholder": { ar: "رقم الإقامة أو ID", en: "Iqama or ID number" },
   "index.searchButton": { ar: "استعلام", en: "Search" },
   "index.featureMonthlyTitle": { ar: "شهري", en: "Monthly" },
   "index.featureMonthlyDesc": { ar: "تقارير محدثة كل شهر", en: "Reports updated every month" },
@@ -76,8 +76,8 @@ const dict = {
   "rider.back": { ar: "العودة", en: "Back" },
   "rider.notFoundTitle": { ar: "لم يتم العثور على المندوب", en: "Rider not found" },
   "rider.notFoundDesc": {
-    ar: "لا توجد بيانات مسجلة برقم الإقامة/الهوية:",
-    en: "No data found for Iqama/ID number:",
+    ar: "لا توجد بيانات مسجلة برقم الإقامة أو ID:",
+    en: "No data found for Iqama or ID number:",
   },
   "rider.multipleResultsTitle": { ar: "تم العثور على أكثر من نتيجة", en: "Multiple results found" },
   "rider.multipleResultsDesc": {
@@ -85,7 +85,7 @@ const dict = {
     en: "This number is registered with more than one company. Choose your company to continue:",
   },
   "rider.riderLabel": { ar: "المندوب", en: "Rider" },
-  "rider.iqamaLabel": { ar: "رقم الإقامة / الهوية", en: "Iqama / ID Number" },
+  "rider.iqamaLabel": { ar: "رقم الإقامة أو ID", en: "Iqama or ID Number" },
   "rider.changeCompany": { ar: "تغيير الشركة", en: "Change company" },
   "rider.companyLabel": { ar: "الشركة", en: "Company" },
   "rider.monthsAvailable": { ar: "الأشهر المتاحة", en: "Available Months" },
@@ -245,8 +245,8 @@ const dict = {
   "superAdmin.deleteAccountTitle": { ar: "حذف الحساب؟", en: "Delete account?" },
   "superAdmin.changeLogoTitle": { ar: "تغيير الشعار", en: "Change logo" },
   "superAdmin.logoDialogDesc": {
-    ar: "يظهر بجانب اسم الشركة عند بحث المندوب برقم الإقامة/الهوية",
-    en: "Shown next to the company name when a rider searches by Iqama/ID number",
+    ar: "يظهر بجانب اسم الشركة عند بحث المندوب برقم الإقامة أو ID",
+    en: "Shown next to the company name when a rider searches by Iqama or ID number",
   },
   "superAdmin.changePasswordTitle": { ar: "تغيير كلمة المرور", en: "Change password" },
   "superAdmin.changePasswordDesc": {
