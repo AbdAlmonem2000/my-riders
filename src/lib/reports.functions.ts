@@ -47,7 +47,7 @@ export const uploadReport = createServerFn({ method: "POST" })
     // Check for existing report same month/year within this company
     const { data: existing } = await supabase
       .from("reports")
-      .select("id")
+      .select("id, storage_path")
       .eq("company_id", companyId)
       .eq("month", data.month)
       .eq("year", data.year)
@@ -57,6 +57,13 @@ export const uploadReport = createServerFn({ method: "POST" })
       throw new Error("يوجد تقرير لهذا الشهر بالفعل. استخدم خيار الاستبدال.");
     }
     if (existing) {
+      // The replacement file was already uploaded under a new storage path
+      // above, so the old file is now orphaned unless removed explicitly —
+      // deleting the row alone doesn't touch storage.
+      if (existing.storage_path) {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        await supabaseAdmin.storage.from("reports").remove([existing.storage_path]);
+      }
       await supabase.from("reports").delete().eq("id", existing.id);
     }
 
@@ -164,10 +171,20 @@ export const deleteReport = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .maybeSingle();
     if (rep?.storage_path) {
-      await supabase.storage.from("reports").remove([rep.storage_path]);
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.storage.from("reports").remove([rep.storage_path]);
     }
-    const { error } = await supabase.from("reports").delete().eq("id", data.id);
+    // RLS filters a DELETE's WHERE clause rather than rejecting it, so a
+    // blocked delete would otherwise return success with nothing removed.
+    const { data: deleted, error } = await supabase
+      .from("reports")
+      .delete()
+      .eq("id", data.id)
+      .select("id");
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error("لم يتم حذف التقرير — تأكد أن التقرير يتبع شركتك");
+    }
     return { ok: true };
   });
 

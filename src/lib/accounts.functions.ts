@@ -11,6 +11,16 @@ async function assertSuperAdmin(
   if (!data) throw new Error("غير مصرح: هذه الصفحة للسوبر أدمن فقط");
 }
 
+// company-logos public URLs look like
+// https://<project>.supabase.co/storage/v1/object/public/company-logos/<path>
+// — recover just <path> so the file can be removed from storage.
+function extractStoragePath(publicUrl: string, bucket: string): string | null {
+  const marker = `/storage/v1/object/public/${bucket}/`;
+  const idx = publicUrl.indexOf(marker);
+  if (idx === -1) return null;
+  return decodeURIComponent(publicUrl.slice(idx + marker.length));
+}
+
 export const listCompanies = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -51,11 +61,27 @@ export const updateCompanyLogo = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context.supabase, context.userId);
+
+    const { data: co } = await context.supabase
+      .from("companies")
+      .select("logo_url")
+      .eq("id", data.id)
+      .maybeSingle();
+
     const { error } = await context.supabase
       .from("companies")
       .update({ logo_url: data.logoUrl })
       .eq("id", data.id);
     if (error) throw new Error(error.message);
+
+    // The old logo file is now unreferenced — remove it so replacing a logo
+    // doesn't just accumulate abandoned files in storage forever.
+    const oldPath = co?.logo_url ? extractStoragePath(co.logo_url, "company-logos") : null;
+    const newPath = data.logoUrl ? extractStoragePath(data.logoUrl, "company-logos") : null;
+    if (oldPath && oldPath !== newPath) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.storage.from("company-logos").remove([oldPath]);
+    }
     return { ok: true };
   });
 
@@ -78,6 +104,17 @@ export const deleteCompany = createServerFn({ method: "POST" })
       await supabaseAdmin.storage.from("reports").remove(paths);
     }
 
+    const { data: co } = await context.supabase
+      .from("companies")
+      .select("logo_url")
+      .eq("id", data.id)
+      .maybeSingle();
+    const logoPath = co?.logo_url ? extractStoragePath(co.logo_url, "company-logos") : null;
+    if (logoPath) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.storage.from("company-logos").remove([logoPath]);
+    }
+
     // Delete users linked to this company
     const { data: roles } = await context.supabase
       .from("user_roles")
@@ -92,8 +129,15 @@ export const deleteCompany = createServerFn({ method: "POST" })
       }
     }
 
-    const { error } = await context.supabase.from("companies").delete().eq("id", data.id);
+    const { data: deleted, error } = await context.supabase
+      .from("companies")
+      .delete()
+      .eq("id", data.id)
+      .select("id");
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error("لم يتم حذف الشركة");
+    }
     return { ok: true };
   });
 
