@@ -50,8 +50,21 @@ export const deleteAnnouncement = createServerFn({ method: "POST" })
     const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: userId });
     if (!isSuper) throw new Error("غير مصرح: هذه الميزة للسوبر أدمن فقط");
 
-    const { error } = await supabase.from("announcements").delete().eq("id", data.id);
+    // Supabase applies RLS to the DELETE's WHERE clause rather than
+    // rejecting it outright, so a missing/misconfigured delete policy
+    // silently matches zero rows instead of erroring — .select() lets us
+    // tell "deleted" apart from "policy blocked it" and report the latter.
+    const { data: deleted, error } = await supabase
+      .from("announcements")
+      .delete()
+      .eq("id", data.id)
+      .select("id");
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error(
+        "لم يتم حذف الإشعار — تأكد من تنفيذ تحديث صلاحيات الحذف في قاعدة البيانات (migration الخاص بالحذف)",
+      );
+    }
     return { ok: true };
   });
 
