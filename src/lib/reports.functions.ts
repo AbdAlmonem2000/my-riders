@@ -177,19 +177,22 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { isSuperAdmin, companyId } = await getCallerCompany(supabase, userId);
     let companyName: string | null = null;
+    let companyLogoUrl: string | null = null;
     if (companyId) {
       const { data } = await supabase
         .from("companies")
-        .select("name")
+        .select("name, logo_url")
         .eq("id", companyId)
         .maybeSingle();
       companyName = (data?.name as string | undefined) ?? null;
+      companyLogoUrl = (data?.logo_url as string | undefined) ?? null;
     }
     return {
       isAdmin: isSuperAdmin || !!companyId,
       isSuperAdmin,
       companyId,
       companyName,
+      companyLogoUrl,
       userId,
     };
   });

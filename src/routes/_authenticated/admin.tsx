@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  Bell,
+  Building2,
   FileSpreadsheet,
   Loader2,
   LogOut,
@@ -29,6 +31,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -58,6 +61,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { checkIsAdmin, deleteReport, uploadReport } from "@/lib/reports.functions";
+import { listAnnouncements, markAnnouncementsRead } from "@/lib/announcements.functions";
 import { parseExcelFile, monthLabel, MONTH_NAMES_AR, MONTH_NAMES_EN } from "@/lib/excel";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 
@@ -72,10 +76,19 @@ function AdminPage() {
   const isAdminFn = useServerFn(checkIsAdmin);
   const uploadFn = useServerFn(uploadReport);
   const deleteFn = useServerFn(deleteReport);
+  const listAnnouncementsFn = useServerFn(listAnnouncements);
+  const markAnnouncementsReadFn = useServerFn(markAnnouncementsRead);
 
   const adminCheck = useQuery({
     queryKey: ["is-admin"],
     queryFn: () => isAdminFn(),
+  });
+
+  const announcementsQuery = useQuery({
+    queryKey: ["announcements"],
+    queryFn: () => listAnnouncementsFn(),
+    enabled: !!adminCheck.data?.isAdmin,
+    refetchInterval: 60_000,
   });
 
   const reportsQuery = useQuery({
@@ -218,23 +231,54 @@ function AdminPage() {
 
   const totalRiders = reportsQuery.data?.reduce((s, r) => s + (r.rider_count ?? 0), 0) ?? 0;
   const companyName = adminCheck.data?.companyName;
+  const companyLogoUrl = adminCheck.data?.companyLogoUrl;
 
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="border-b bg-background">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div>
-            <h1 className="text-lg font-semibold">{t("admin.headerTitle")}</h1>
-            <p className="text-xs text-muted-foreground">
-              {companyName
-                ? `${lang === "ar" ? "شركة" : "Company"}: ${companyName}`
-                : t("admin.headerSubtitleDefault")}
-            </p>
+          <div className="flex items-center gap-4">
+            {companyLogoUrl ? (
+              <img
+                src={companyLogoUrl}
+                alt={companyName ?? ""}
+                className="h-14 w-14 shrink-0 rounded-xl border border-border bg-background object-contain p-1"
+              />
+            ) : (
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Building2 className="h-7 w-7" />
+              </div>
+            )}
+            <div>
+              <h1 className="text-lg font-semibold">
+                {companyName ?? t("admin.headerTitle")}
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                {companyName ? t("admin.headerTitle") : t("admin.headerSubtitleDefault")}
+              </p>
+            </div>
           </div>
-          <Button variant="outline" size="sm" onClick={signOut}>
-            <LogOut className="ms-2 h-4 w-4" />
-            {t("admin.logout")}
-          </Button>
+          <div className="flex items-center gap-2">
+            <NotificationBell
+              announcements={announcementsQuery.data?.announcements ?? []}
+              unreadCount={announcementsQuery.data?.unreadCount ?? 0}
+              lang={lang}
+              t={t}
+              onOpen={() => {
+                const unreadIds = (announcementsQuery.data?.announcements ?? [])
+                  .filter((a) => !a.isRead)
+                  .map((a) => a.id);
+                if (unreadIds.length === 0) return;
+                markAnnouncementsReadFn({ data: { ids: unreadIds } }).then(() =>
+                  queryClient.invalidateQueries({ queryKey: ["announcements"] }),
+                );
+              }}
+            />
+            <Button variant="outline" size="sm" onClick={signOut}>
+              <LogOut className="ms-2 h-4 w-4" />
+              {t("admin.logout")}
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -450,6 +494,77 @@ function AdminPage() {
         </Card>
       </main>
     </div>
+  );
+}
+
+interface AnnouncementItem {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  isRead: boolean;
+}
+
+function NotificationBell({
+  announcements,
+  unreadCount,
+  lang,
+  t,
+  onOpen,
+}: {
+  announcements: AnnouncementItem[];
+  unreadCount: number;
+  lang: "ar" | "en";
+  t: (key: TranslationKey) => string;
+  onOpen: () => void;
+}) {
+  return (
+    <Popover
+      onOpenChange={(open) => {
+        if (open) onOpen();
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="relative">
+          <Bell className="h-4 w-4" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -end-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="end">
+        <div className="border-b px-4 py-3 text-sm font-semibold">
+          {t("admin.notificationsTitle")}
+        </div>
+        <div className="max-h-80 overflow-y-auto">
+          {announcements.length === 0 && (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+              {t("admin.notificationsEmpty")}
+            </p>
+          )}
+          {announcements.map((a, i) => (
+            <div
+              key={a.id}
+              className={`border-b px-4 py-3 last:border-b-0 ${
+                !a.isRead ? "bg-primary/5" : ""
+              }`}
+              style={{ animationDelay: `${Math.min(i * 40, 300)}ms` }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">{a.title}</span>
+                {!a.isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{a.body}</p>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {new Date(a.createdAt).toLocaleString(lang === "ar" ? "ar-SA" : "en-US")}
+              </p>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

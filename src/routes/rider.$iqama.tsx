@@ -189,6 +189,26 @@ function RiderPage() {
         {activeRider && !needsDisambiguation && (
           <div className="animate-in fade-in slide-in-from-bottom-2 grid gap-6 duration-500 lg:grid-cols-[320px_1fr]">
             <aside className="space-y-4">
+              {activeRider.company_name && (
+                <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+                  <CardContent className="flex items-center gap-4 pt-6">
+                    <CompanyLogo
+                      url={activeRider.company_logo_url}
+                      name={activeRider.company_name}
+                      className="h-16 w-16 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">
+                        {t("rider.companyLabel")}
+                      </div>
+                      <div className="truncate text-lg font-bold">
+                        {activeRider.company_name}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-3">
@@ -212,21 +232,6 @@ function RiderPage() {
                     >
                       {t("rider.changeCompany")}
                     </button>
-                  )}
-                  {activeRider.company_name && (
-                    <>
-                      <div className="mt-3 text-xs text-muted-foreground">
-                        {t("rider.companyLabel")}
-                      </div>
-                      <div className="mt-1 flex items-center gap-2">
-                        <CompanyLogo
-                          url={activeRider.company_logo_url}
-                          name={activeRider.company_name}
-                          className="h-6 w-6"
-                        />
-                        <div className="text-sm font-medium">{activeRider.company_name}</div>
-                      </div>
-                    </>
                   )}
                 </CardContent>
               </Card>
