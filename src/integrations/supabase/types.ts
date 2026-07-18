@@ -189,6 +189,7 @@ export type Database = {
           company_id: string
           created_at: string
           id: string
+          id_number: string | null
           iqama_number: string
           rider_name: string | null
         }
@@ -196,6 +197,7 @@ export type Database = {
           company_id: string
           created_at?: string
           id?: string
+          id_number?: string | null
           iqama_number: string
           rider_name?: string | null
         }
@@ -203,6 +205,7 @@ export type Database = {
           company_id?: string
           created_at?: string
           id?: string
+          id_number?: string | null
           iqama_number?: string
           rider_name?: string | null
         }

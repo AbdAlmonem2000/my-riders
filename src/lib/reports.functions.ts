@@ -4,18 +4,23 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const RowSchema = z.record(z.string(), z.unknown());
 
-const UploadInput = z.object({
-  month: z.number().int().min(1).max(12),
-  year: z.number().int().min(2000).max(2100),
-  fileName: z.string().min(1),
-  storagePath: z.string().nullable(),
-  headers: z.array(z.string()),
-  iqamaColumn: z.string().min(1),
-  nameColumn: z.string().nullable(),
-  rows: z.array(RowSchema),
-  replace: z.boolean().optional(),
-  note: z.string().trim().max(2000).nullable().optional(),
-});
+const UploadInput = z
+  .object({
+    month: z.number().int().min(1).max(12),
+    year: z.number().int().min(2000).max(2100),
+    fileName: z.string().min(1),
+    storagePath: z.string().nullable(),
+    headers: z.array(z.string()),
+    iqamaColumn: z.string().nullable(),
+    idColumn: z.string().nullable(),
+    nameColumn: z.string().nullable(),
+    rows: z.array(RowSchema),
+    replace: z.boolean().optional(),
+    note: z.string().trim().max(2000).nullable().optional(),
+  })
+  .refine((d) => d.iqamaColumn || d.idColumn, {
+    message: "لازم عمود رقم إقامة أو ID على الأقل",
+  });
 
 async function getCallerCompany(
   supabase: ReturnType<typeof getSupabaseFromContext>,
@@ -84,16 +89,31 @@ export const uploadReport = createServerFn({ method: "POST" })
     if (reportErr || !report) throw new Error(reportErr?.message ?? "فشل إنشاء التقرير");
 
     const iqamaCol = data.iqamaColumn;
+    const idCol = data.idColumn;
     const nameCol = data.nameColumn;
     type Row = Record<string, unknown>;
-    const validRows: { iqama: string; name: string | null; row: Row }[] = [];
+    const cellText = (row: Row, col: string | null) => {
+      if (!col) return null;
+      const v = row[col];
+      if (v === undefined || v === null) return null;
+      const s = String(v).trim();
+      return s || null;
+    };
+    const validRows: { iqama: string; idNumber: string | null; name: string | null; row: Row }[] =
+      [];
     for (const row of data.rows) {
-      const iqamaVal = row[iqamaCol];
-      if (iqamaVal === undefined || iqamaVal === null) continue;
-      const iqama = String(iqamaVal).trim();
+      const rawIqama = cellText(row, iqamaCol);
+      const rawId = cellText(row, idCol);
+      // A sheet with both an Iqama column and a separate ID column keeps
+      // iqama_number as the stable per-rider key (unchanged from before),
+      // and stashes the ID value alongside so the rider is findable by
+      // either number. A sheet with only one of the two falls back to
+      // using whichever is present as the key, as before.
+      const iqama = rawIqama ?? rawId;
       if (!iqama) continue;
+      const idNumber = rawId && rawId !== iqama ? rawId : null;
       const name = nameCol ? (row[nameCol] != null ? String(row[nameCol]).trim() : null) : null;
-      validRows.push({ iqama, name, row });
+      validRows.push({ iqama, idNumber, name, row });
     }
 
     const seen = new Set<string>();
@@ -106,6 +126,7 @@ export const uploadReport = createServerFn({ method: "POST" })
     const ridersPayload = uniqueRows.map((r) => ({
       company_id: companyId,
       iqama_number: r.iqama,
+      id_number: r.idNumber,
       rider_name: r.name,
     }));
 

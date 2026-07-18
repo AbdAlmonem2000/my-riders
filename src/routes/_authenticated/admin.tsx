@@ -131,7 +131,7 @@ function AdminPage() {
     setUploading(true);
     try {
       const parsed = await parseExcelFile(file);
-      if (!parsed.iqamaColumn) {
+      if (!parsed.iqamaColumn && !parsed.idColumn) {
         throw new Error(t("admin.toastNoIqamaColumn"));
       }
       if (parsed.rows.length === 0) throw new Error(t("admin.toastEmptyFile"));
@@ -156,6 +156,7 @@ function AdminPage() {
           storagePath: path,
           headers: parsed.headers,
           iqamaColumn: parsed.iqamaColumn,
+          idColumn: parsed.idColumn,
           nameColumn: parsed.nameColumn,
           rows: parsed.rows as Record<string, unknown>[],
           replace,

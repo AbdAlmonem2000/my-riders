@@ -1,5 +1,9 @@
 import * as XLSX from "xlsx";
 
+// Kept separate from ID_ALIASES (rather than one merged list) so a sheet
+// that has *both* an Iqama column and a distinct ID column — same rider,
+// two different lookup numbers — gets both detected instead of one column
+// winning and the other's values becoming unsearchable.
 const IQAMA_ALIASES = [
   "رقم الاقامة",
   "رقم الإقامة",
@@ -7,14 +11,18 @@ const IQAMA_ALIASES = [
   "الإقامة",
   "اقامة",
   "إقامة",
-  "رقم الهوية",
-  "الهوية",
   "iqama",
   "iqama number",
   "iqama no",
   "iqama no.",
   "residence id",
   "residence number",
+];
+
+const ID_ALIASES = [
+  "رقم الهوية",
+  "الهوية",
+  "هوية",
   "national id",
   "id",
   "id number",
@@ -62,6 +70,7 @@ export interface ParsedExcel {
   headers: string[];
   rows: Record<string, unknown>[];
   iqamaColumn: string | null;
+  idColumn: string | null;
   nameColumn: string | null;
 }
 
@@ -84,8 +93,13 @@ export async function parseExcelFile(file: File): Promise<ParsedExcel> {
       ? Object.keys(rows[0])
       : (XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 })[0] as string[]) || [];
   const iqamaColumn = findColumn(headers, IQAMA_ALIASES);
+  let idColumn = findColumn(headers, ID_ALIASES);
+  // Fuzzy matching can land both detectors on the same header (e.g. a
+  // column literally named "Iqama ID") — don't treat one column as two
+  // distinct identifiers.
+  if (idColumn && idColumn === iqamaColumn) idColumn = null;
   const nameColumn = findColumn(headers, NAME_ALIASES);
-  return { headers, rows, iqamaColumn, nameColumn };
+  return { headers, rows, iqamaColumn, idColumn, nameColumn };
 }
 
 export const MONTH_NAMES_AR = [
