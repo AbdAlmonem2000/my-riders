@@ -104,6 +104,7 @@ const dict = {
   "rider.metricTotal": { ar: "إجمالي الطلبات", en: "Total Orders" },
   "rider.metricHours": { ar: "ساعات العمل", en: "Work Hours" },
   "rider.metricSalary": { ar: "صافي الراتب", en: "Net Salary" },
+  "rider.noteTitle": { ar: "ملحوظة من الشركة", en: "Note from the company" },
 
   "admin.unauthorizedTitle": { ar: "غير مصرح", en: "Not authorized" },
   "admin.unauthorizedDesc": {
@@ -132,6 +133,11 @@ const dict = {
     ar: "استبدال إذا كان يوجد تقرير لنفس الشهر",
     en: "Replace if a report already exists for this month",
   },
+  "admin.noteLabel": { ar: "ملحوظة عامة للشهر (اختياري)", en: "General note for the month (optional)" },
+  "admin.notePlaceholder": {
+    ar: "مثال: سيتم صرف الرواتب يوم 5 بدلاً من يوم 1 هذا الشهر",
+    en: "e.g. Salaries will be paid on the 5th instead of the 1st this month",
+  },
   "admin.uploadingButton": { ar: "جاري الرفع...", en: "Uploading..." },
   "admin.uploadButton": { ar: "رفع التقرير", en: "Upload Report" },
   "admin.uploadedReportsTitle": { ar: "التقارير المرفوعة", en: "Uploaded Reports" },
@@ -145,6 +151,16 @@ const dict = {
   "admin.tableRiderCount": { ar: "عدد المناديب", en: "Rider Count" },
   "admin.tableUploadDate": { ar: "تاريخ الرفع", en: "Upload Date" },
   "admin.tableActions": { ar: "إجراءات", en: "Actions" },
+  "admin.editNoteTooltip": { ar: "ملحوظة الشهر", en: "Month note" },
+  "admin.editNoteTitle": { ar: "ملحوظة تقرير الشهر", en: "Report note for the month" },
+  "admin.editNoteDesc": {
+    ar: "تظهر هذه الملحوظة لكل مندوب يفتح تقريره لهذا الشهر.",
+    en: "This note is shown to every rider who opens their report for this month.",
+  },
+  "admin.save": { ar: "حفظ", en: "Save" },
+  "admin.saving": { ar: "جاري الحفظ...", en: "Saving..." },
+  "admin.toastNoteSaved": { ar: "تم حفظ الملحوظة", en: "Note saved" },
+  "admin.toastNoteSaveFailed": { ar: "فشل حفظ الملحوظة", en: "Failed to save note" },
   "admin.deleteReportTitle": { ar: "حذف التقرير؟", en: "Delete report?" },
   "admin.cancel": { ar: "إلغاء", en: "Cancel" },
   "admin.delete": { ar: "حذف", en: "Delete" },

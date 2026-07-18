@@ -14,6 +14,7 @@ const UploadInput = z.object({
   nameColumn: z.string().nullable(),
   rows: z.array(RowSchema),
   replace: z.boolean().optional(),
+  note: z.string().trim().max(2000).nullable().optional(),
 });
 
 async function getCallerCompany(
@@ -69,6 +70,7 @@ export const uploadReport = createServerFn({ method: "POST" })
         storage_path: data.storagePath,
         uploaded_by: userId,
         rider_count: 0,
+        note: data.note?.trim() || null,
       })
       .select("id")
       .single();

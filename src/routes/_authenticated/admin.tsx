@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   Loader2,
   LogOut,
+  MessageSquare,
   Trash2,
   Upload,
   Users,
@@ -18,6 +19,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -48,7 +59,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { checkIsAdmin, deleteReport, uploadReport } from "@/lib/reports.functions";
 import { parseExcelFile, monthLabel, MONTH_NAMES_AR, MONTH_NAMES_EN } from "@/lib/excel";
-import { useLanguage } from "@/lib/i18n";
+import { useLanguage, type TranslationKey } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminPage,
@@ -84,6 +95,7 @@ function AdminPage() {
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
   const [year, setYear] = useState<number>(now.getFullYear());
   const [file, setFile] = useState<File | null>(null);
+  const [note, setNote] = useState("");
   const [replace, setReplace] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -134,6 +146,7 @@ function AdminPage() {
           nameColumn: parsed.nameColumn,
           rows: parsed.rows as Record<string, unknown>[],
           replace,
+          note: note.trim() || null,
         },
       });
       toast.success(
@@ -142,6 +155,7 @@ function AdminPage() {
           : `Report uploaded successfully (${res.count} riders)`,
       );
       setFile(null);
+      setNote("");
       setReplace(false);
       if (fileRef.current) fileRef.current.value = "";
       queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
@@ -151,6 +165,15 @@ function AdminPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleSaveNote = async (id: string, value: string) => {
+    const { error } = await supabase
+      .from("reports")
+      .update({ note: value.trim() || null })
+      .eq("id", id);
+    if (error) throw new Error(error.message);
+    queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
   };
 
   const handleDelete = async (id: string) => {
@@ -293,6 +316,15 @@ function AdminPage() {
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
               </div>
+              <div className="space-y-2 md:col-span-4">
+                <Label>{t("admin.noteLabel")}</Label>
+                <Textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder={t("admin.notePlaceholder")}
+                  rows={2}
+                />
+              </div>
               <div className="md:col-span-4 flex items-center justify-between">
                 <label className="flex items-center gap-2 text-sm">
                   <Checkbox checked={replace} onCheckedChange={(v) => setReplace(v === true)} />
@@ -371,6 +403,13 @@ function AdminPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-end">
+                        <NoteEditor
+                          reportId={r.id}
+                          initialNote={r.note}
+                          title={monthLabel(r.month, r.year, lang)}
+                          t={t}
+                          onSave={handleSaveNote}
+                        />
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
@@ -411,6 +450,90 @@ function AdminPage() {
         </Card>
       </main>
     </div>
+  );
+}
+
+function NoteEditor({
+  reportId,
+  initialNote,
+  title,
+  t,
+  onSave,
+}: {
+  reportId: string;
+  initialNote: string | null;
+  title: string;
+  t: (key: TranslationKey) => string;
+  onSave: (id: string, value: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(initialNote ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave(reportId, value);
+      toast.success(t("admin.toastNoteSaved"));
+      setOpen(false);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
+      toast.error(err.message ?? t("admin.toastNoteSaveFailed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (o) setValue(initialNote ?? "");
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          title={t("admin.editNoteTooltip")}
+          className={`transition-transform hover:scale-110 ${
+            initialNote ? "text-primary" : "text-muted-foreground"
+          }`}
+        >
+          <MessageSquare className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t("admin.editNoteTitle")} — {title}
+          </DialogTitle>
+          <DialogDescription>{t("admin.editNoteDesc")}</DialogDescription>
+        </DialogHeader>
+        <Textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={t("admin.notePlaceholder")}
+          rows={4}
+        />
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
+            {t("admin.cancel")}
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? (
+              <>
+                <Loader2 className="ms-2 h-4 w-4 animate-spin" />
+                {t("admin.saving")}
+              </>
+            ) : (
+              t("admin.save")
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

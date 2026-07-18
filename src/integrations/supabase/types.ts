@@ -42,6 +42,7 @@ export type Database = {
           file_name: string
           id: string
           month: number
+          note: string | null
           rider_count: number
           storage_path: string | null
           uploaded_by: string | null
@@ -53,6 +54,7 @@ export type Database = {
           file_name: string
           id?: string
           month: number
+          note?: string | null
           rider_count?: number
           storage_path?: string | null
           uploaded_by?: string | null
@@ -64,6 +66,7 @@ export type Database = {
           file_name?: string
           id?: string
           month?: number
+          note?: string | null
           rider_count?: number
           storage_path?: string | null
           uploaded_by?: string | null
@@ -228,6 +231,7 @@ export type Database = {
           data: Json
           file_name: string
           month: number
+          note: string | null
           year: number
         }[]
       }

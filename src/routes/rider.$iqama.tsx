@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Building2, Calendar, Loader2, Search, User } from "lucide-react";
+import { ArrowRight, Building2, Calendar, Loader2, Megaphone, Search, User } from "lucide-react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -309,6 +309,7 @@ interface RiderReportView {
   month: number;
   year: number;
   file_name: string;
+  note: string | null;
 }
 
 function isNumericLike(v: unknown): v is number {
@@ -366,6 +367,18 @@ function ReportView({
           {data.file_name}
         </Badge>
       </div>
+
+      {data.note && (
+        <Card className="animate-in fade-in slide-in-from-bottom-1 border-primary/30 bg-primary/5 duration-500">
+          <CardContent className="flex items-start gap-3 pt-6">
+            <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div>
+              <div className="text-xs font-medium text-primary">{t("rider.noteTitle")}</div>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{data.note}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {metrics.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
