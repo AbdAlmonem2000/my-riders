@@ -95,7 +95,6 @@ export type Database = {
           note: string | null
           rider_count: number
           storage_path: string | null
-          title: string
           uploaded_by: string | null
           year: number
         }
@@ -108,7 +107,6 @@ export type Database = {
           note?: string | null
           rider_count?: number
           storage_path?: string | null
-          title?: string
           uploaded_by?: string | null
           year: number
         }
@@ -121,7 +119,6 @@ export type Database = {
           note?: string | null
           rider_count?: number
           storage_path?: string | null
-          title?: string
           uploaded_by?: string | null
           year?: number
         }
@@ -288,7 +285,6 @@ export type Database = {
           file_name: string
           month: number
           note: string | null
-          title: string
           year: number
         }[]
       }
@@ -307,7 +303,6 @@ export type Database = {
           file_name: string
           month: number
           report_id: string
-          title: string
           year: number
         }[]
       }

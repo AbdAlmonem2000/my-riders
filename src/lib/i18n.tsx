@@ -131,14 +131,9 @@ const dict = {
   "admin.monthLabel": { ar: "الشهر", en: "Month" },
   "admin.yearLabel": { ar: "السنة", en: "Year" },
   "admin.excelFileLabel": { ar: "ملف Excel", en: "Excel File" },
-  "admin.reportTitleLabel": { ar: "عنوان التقرير", en: "Report title" },
-  "admin.reportTitlePlaceholder": {
-    ar: "مثال: الرواتب، الفئات، الكيلومترات",
-    en: "e.g. Salaries, Tiers, Kilometers",
-  },
   "admin.replaceCheckbox": {
-    ar: "استبدال إذا كان يوجد تقرير بنفس العنوان لهذا الشهر",
-    en: "Replace if a report with this title already exists for this month",
+    ar: "استبدال إذا كان يوجد تقرير لنفس الشهر",
+    en: "Replace if a report already exists for this month",
   },
   "admin.noteLabel": { ar: "ملحوظة عامة للشهر (اختياري)", en: "General note for the month (optional)" },
   "admin.notePlaceholder": {
@@ -154,13 +149,10 @@ const dict = {
   },
   "admin.tableMonth": { ar: "الشهر", en: "Month" },
   "admin.tableYear": { ar: "السنة", en: "Year" },
-  "admin.tableReportTitle": { ar: "عنوان التقرير", en: "Report Title" },
   "admin.tableFileName": { ar: "اسم الملف", en: "File Name" },
   "admin.tableRiderCount": { ar: "عدد المناديب", en: "Rider Count" },
   "admin.tableUploadDate": { ar: "تاريخ الرفع", en: "Upload Date" },
   "admin.tableActions": { ar: "إجراءات", en: "Actions" },
-  "admin.downloadTooltip": { ar: "تنزيل الملف الأصلي", en: "Download original file" },
-  "admin.toastDownloadFailed": { ar: "تعذر تنزيل الملف", en: "Couldn't download the file" },
   "admin.editNoteTooltip": { ar: "ملحوظة الشهر", en: "Month note" },
   "admin.editNoteTitle": { ar: "ملحوظة تقرير الشهر", en: "Report note for the month" },
   "admin.editNoteDesc": {
@@ -175,7 +167,6 @@ const dict = {
   "admin.cancel": { ar: "إلغاء", en: "Cancel" },
   "admin.delete": { ar: "حذف", en: "Delete" },
   "admin.toastSelectFile": { ar: "اختر ملف Excel", en: "Choose an Excel file" },
-  "admin.toastSelectTitle": { ar: "اكتب عنوان للتقرير", en: "Enter a report title" },
   "admin.toastNoIqamaColumn": {
     ar: "لم يتم العثور على عمود رقم الإقامة في الملف. تأكد من وجود عمود مثل: رقم الإقامة / Iqama / ID",
     en: "No Iqama number column found in the file. Make sure a column like Iqama / ID exists.",

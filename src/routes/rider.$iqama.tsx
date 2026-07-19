@@ -89,24 +89,6 @@ function RiderPage() {
     },
   });
 
-  // Reports arrive pre-sorted (year desc, month desc, title asc), so
-  // consecutive same-month rows can just be grouped in a single pass — a
-  // company can upload several reports for one month (salaries, tiers,
-  // kilometers...), and each becomes its own chip under that month.
-  const reportGroups = useMemo(() => {
-    const list = reportsQuery.data ?? [];
-    const groups: { month: number; year: number; reports: typeof list }[] = [];
-    for (const r of list) {
-      const last = groups[groups.length - 1];
-      if (last && last.month === r.month && last.year === r.year) {
-        last.reports.push(r);
-      } else {
-        groups.push({ month: r.month, year: r.year, reports: [r] });
-      }
-    }
-    return groups;
-  }, [reportsQuery.data]);
-
   const reportData = useQuery({
     queryKey: ["rider-report", activeRiderId, reportId],
     enabled: !!reportId && !!activeRiderId,
@@ -258,7 +240,7 @@ function RiderPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm">{t("rider.monthsAvailable")}</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-2">
                   {reportsQuery.isLoading && (
                     <div className="flex justify-center py-4">
                       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -267,43 +249,29 @@ function RiderPage() {
                   {reportsQuery.data && reportsQuery.data.length === 0 && (
                     <div className="text-sm text-muted-foreground">{t("rider.noReports")}</div>
                   )}
-                  {reportGroups.map((g, gi) => (
-                    <div
-                      key={`${g.year}-${g.month}`}
-                      className="animate-in fade-in slide-in-from-bottom-1 space-y-1.5 duration-300 fill-mode-[backwards]"
-                      style={{ animationDelay: `${gi * 60}ms` }}
-                    >
-                      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                        <Calendar className="h-3.5 w-3.5" />
-                        {monthLabel(g.month, g.year, lang)}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {g.reports.map((r) => {
-                          const active = reportId === r.report_id;
-                          return (
-                            <Link
-                              key={r.report_id}
-                              to="/rider/$iqama"
-                              params={{ iqama }}
-                              search={{ reportId: r.report_id }}
-                              className={`rounded-full border px-3 py-1 text-xs transition-all ${
-                                active
-                                  ? "border-primary bg-primary/10 font-medium text-foreground"
-                                  : "border-border hover:-translate-y-0.5 hover:border-primary/50 hover:bg-accent"
-                              }`}
-                            >
-                              {r.title}
-                              {active && (
-                                <Badge variant="secondary" className="ms-1.5 align-middle">
-                                  {t("rider.openBadge")}
-                                </Badge>
-                              )}
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
+                  {reportsQuery.data?.map((r, i) => {
+                    const active = reportId === r.report_id;
+                    return (
+                      <Link
+                        key={r.report_id}
+                        to="/rider/$iqama"
+                        params={{ iqama }}
+                        search={{ reportId: r.report_id }}
+                        className={`animate-in fade-in slide-in-from-bottom-1 flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-all duration-300 fill-mode-[backwards] ${
+                          active
+                            ? "border-primary bg-primary/10 text-foreground"
+                            : "border-border hover:-translate-y-0.5 hover:bg-accent hover:shadow-sm"
+                        }`}
+                        style={{ animationDelay: `${i * 60}ms` }}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
+                          {monthLabel(r.month, r.year, lang)}
+                        </span>
+                        {active && <Badge variant="secondary">{t("rider.openBadge")}</Badge>}
+                      </Link>
+                    );
+                  })}
                 </CardContent>
               </Card>
             </aside>
@@ -345,7 +313,6 @@ interface RiderReportView {
   columns: string[];
   month: number;
   year: number;
-  title: string;
   file_name: string;
   note: string | null;
 }
@@ -399,10 +366,7 @@ function ReportView({
       <div className="flex items-center justify-between">
         <div>
           <div className="text-sm text-muted-foreground">{t("rider.reportLabel")}</div>
-          <h2 className="text-2xl font-bold">{data.title}</h2>
-          <p className="text-sm text-muted-foreground">
-            {monthLabel(data.month, data.year, lang)}
-          </p>
+          <h2 className="text-2xl font-bold">{monthLabel(data.month, data.year, lang)}</h2>
         </div>
         <Badge variant="outline" className="font-mono text-xs">
           {data.file_name}

@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import {
   Bell,
   Building2,
-  Download,
   FileSpreadsheet,
   Loader2,
   LogOut,
@@ -109,7 +108,6 @@ function AdminPage() {
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
   const [year, setYear] = useState<number>(now.getFullYear());
   const [file, setFile] = useState<File | null>(null);
-  const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
   const [replace, setReplace] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -130,7 +128,6 @@ function AdminPage() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return toast.error(t("admin.toastSelectFile"));
-    if (!title.trim()) return toast.error(t("admin.toastSelectTitle"));
     setUploading(true);
     try {
       const parsed = await parseExcelFile(file);
@@ -155,7 +152,6 @@ function AdminPage() {
         data: {
           month,
           year,
-          title: title.trim(),
           fileName: file.name,
           storagePath: path,
           headers: parsed.headers,
@@ -173,7 +169,6 @@ function AdminPage() {
           : `Report uploaded successfully (${res.count} riders)`,
       );
       setFile(null);
-      setTitle("");
       setNote("");
       setReplace(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -193,15 +188,6 @@ function AdminPage() {
       .eq("id", id);
     if (error) throw new Error(error.message);
     queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
-  };
-
-  const handleDownload = async (storagePath: string | null, fileName: string) => {
-    if (!storagePath) return toast.error(t("admin.toastDownloadFailed"));
-    const { data, error } = await supabase.storage
-      .from("reports")
-      .createSignedUrl(storagePath, 60, { download: fileName });
-    if (error || !data) return toast.error(error?.message ?? t("admin.toastDownloadFailed"));
-    window.open(data.signedUrl, "_blank");
   };
 
   const handleDelete = async (id: string) => {
@@ -376,15 +362,6 @@ function AdminPage() {
                 />
               </div>
               <div className="space-y-2 md:col-span-4">
-                <Label>{t("admin.reportTitleLabel")}</Label>
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={t("admin.reportTitlePlaceholder")}
-                  maxLength={150}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-4">
                 <Label>{t("admin.noteLabel")}</Label>
                 <Textarea
                   value={note}
@@ -400,7 +377,7 @@ function AdminPage() {
                 </label>
                 <Button
                   type="submit"
-                  disabled={uploading || !file || !title.trim()}
+                  disabled={uploading || !file}
                   className="transition-transform active:scale-[0.98]"
                 >
                   {uploading ? (
@@ -444,7 +421,6 @@ function AdminPage() {
                   <TableRow>
                     <TableHead>{t("admin.tableMonth")}</TableHead>
                     <TableHead>{t("admin.tableYear")}</TableHead>
-                    <TableHead>{t("admin.tableReportTitle")}</TableHead>
                     <TableHead>{t("admin.tableFileName")}</TableHead>
                     <TableHead>{t("admin.tableRiderCount")}</TableHead>
                     <TableHead>{t("admin.tableUploadDate")}</TableHead>
@@ -462,9 +438,6 @@ function AdminPage() {
                         {(lang === "ar" ? MONTH_NAMES_AR : MONTH_NAMES_EN)[r.month - 1]}
                       </TableCell>
                       <TableCell>{r.year}</TableCell>
-                      <TableCell className="max-w-40 truncate font-medium">
-                        {r.title}
-                      </TableCell>
                       <TableCell className="max-w-xs truncate">{r.file_name}</TableCell>
                       <TableCell>
                         <Badge variant="secondary">{r.rider_count}</Badge>
@@ -475,19 +448,10 @@ function AdminPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-end">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title={t("admin.downloadTooltip")}
-                          className="transition-transform hover:scale-110"
-                          onClick={() => handleDownload(r.storage_path, r.file_name)}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
                         <NoteEditor
                           reportId={r.id}
                           initialNote={r.note}
-                          title={`${monthLabel(r.month, r.year, lang)} — ${r.title}`}
+                          title={monthLabel(r.month, r.year, lang)}
                           t={t}
                           onSave={handleSaveNote}
                         />
@@ -506,8 +470,8 @@ function AdminPage() {
                               <AlertDialogTitle>{t("admin.deleteReportTitle")}</AlertDialogTitle>
                               <AlertDialogDescription>
                                 {lang === "ar"
-                                  ? `سيتم حذف تقرير "${r.title}" لشهر ${monthLabel(r.month, r.year, lang)} وجميع بيانات المناديب المرتبطة به. لا يمكن التراجع.`
-                                  : `The "${r.title}" report for ${monthLabel(r.month, r.year, lang)} and all associated rider data will be deleted. This cannot be undone.`}
+                                  ? `سيتم حذف تقرير ${monthLabel(r.month, r.year, lang)} وجميع بيانات المناديب المرتبطة به. لا يمكن التراجع.`
+                                  : `The ${monthLabel(r.month, r.year, lang)} report and all associated rider data will be deleted. This cannot be undone.`}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
