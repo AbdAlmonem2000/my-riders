@@ -11,6 +11,21 @@ async function assertSuperAdmin(
   if (!data) throw new Error("غير مصرح: هذه الصفحة للسوبر أدمن فقط");
 }
 
+// Super admin can manage any company; a company admin can only manage
+// their own — used for name/logo edits, which either role may perform.
+async function assertCanManageCompany(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  companyId: string,
+) {
+  const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: userId });
+  if (isSuper) return;
+  const { data: ownCompanyId } = await supabase.rpc("get_user_company", { _user_id: userId });
+  if (ownCompanyId === companyId) return;
+  throw new Error("غير مصرح: لا تملك صلاحية تعديل هذه الشركة");
+}
+
 // company-logos public URLs look like
 // https://<project>.supabase.co/storage/v1/object/public/company-logos/<path>
 // — recover just <path> so the file can be removed from storage.
@@ -60,7 +75,7 @@ export const updateCompanyLogo = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), logoUrl: z.string().url().nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context.supabase, context.userId);
+    await assertCanManageCompany(context.supabase, context.userId, data.id);
 
     const { data: co } = await context.supabase
       .from("companies")
@@ -91,7 +106,7 @@ export const updateCompanyName = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(120) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context.supabase, context.userId);
+    await assertCanManageCompany(context.supabase, context.userId, data.id);
     const { data: updated, error } = await context.supabase
       .from("companies")
       .update({ name: data.name })

@@ -62,8 +62,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { checkIsAdmin, deleteReport, uploadReport } from "@/lib/reports.functions";
+import { updateCompanyLogo, updateCompanyName } from "@/lib/accounts.functions";
 import { listAnnouncements, markAnnouncementsRead } from "@/lib/announcements.functions";
 import { parseExcelFile, monthLabel, MONTH_NAMES_AR, MONTH_NAMES_EN } from "@/lib/excel";
+import { ChangeNameDialog, ChangeLogoDialog } from "@/components/company-dialogs";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -79,6 +81,8 @@ function AdminPage() {
   const deleteFn = useServerFn(deleteReport);
   const listAnnouncementsFn = useServerFn(listAnnouncements);
   const markAnnouncementsReadFn = useServerFn(markAnnouncementsRead);
+  const updateNameFn = useServerFn(updateCompanyName);
+  const updateLogoFn = useServerFn(updateCompanyLogo);
 
   const adminCheck = useQuery({
     queryKey: ["is-admin"],
@@ -241,6 +245,7 @@ function AdminPage() {
   }
 
   const totalRiders = reportsQuery.data?.reduce((s, r) => s + (r.rider_count ?? 0), 0) ?? 0;
+  const companyId = adminCheck.data?.companyId;
   const companyName = adminCheck.data?.companyName;
   const companyLogoUrl = adminCheck.data?.companyLogoUrl;
 
@@ -268,6 +273,29 @@ function AdminPage() {
                 {companyName ? t("admin.headerTitle") : t("admin.headerSubtitleDefault")}
               </p>
             </div>
+            {companyId && (
+              <div className="flex items-center gap-0.5">
+                <ChangeNameDialog
+                  currentName={companyName ?? ""}
+                  t={t}
+                  onSubmit={async (name) => {
+                    await updateNameFn({ data: { id: companyId, name } });
+                    toast.success(t("superAdmin.toastNameUpdated"));
+                    queryClient.invalidateQueries({ queryKey: ["is-admin"] });
+                  }}
+                />
+                <ChangeLogoDialog
+                  companyName={companyName ?? ""}
+                  currentLogoUrl={companyLogoUrl ?? null}
+                  t={t}
+                  onSubmit={async (logoUrl) => {
+                    await updateLogoFn({ data: { id: companyId, logoUrl } });
+                    toast.success(t("superAdmin.toastLogoUpdated"));
+                    queryClient.invalidateQueries({ queryKey: ["is-admin"] });
+                  }}
+                />
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell
