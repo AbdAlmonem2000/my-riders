@@ -85,6 +85,23 @@ export const updateCompanyLogo = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const updateCompanyName = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(120) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertSuperAdmin(context.supabase, context.userId);
+    const { data: updated, error } = await context.supabase
+      .from("companies")
+      .update({ name: data.name })
+      .eq("id", data.id)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error("لم يتم تحديث اسم الشركة");
+    return { ok: true };
+  });
+
 export const deleteCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))

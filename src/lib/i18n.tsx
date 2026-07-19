@@ -246,6 +246,8 @@ const dict = {
   "superAdmin.superAdminBadge": { ar: "سوبر أدمن", en: "Super Admin" },
   "superAdmin.deleteAccountTitle": { ar: "حذف الحساب؟", en: "Delete account?" },
   "superAdmin.changeLogoTitle": { ar: "تغيير الشعار", en: "Change logo" },
+  "superAdmin.changeNameTitle": { ar: "تعديل اسم الشركة", en: "Edit company name" },
+  "superAdmin.newCompanyNameLabel": { ar: "اسم الشركة", en: "Company name" },
   "superAdmin.logoDialogDesc": {
     ar: "يظهر بجانب اسم الشركة عند بحث المندوب برقم الإقامة أو ID",
     en: "Shown next to the company name when a rider searches by Iqama or ID number",
@@ -270,6 +272,7 @@ const dict = {
   "superAdmin.toastEmailUpdated": { ar: "تم تحديث البريد", en: "Email updated" },
   "superAdmin.toastPasswordUpdated": { ar: "تم تحديث كلمة المرور", en: "Password updated" },
   "superAdmin.toastLogoUpdated": { ar: "تم تحديث الشعار", en: "Logo updated" },
+  "superAdmin.toastNameUpdated": { ar: "تم تحديث اسم الشركة", en: "Company name updated" },
   "superAdmin.toastChooseLogo": { ar: "اختر صورة الشعار", en: "Choose a logo image" },
   "superAdmin.toastMinPassword": { ar: "6 أحرف على الأقل", en: "At least 6 characters" },
 
