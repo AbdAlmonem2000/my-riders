@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   Bell,
   Building2,
+  Download,
   FileSpreadsheet,
   Loader2,
   LogOut,
@@ -188,6 +189,15 @@ function AdminPage() {
       .eq("id", id);
     if (error) throw new Error(error.message);
     queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
+  };
+
+  const handleDownload = async (storagePath: string | null, fileName: string) => {
+    if (!storagePath) return toast.error(t("admin.toastDownloadFailed"));
+    const { data, error } = await supabase.storage
+      .from("reports")
+      .createSignedUrl(storagePath, 60, { download: fileName });
+    if (error || !data) return toast.error(error?.message ?? t("admin.toastDownloadFailed"));
+    window.open(data.signedUrl, "_blank");
   };
 
   const handleDelete = async (id: string) => {
@@ -448,6 +458,15 @@ function AdminPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-end">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title={t("admin.downloadTooltip")}
+                          className="transition-transform hover:scale-110"
+                          onClick={() => handleDownload(r.storage_path, r.file_name)}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
                         <NoteEditor
                           reportId={r.id}
                           initialNote={r.note}

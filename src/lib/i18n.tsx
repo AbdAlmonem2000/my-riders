@@ -153,6 +153,8 @@ const dict = {
   "admin.tableRiderCount": { ar: "عدد المناديب", en: "Rider Count" },
   "admin.tableUploadDate": { ar: "تاريخ الرفع", en: "Upload Date" },
   "admin.tableActions": { ar: "إجراءات", en: "Actions" },
+  "admin.downloadTooltip": { ar: "تنزيل الملف الأصلي", en: "Download original file" },
+  "admin.toastDownloadFailed": { ar: "تعذر تنزيل الملف", en: "Couldn't download the file" },
   "admin.editNoteTooltip": { ar: "ملحوظة الشهر", en: "Month note" },
   "admin.editNoteTitle": { ar: "ملحوظة تقرير الشهر", en: "Report note for the month" },
   "admin.editNoteDesc": {
