@@ -8,6 +8,7 @@ const UploadInput = z
   .object({
     month: z.number().int().min(1).max(12),
     year: z.number().int().min(2000).max(2100),
+    title: z.string().trim().min(1).max(150),
     fileName: z.string().min(1),
     storagePath: z.string().nullable(),
     headers: z.array(z.string()),
@@ -49,17 +50,20 @@ export const uploadReport = createServerFn({ method: "POST" })
       throw new Error("هذا الحساب غير مرتبط بشركة، لا يمكن رفع تقارير");
     }
 
-    // Check for existing report same month/year within this company
+    // Check for an existing report with the same month/year/title within
+    // this company — a company can have several reports for the same
+    // month (salaries, tiers, kilometers...) as long as titles differ.
     const { data: existing } = await supabase
       .from("reports")
       .select("id, storage_path")
       .eq("company_id", companyId)
       .eq("month", data.month)
       .eq("year", data.year)
+      .eq("title", data.title)
       .maybeSingle();
 
     if (existing && !data.replace) {
-      throw new Error("يوجد تقرير لهذا الشهر بالفعل. استخدم خيار الاستبدال.");
+      throw new Error("يوجد تقرير بنفس العنوان لهذا الشهر بالفعل. استخدم خيار الاستبدال.");
     }
     if (existing) {
       // The replacement file was already uploaded under a new storage path
@@ -78,6 +82,7 @@ export const uploadReport = createServerFn({ method: "POST" })
         company_id: companyId,
         month: data.month,
         year: data.year,
+        title: data.title,
         file_name: data.fileName,
         storage_path: data.storagePath,
         uploaded_by: userId,
