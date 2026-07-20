@@ -5,6 +5,8 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Loader2,
+  Lock,
+  LockOpen,
   LogOut,
   Trash2,
   Plus,
@@ -68,6 +70,7 @@ import {
   deleteCompany,
   listAccounts,
   listCompanies,
+  setCompanySuspended,
   updateAccountEmail,
   updateAccountPassword,
   updateCompanyLogo,
@@ -100,6 +103,7 @@ function SuperAdminPage() {
   const updatePasswordFn = useServerFn(updateAccountPassword);
   const updateEmailFn = useServerFn(updateAccountEmail);
   const updateLogoFn = useServerFn(updateCompanyLogo);
+  const setSuspendedFn = useServerFn(setCompanySuspended);
   const updateNameFn = useServerFn(updateCompanyName);
   const listAnnouncementsFn = useServerFn(listAnnouncements);
   const createAnnouncementFn = useServerFn(createAnnouncement);
@@ -170,6 +174,18 @@ function SuperAdminPage() {
     mutationFn: (id: string) => deleteCompanyFn({ data: { id } }),
     onSuccess: () => {
       toast.success(t("superAdmin.toastCompanyDeleted"));
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const setSuspendedMut = useMutation({
+    mutationFn: ({ id, suspended }: { id: string; suspended: boolean }) =>
+      setSuspendedFn({ data: { id, suspended } }),
+    onSuccess: (_res, { suspended }) => {
+      toast.success(
+        suspended ? t("superAdmin.toastCompanySuspended") : t("superAdmin.toastCompanyActivated"),
+      );
       invalidate();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -433,6 +449,7 @@ function SuperAdminPage() {
                   <TableRow>
                     <TableHead>{t("superAdmin.tableLogo")}</TableHead>
                     <TableHead>{t("superAdmin.tableCompany")}</TableHead>
+                    <TableHead>{t("superAdmin.tableStatus")}</TableHead>
                     <TableHead>{t("superAdmin.tableCreatedDate")}</TableHead>
                     <TableHead className="text-end">{t("superAdmin.tableActions")}</TableHead>
                   </TableRow>
@@ -458,6 +475,13 @@ function SuperAdminPage() {
                         )}
                       </TableCell>
                       <TableCell className="font-medium">{c.name}</TableCell>
+                      <TableCell>
+                        {c.is_suspended ? (
+                          <Badge variant="destructive">{t("superAdmin.statusSuspended")}</Badge>
+                        ) : (
+                          <Badge variant="secondary">{t("superAdmin.statusActive")}</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {new Date(c.created_at).toLocaleDateString(
                           lang === "ar" ? "ar-SA" : "en-US",
@@ -484,6 +508,54 @@ function SuperAdminPage() {
                               invalidate();
                             }}
                           />
+                          {c.is_suspended ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title={t("superAdmin.activateTooltip")}
+                              className="text-primary transition-transform hover:scale-110"
+                              disabled={setSuspendedMut.isPending}
+                              onClick={() => setSuspendedMut.mutate({ id: c.id, suspended: false })}
+                            >
+                              <LockOpen className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  title={t("superAdmin.suspendTooltip")}
+                                  className="text-destructive transition-transform hover:scale-110"
+                                >
+                                  <Lock className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>
+                                    {t("superAdmin.suspendCompanyTitle")}
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    {lang === "ar"
+                                      ? `هيتم إيقاف وصول شركة "${c.name}" وكل المناديب اللي تابعين ليها فورًا. تقدر تفعّل الوصول تاني في أي وقت.`
+                                      : `Access for "${c.name}" and all its riders will be blocked immediately. You can re-activate it anytime.`}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    onClick={() =>
+                                      setSuspendedMut.mutate({ id: c.id, suspended: true })
+                                    }
+                                  >
+                                    {t("superAdmin.suspendConfirmButton")}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button

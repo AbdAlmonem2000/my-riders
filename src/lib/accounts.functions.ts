@@ -22,8 +22,13 @@ async function assertCanManageCompany(
   const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: userId });
   if (isSuper) return;
   const { data: ownCompanyId } = await supabase.rpc("get_user_company", { _user_id: userId });
-  if (ownCompanyId === companyId) return;
-  throw new Error("غير مصرح: لا تملك صلاحية تعديل هذه الشركة");
+  if (ownCompanyId !== companyId) {
+    throw new Error("غير مصرح: لا تملك صلاحية تعديل هذه الشركة");
+  }
+  const { data: isActive } = await supabase.rpc("is_company_active", { _company_id: companyId });
+  if (!isActive) {
+    throw new Error("هذا الحساب موقوف مؤقتًا من قبل الإدارة");
+  }
 }
 
 // company-logos public URLs look like
@@ -42,7 +47,7 @@ export const listCompanies = createServerFn({ method: "GET" })
     await assertSuperAdmin(context.supabase, context.userId);
     const { data, error } = await context.supabase
       .from("companies")
-      .select("id, name, logo_url, created_at")
+      .select("id, name, logo_url, is_suspended, created_at")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return data ?? [];
@@ -114,6 +119,23 @@ export const updateCompanyName = createServerFn({ method: "POST" })
       .select("id");
     if (error) throw new Error(error.message);
     if (!updated || updated.length === 0) throw new Error("لم يتم تحديث اسم الشركة");
+    return { ok: true };
+  });
+
+export const setCompanySuspended = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ id: z.string().uuid(), suspended: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertSuperAdmin(context.supabase, context.userId);
+    const { data: updated, error } = await context.supabase
+      .from("companies")
+      .update({ is_suspended: data.suspended })
+      .eq("id", data.id)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error("لم يتم تحديث حالة الشركة");
     return { ok: true };
   });
 

@@ -48,6 +48,12 @@ export const uploadReport = createServerFn({ method: "POST" })
     if (!companyId) {
       throw new Error("هذا الحساب غير مرتبط بشركة، لا يمكن رفع تقارير");
     }
+    const { data: isActive } = await supabase.rpc("is_company_active", {
+      _company_id: companyId,
+    });
+    if (!isActive) {
+      throw new Error("هذا الحساب موقوف مؤقتًا من قبل الإدارة، تواصل معهم لإعادة التفعيل");
+    }
 
     // Check for existing report same month/year within this company
     const { data: existing } = await supabase
@@ -216,14 +222,16 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     const { isSuperAdmin, companyId } = await getCallerCompany(supabase, userId);
     let companyName: string | null = null;
     let companyLogoUrl: string | null = null;
+    let isSuspended = false;
     if (companyId) {
       const { data } = await supabase
         .from("companies")
-        .select("name, logo_url")
+        .select("name, logo_url, is_suspended")
         .eq("id", companyId)
         .maybeSingle();
       companyName = (data?.name as string | undefined) ?? null;
       companyLogoUrl = (data?.logo_url as string | undefined) ?? null;
+      isSuspended = (data?.is_suspended as boolean | undefined) ?? false;
     }
     return {
       isAdmin: isSuperAdmin || !!companyId,
@@ -231,6 +239,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       companyId,
       companyName,
       companyLogoUrl,
+      isSuspended,
       userId,
     };
   });

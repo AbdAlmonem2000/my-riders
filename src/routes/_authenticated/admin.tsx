@@ -9,6 +9,7 @@ import {
   Download,
   FileSpreadsheet,
   Loader2,
+  Lock,
   LogOut,
   MessageSquare,
   Trash2,
@@ -235,6 +236,23 @@ function AdminPage() {
             <AlertCircle className="mx-auto mb-3 h-10 w-10 text-destructive" />
             <h3 className="text-lg font-semibold">{t("admin.unauthorizedTitle")}</h3>
             <p className="mt-2 text-sm text-muted-foreground">{t("admin.unauthorizedDesc")}</p>
+            <Button variant="outline" className="mt-4" onClick={signOut}>
+              {t("admin.signOutButton")}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (adminCheck.data.isSuspended) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <Card className="animate-in fade-in slide-in-from-bottom-2 max-w-md duration-500">
+          <CardContent className="pt-6 text-center">
+            <Lock className="mx-auto mb-3 h-10 w-10 text-destructive" />
+            <h3 className="text-lg font-semibold">{t("admin.suspendedTitle")}</h3>
+            <p className="mt-2 text-sm text-muted-foreground">{t("admin.suspendedDesc")}</p>
             <Button variant="outline" className="mt-4" onClick={signOut}>
               {t("admin.signOutButton")}
             </Button>

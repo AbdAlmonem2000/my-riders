@@ -68,18 +68,21 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_suspended: boolean
           logo_url: string | null
           name: string
         }
         Insert: {
           created_at?: string
           id?: string
+          is_suspended?: boolean
           logo_url?: string | null
           name: string
         }
         Update: {
           created_at?: string
           id?: string
+          is_suspended?: boolean
           logo_url?: string | null
           name?: string
         }
@@ -289,6 +292,7 @@ export type Database = {
         }[]
       }
       get_user_company: { Args: { _user_id: string }; Returns: string }
+      is_company_active: { Args: { _company_id: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
