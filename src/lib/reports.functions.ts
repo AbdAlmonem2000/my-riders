@@ -157,21 +157,41 @@ export const uploadReport = createServerFn({ method: "POST" })
 
     // Reconcile rows that matched an existing rider under a different
     // identity (e.g. correct a previous ID-only upload's iqama_number to
-    // the real Iqama number now that it's known) — only writes when
-    // something actually changed, so a routine monthly reupload with
-    // unchanged numbers touches nothing here.
+    // the real Iqama number now that it's known, or backfill id_number for
+    // the first time on a large existing company). Batched into one
+    // upsert-by-id instead of one UPDATE per row — a company-wide backfill
+    // can touch hundreds of rows, and awaiting them one at a time serially
+    // is slow enough to blow past the serverless function's time limit.
     const existingById = new Map(existingRiders.map((r) => [r.id, r]));
+    const reconcilePayload: {
+      id: string;
+      company_id: string;
+      iqama_number: string;
+      id_number: string | null;
+      rider_name: string | null;
+    }[] = [];
     for (const r of resolvedRows) {
       if (!r.existingRiderId) continue;
       const existing = existingById.get(r.existingRiderId)!;
-      const patch: { iqama_number?: string; id_number?: string | null; rider_name?: string } = {};
-      if (r.key !== existing.iqama_number) patch.iqama_number = r.key;
-      if (r.idNumber !== (existing.id_number ?? null)) patch.id_number = r.idNumber;
-      if (r.name && r.name !== existing.rider_name) patch.rider_name = r.name;
-      if (Object.keys(patch).length > 0) {
-        const { error } = await supabase.from("riders").update(patch).eq("id", r.existingRiderId);
-        if (error) throw new Error(error.message);
-      }
+      const riderName = r.name && r.name !== existing.rider_name ? r.name : existing.rider_name;
+      const changed =
+        r.key !== existing.iqama_number ||
+        r.idNumber !== (existing.id_number ?? null) ||
+        riderName !== existing.rider_name;
+      if (!changed) continue;
+      reconcilePayload.push({
+        id: r.existingRiderId,
+        company_id: companyId,
+        iqama_number: r.key,
+        id_number: r.idNumber,
+        rider_name: riderName,
+      });
+    }
+    if (reconcilePayload.length > 0) {
+      const { error } = await supabase
+        .from("riders")
+        .upsert(reconcilePayload, { onConflict: "id" });
+      if (error) throw new Error(error.message);
     }
 
     const newRows = resolvedRows.filter((r) => !r.existingRiderId);
