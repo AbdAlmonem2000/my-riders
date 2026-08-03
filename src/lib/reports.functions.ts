@@ -105,60 +105,110 @@ export const uploadReport = createServerFn({ method: "POST" })
       const s = String(v).trim();
       return s || null;
     };
-    const validRows: { iqama: string; idNumber: string | null; name: string | null; row: Row }[] =
-      [];
+
+    // A rider can show up across uploads under different combinations of
+    // Iqama/ID (e.g. one sheet has only the ID column, another has both
+    // Iqama and ID for the same person). Resolve each row against riders
+    // already on file — by either number — and merge into that existing
+    // row instead of letting an ID-only upload's "ID used as the key"
+    // fallback mint a second, duplicate rider for the same person.
+    type ExistingRider = {
+      id: string;
+      iqama_number: string;
+      id_number: string | null;
+      rider_name: string | null;
+    };
+    const { data: existingRidersRaw } = await supabase
+      .from("riders")
+      .select("id, iqama_number, id_number, rider_name")
+      .eq("company_id", companyId);
+    const existingRiders = (existingRidersRaw ?? []) as ExistingRider[];
+    const byIqama = new Map(existingRiders.map((r) => [r.iqama_number, r]));
+    const byIdNumber = new Map(
+      existingRiders.filter((r) => r.id_number).map((r) => [r.id_number as string, r]),
+    );
+
+    interface Resolved {
+      key: string;
+      idNumber: string | null;
+      name: string | null;
+      row: Row;
+      existingRiderId: string | null;
+    }
+    const resolvedRows: Resolved[] = [];
+    const seenKeys = new Set<string>();
     for (const row of data.rows) {
       const rawIqama = cellText(row, iqamaCol);
       const rawId = cellText(row, idCol);
-      // A sheet with both an Iqama column and a separate ID column keeps
-      // iqama_number as the stable per-rider key (unchanged from before),
-      // and stashes the ID value alongside so the rider is findable by
-      // either number. A sheet with only one of the two falls back to
-      // using whichever is present as the key, as before.
-      const iqama = rawIqama ?? rawId;
-      if (!iqama) continue;
-      const idNumber = rawId && rawId !== iqama ? rawId : null;
+      if (!rawIqama && !rawId) continue;
       const name = nameCol ? (row[nameCol] != null ? String(row[nameCol]).trim() : null) : null;
-      validRows.push({ iqama, idNumber, name, row });
+
+      let matched: ExistingRider | undefined;
+      if (rawIqama) matched = byIqama.get(rawIqama);
+      if (!matched && rawId) matched = byIdNumber.get(rawId) ?? byIqama.get(rawId);
+
+      const key = matched ? (rawIqama ?? matched.iqama_number) : (rawIqama ?? rawId!);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+
+      const idNumber = rawId && rawId !== key ? rawId : matched ? matched.id_number : null;
+      resolvedRows.push({ key, idNumber, name, row, existingRiderId: matched?.id ?? null });
     }
 
-    const seen = new Set<string>();
-    const uniqueRows = validRows.filter((r) => {
-      if (seen.has(r.iqama)) return false;
-      seen.add(r.iqama);
-      return true;
-    });
+    // Reconcile rows that matched an existing rider under a different
+    // identity (e.g. correct a previous ID-only upload's iqama_number to
+    // the real Iqama number now that it's known) — only writes when
+    // something actually changed, so a routine monthly reupload with
+    // unchanged numbers touches nothing here.
+    const existingById = new Map(existingRiders.map((r) => [r.id, r]));
+    for (const r of resolvedRows) {
+      if (!r.existingRiderId) continue;
+      const existing = existingById.get(r.existingRiderId)!;
+      const patch: { iqama_number?: string; id_number?: string | null; rider_name?: string } = {};
+      if (r.key !== existing.iqama_number) patch.iqama_number = r.key;
+      if (r.idNumber !== (existing.id_number ?? null)) patch.id_number = r.idNumber;
+      if (r.name && r.name !== existing.rider_name) patch.rider_name = r.name;
+      if (Object.keys(patch).length > 0) {
+        const { error } = await supabase.from("riders").update(patch).eq("id", r.existingRiderId);
+        if (error) throw new Error(error.message);
+      }
+    }
 
-    const ridersPayload = uniqueRows.map((r) => ({
-      company_id: companyId,
-      iqama_number: r.iqama,
-      id_number: r.idNumber,
-      rider_name: r.name,
-    }));
-
-    if (ridersPayload.length > 0) {
-      const { error: upsertErr } = await supabase
-        .from("riders")
-        .upsert(ridersPayload, {
-          onConflict: "company_id,iqama_number",
-          ignoreDuplicates: false,
-        });
+    const newRows = resolvedRows.filter((r) => !r.existingRiderId);
+    if (newRows.length > 0) {
+      const { error: upsertErr } = await supabase.from("riders").upsert(
+        newRows.map((r) => ({
+          company_id: companyId,
+          iqama_number: r.key,
+          id_number: r.idNumber,
+          rider_name: r.name,
+        })),
+        { onConflict: "company_id,iqama_number", ignoreDuplicates: false },
+      );
       if (upsertErr) throw new Error(upsertErr.message);
     }
 
-    const iqamaList = uniqueRows.map((r) => r.iqama);
-    const { data: riders } = await supabase
-      .from("riders")
-      .select("id, iqama_number")
-      .eq("company_id", companyId)
-      .in("iqama_number", iqamaList);
-    const riderIdByIqama = new Map(
-      (riders ?? []).map((r: { id: string; iqama_number: string }) => [r.iqama_number, r.id]),
-    );
+    const riderIdByKey = new Map<string, string>();
+    for (const r of resolvedRows) {
+      if (r.existingRiderId) riderIdByKey.set(r.key, r.existingRiderId);
+    }
+    if (newRows.length > 0) {
+      const { data: created } = await supabase
+        .from("riders")
+        .select("id, iqama_number")
+        .eq("company_id", companyId)
+        .in(
+          "iqama_number",
+          newRows.map((r) => r.key),
+        );
+      for (const c of (created ?? []) as { id: string; iqama_number: string }[]) {
+        riderIdByKey.set(c.iqama_number, c.id);
+      }
+    }
 
-    const riderReportsPayload = uniqueRows
+    const riderReportsPayload = resolvedRows
       .map((r) => {
-        const riderId = riderIdByIqama.get(r.iqama);
+        const riderId = riderIdByKey.get(r.key);
         if (!riderId) return null;
         return {
           company_id: companyId,
