@@ -207,6 +207,25 @@ const dict = {
     ar: "استبدال إذا كان يوجد تقرير لنفس الشهر",
     en: "Replace if a report already exists for this month",
   },
+  "admin.uploadModeLabel": { ar: "طريقة الرفع", en: "Upload mode" },
+  "admin.modeNew": { ar: "تقرير شهر جديد", en: "New month's report" },
+  "admin.modeReplace": { ar: "استبدال تقرير الشهر", en: "Replace the month's report" },
+  "admin.modeMerge": {
+    ar: "دمج شيت إضافي مع تقرير الشهر",
+    en: "Merge an extra sheet into the month's report",
+  },
+  "admin.modeNewHint": {
+    ar: "لو فيه تقرير للشهر ده بالفعل هيطلع خطأ.",
+    en: "Fails if a report for this month already exists.",
+  },
+  "admin.modeReplaceHint": {
+    ar: "هيمسح تقرير الشهر الموجود وكل بياناته ويبدأ من جديد.",
+    en: "Deletes the existing month's report and its data, then starts fresh.",
+  },
+  "admin.modeMergeHint": {
+    ar: "هيضيف أعمدة الشيت ده لكل مندوب في تقرير الشهر الموجود (يُطابَق بالإقامة أو الـ ID). مناسب لرفع شيت المسافات وشيت التقييم كل واحد لوحده.",
+    en: "Adds this sheet's columns onto each rider in the existing month's report (matched by Iqama or ID). Good for uploading a distances sheet and a ratings sheet separately.",
+  },
   "admin.noteLabel": {
     ar: "ملحوظة عامة للشهر (اختياري)",
     en: "General note for the month (optional)",

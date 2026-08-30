@@ -64,7 +64,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { checkIsAdmin, deleteReport, uploadReport } from "@/lib/reports.functions";
 import {
   uploadRoster,
@@ -171,7 +170,7 @@ function AdminPage() {
   const [year, setYear] = useState<number>(now.getFullYear());
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState("");
-  const [replace, setReplace] = useState(false);
+  const [uploadMode, setUploadMode] = useState<"new" | "replace" | "merge">("new");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -236,13 +235,18 @@ function AdminPage() {
       // non-ASCII characters (e.g. Arabic file names) and some symbols, so
       // the storage path must not embed the raw file name — the original
       // name is kept separately in fileName/reports.file_name for display.
-      const extMatch = /\.[a-zA-Z0-9]+$/.exec(file.name);
-      const safeExt = extMatch ? extMatch[0] : "";
-      const path = `${year}/${String(month).padStart(2, "0")}-${Date.now()}${safeExt}`;
-      const { error: upErr } = await supabase.storage
-        .from("reports")
-        .upload(path, file, { upsert: true });
-      if (upErr) throw new Error(upErr.message);
+      // In "merge" mode the month's report already has a stored file, so
+      // this extra sheet isn't uploaded (its columns just merge into the DB).
+      let path: string | null = null;
+      if (uploadMode !== "merge") {
+        const extMatch = /\.[a-zA-Z0-9]+$/.exec(file.name);
+        const safeExt = extMatch ? extMatch[0] : "";
+        path = `${year}/${String(month).padStart(2, "0")}-${Date.now()}${safeExt}`;
+        const { error: upErr } = await supabase.storage
+          .from("reports")
+          .upload(path, file, { upsert: true });
+        if (upErr) throw new Error(upErr.message);
+      }
 
       const res = await uploadFn({
         data: {
@@ -255,18 +259,22 @@ function AdminPage() {
           idColumn: parsed.idColumn,
           nameColumn: parsed.nameColumn,
           rows: parsed.rows as Record<string, unknown>[],
-          replace,
+          mode: uploadMode,
           note: note.trim() || null,
         },
       });
       toast.success(
         lang === "ar"
-          ? `تم رفع التقرير بنجاح (${res.count} مندوب)`
-          : `Report uploaded successfully (${res.count} riders)`,
+          ? res.merged
+            ? `تم دمج الشيت مع تقرير الشهر (${res.count} مندوب)`
+            : `تم رفع التقرير بنجاح (${res.count} مندوب)`
+          : res.merged
+            ? `Sheet merged into the month's report (${res.count} riders)`
+            : `Report uploaded successfully (${res.count} riders)`,
       );
       setFile(null);
       setNote("");
-      setReplace(false);
+      setUploadMode("new");
       if (fileRef.current) fileRef.current.value = "";
       queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
     } catch (err) {
@@ -861,11 +869,30 @@ function AdminPage() {
                   rows={2}
                 />
               </div>
-              <div className="md:col-span-4 flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={replace} onCheckedChange={(v) => setReplace(v === true)} />
-                  {t("admin.replaceCheckbox")}
-                </label>
+              <div className="space-y-2 md:col-span-4">
+                <Label>{t("admin.uploadModeLabel")}</Label>
+                <Select
+                  value={uploadMode}
+                  onValueChange={(v) => setUploadMode(v as "new" | "replace" | "merge")}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">{t("admin.modeNew")}</SelectItem>
+                    <SelectItem value="replace">{t("admin.modeReplace")}</SelectItem>
+                    <SelectItem value="merge">{t("admin.modeMerge")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {uploadMode === "merge"
+                    ? t("admin.modeMergeHint")
+                    : uploadMode === "replace"
+                      ? t("admin.modeReplaceHint")
+                      : t("admin.modeNewHint")}
+                </p>
+              </div>
+              <div className="md:col-span-4 flex items-center justify-end">
                 <Button
                   type="submit"
                   disabled={uploading || !file}

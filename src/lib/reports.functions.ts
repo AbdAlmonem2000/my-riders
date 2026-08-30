@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Json } from "@/integrations/supabase/types";
 import {
   indexRiders,
   matchRider,
@@ -27,6 +28,34 @@ function numericCell(v: unknown): number | null {
 
 function formatSum(sum: number): string {
   return Number.isInteger(sum) ? String(sum) : String(Number(sum.toFixed(4)));
+}
+
+// Lay one upload's row on top of what's already stored for that rider in a
+// month (the "merge another sheet" flow — a distances sheet + a ratings
+// sheet, etc.). Any non-blank incoming cell wins; blank incoming cells keep
+// the stored value, so re-uploading a partial sheet never wipes data.
+function overlayReportRows(
+  stored: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...stored };
+  for (const [k, v] of Object.entries(incoming)) {
+    if (v !== undefined && v !== null && v !== "") out[k] = v;
+  }
+  return out;
+}
+
+function unionColumns(a: unknown, b: string[]): string[] {
+  const base = Array.isArray(a) ? (a as unknown[]).map(String) : [];
+  const seen = new Set(base);
+  const merged = [...base];
+  for (const c of b) {
+    if (!seen.has(c)) {
+      seen.add(c);
+      merged.push(c);
+    }
+  }
+  return merged;
 }
 
 // Merge a rider's repeated rows within one report: numeric columns are
@@ -69,7 +98,10 @@ const UploadInput = z
     idColumn: z.string().nullable(),
     nameColumn: z.string().nullable(),
     rows: z.array(RowSchema),
-    replace: z.boolean().optional(),
+    // "new"     -> fail if a report already exists for this month
+    // "replace" -> drop the existing month's report and start fresh
+    // "merge"   -> keep it, add this sheet's columns onto each rider's row
+    mode: z.enum(["new", "replace", "merge"]).optional(),
     note: z.string().trim().max(2000).nullable().optional(),
   })
   .refine((d) => d.iqamaColumn || d.idColumn, {
@@ -118,10 +150,13 @@ export const uploadReport = createServerFn({ method: "POST" })
       .eq("year", data.year)
       .maybeSingle();
 
-    if (existing && !data.replace) {
-      throw new Error("يوجد تقرير لهذا الشهر بالفعل. استخدم خيار الاستبدال.");
+    const mode = data.mode ?? "new";
+    const mergeIntoExisting = !!existing && mode === "merge";
+
+    if (existing && mode === "new") {
+      throw new Error("يوجد تقرير لهذا الشهر بالفعل. اختر «استبدال» أو «دمج مع الموجود».");
     }
-    if (existing) {
+    if (existing && mode === "replace") {
       // The replacement file was already uploaded under a new storage path
       // above, so the old file is now orphaned unless removed explicitly —
       // deleting the row alone doesn't touch storage.
@@ -132,21 +167,30 @@ export const uploadReport = createServerFn({ method: "POST" })
       await supabase.from("reports").delete().eq("id", existing.id);
     }
 
-    const { data: report, error: reportErr } = await supabase
-      .from("reports")
-      .insert({
-        company_id: companyId,
-        month: data.month,
-        year: data.year,
-        file_name: data.fileName,
-        storage_path: data.storagePath,
-        uploaded_by: userId,
-        rider_count: 0,
-        note: data.note?.trim() || null,
-      })
-      .select("id")
-      .single();
-    if (reportErr || !report) throw new Error(reportErr?.message ?? "فشل إنشاء التقرير");
+    let report: { id: string };
+    if (mergeIntoExisting) {
+      report = { id: existing!.id };
+      if (data.note?.trim()) {
+        await supabase.from("reports").update({ note: data.note.trim() }).eq("id", report.id);
+      }
+    } else {
+      const { data: created, error: reportErr } = await supabase
+        .from("reports")
+        .insert({
+          company_id: companyId,
+          month: data.month,
+          year: data.year,
+          file_name: data.fileName,
+          storage_path: data.storagePath,
+          uploaded_by: userId,
+          rider_count: 0,
+          note: data.note?.trim() || null,
+        })
+        .select("id")
+        .single();
+      if (reportErr || !created) throw new Error(reportErr?.message ?? "فشل إنشاء التقرير");
+      report = created;
+    }
 
     type Row = Record<string, unknown>;
 
@@ -211,12 +255,15 @@ export const uploadReport = createServerFn({ method: "POST" })
     const resolvedRows = [...resolvedByKey.values()];
 
     if (resolvedRows.length === 0 && malformed > 0) {
-      // Nothing usable in the sheet — undo the report row we created above so
-      // it doesn't linger empty.
-      await supabase.from("reports").delete().eq("id", report.id);
-      if (data.storagePath) {
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        await supabaseAdmin.storage.from("reports").remove([data.storagePath]);
+      // Nothing usable in the sheet. If we just created the report row, undo
+      // it so it doesn't linger empty — but never touch an existing report
+      // we were only merging into.
+      if (!mergeIntoExisting) {
+        await supabase.from("reports").delete().eq("id", report.id);
+        if (data.storagePath) {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          await supabaseAdmin.storage.from("reports").remove([data.storagePath]);
+        }
       }
       throw new Error(
         "الملف مش متقسّم لأعمدة صح — تأكد إن رقم الإقامة/الـ ID كل واحد في عمود مستقل (Excel) أو مفصول بفاصلة (CSV).",
@@ -314,20 +361,90 @@ export const uploadReport = createServerFn({ method: "POST" })
       }
     }
 
-    const riderReportsPayload = resolvedRows
-      .map((r) => {
-        if (!r.riderId) return null;
-        return {
+    const withRider = resolvedRows.filter((r): r is Resolved & { riderId: string } => !!r.riderId);
+
+    if (mergeIntoExisting) {
+      // Pull the rows this month already has for the riders in this sheet,
+      // then lay the new columns on top (or insert a fresh row for a rider
+      // who wasn't in the earlier sheet).
+      const riderIds = withRider.map((r) => r.riderId);
+      const existingRR = new Map<
+        string,
+        { id: string; data: Record<string, unknown>; columns: unknown }
+      >();
+      for (let i = 0; i < riderIds.length; i += 200) {
+        const slice = riderIds.slice(i, i + 200);
+        const { data: rows, error } = await supabase
+          .from("rider_reports")
+          .select("id, rider_id, data, columns")
+          .eq("report_id", report.id)
+          .in("rider_id", slice);
+        if (error) throw new Error(error.message);
+        for (const row of rows ?? []) {
+          existingRR.set(row.rider_id, {
+            id: row.id,
+            data: (row.data ?? {}) as Record<string, unknown>,
+            columns: row.columns,
+          });
+        }
+      }
+
+      type RRRow = {
+        company_id: string;
+        report_id: string;
+        rider_id: string;
+        data: Json;
+        columns: Json;
+      };
+      const updates: (RRRow & { id: string })[] = [];
+      const inserts: RRRow[] = [];
+      for (const r of withRider) {
+        const ex = existingRR.get(r.riderId);
+        const base: RRRow = {
           company_id: companyId,
           report_id: report.id,
           rider_id: r.riderId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data: r.row as any,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          columns: data.headers as any,
+          data: (ex ? overlayReportRows(ex.data, r.row) : r.row) as Json,
+          columns: (ex ? unionColumns(ex.columns, data.headers) : data.headers) as Json,
         };
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null);
+        if (ex) updates.push({ ...base, id: ex.id });
+        else inserts.push(base);
+      }
+
+      for (let i = 0; i < updates.length; i += WRITE_CHUNK) {
+        const { error } = await supabase
+          .from("rider_reports")
+          .upsert(updates.slice(i, i + WRITE_CHUNK), { onConflict: "id" });
+        if (error) throw new Error(error.message);
+      }
+      for (let i = 0; i < inserts.length; i += WRITE_CHUNK) {
+        const { error } = await supabase
+          .from("rider_reports")
+          .insert(inserts.slice(i, i + WRITE_CHUNK));
+        if (error) throw new Error(error.message);
+      }
+
+      const { count } = await supabase
+        .from("rider_reports")
+        .select("id", { count: "exact", head: true })
+        .eq("report_id", report.id);
+      await supabase
+        .from("reports")
+        .update({ rider_count: count ?? 0 })
+        .eq("id", report.id);
+
+      return { reportId: report.id, count: withRider.length, merged: true };
+    }
+
+    const riderReportsPayload = withRider.map((r) => ({
+      company_id: companyId,
+      report_id: report.id,
+      rider_id: r.riderId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: r.row as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      columns: data.headers as any,
+    }));
 
     for (let i = 0; i < riderReportsPayload.length; i += WRITE_CHUNK) {
       const chunk = riderReportsPayload.slice(i, i + WRITE_CHUNK);
@@ -340,7 +457,7 @@ export const uploadReport = createServerFn({ method: "POST" })
       .update({ rider_count: riderReportsPayload.length })
       .eq("id", report.id);
 
-    return { reportId: report.id, count: riderReportsPayload.length };
+    return { reportId: report.id, count: riderReportsPayload.length, merged: false };
   });
 
 export const deleteReport = createServerFn({ method: "POST" })
