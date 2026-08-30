@@ -10,7 +10,10 @@ const dict = {
   "index.headerTitle": { ar: "نظام مندوبي", en: "My Riders System" },
   "index.adminLogin": { ar: "دخول الإدارة", en: "Admin Login" },
   "index.liveBadge": { ar: "نظام مباشر ومحدث شهرياً", en: "Live system, updated monthly" },
-  "index.heroTitle": { ar: "تقارير المناديب من نظام مندوبي", en: "Rider Reports From My Riders System" },
+  "index.heroTitle": {
+    ar: "تقارير المناديب من نظام مندوبي",
+    en: "Rider Reports From My Riders System",
+  },
   "index.heroDesc": {
     ar: "أدخل رقم الإقامة أو ID الخاص بك لعرض تقاريرك الشهرية من الأداء والرواتب.",
     en: "Enter your Iqama or ID number to view your monthly performance and salary reports.",
@@ -79,6 +82,11 @@ const dict = {
     ar: "لا توجد بيانات مسجلة برقم الإقامة أو ID:",
     en: "No data found for Iqama or ID number:",
   },
+  "rider.blockedTitle": { ar: "تم إيقاف الاستعلام", en: "Lookup disabled" },
+  "rider.blockedDesc": {
+    ar: "تم إيقاف استعلامك عن التقارير من قبل شركتك. للاستفسار، تواصل مع الشركة مباشرة.",
+    en: "Your access to reports has been disabled by your company. Please contact the company directly.",
+  },
   "rider.multipleResultsTitle": { ar: "تم العثور على أكثر من نتيجة", en: "Multiple results found" },
   "rider.multipleResultsDesc": {
     ar: "هذا الرقم مسجل لدى أكثر من شركة. اختر شركتك للمتابعة:",
@@ -105,6 +113,7 @@ const dict = {
   "rider.metricHours": { ar: "ساعات العمل", en: "Work Hours" },
   "rider.metricSalary": { ar: "صافي الراتب", en: "Net Salary" },
   "rider.noteTitle": { ar: "ملحوظة من الشركة", en: "Note from the company" },
+  "rider.riderInfo": { ar: "بيانات المندوب", en: "Rider details" },
 
   "admin.unauthorizedTitle": { ar: "غير مصرح", en: "Not authorized" },
   "admin.unauthorizedDesc": {
@@ -128,6 +137,64 @@ const dict = {
   "admin.statReportsCount": { ar: "عدد التقارير", en: "Number of Reports" },
   "admin.statTotalRiders": { ar: "إجمالي المناديب", en: "Total Riders" },
   "admin.statLastReport": { ar: "آخر تقرير", en: "Last Report" },
+  "admin.rosterCardTitle": {
+    ar: "بيانات المناديب (الشيت الأساسي)",
+    en: "Rider Directory (master sheet)",
+  },
+  "admin.rosterCardDesc": {
+    ar: "ارفع شيت فيه رقم الإقامة و/أو الـ ID، الاسم، صورة المندوب (كرابط)، وأي بيانات إضافية. النظام يربط كل ده بالمندوب، وبعدها أي تقرير شهري يكفيه رقم واحد فقط (إقامة أو ID) والنظام يعرف الباقي.",
+    en: "Upload a sheet with the Iqama and/or ID number, name, rider photo (as a link) and any extra data. The system links it all to each rider, so later a monthly report only needs one number (Iqama or ID) and the system knows the rest.",
+  },
+  "admin.rosterFileLabel": { ar: "شيت بيانات المناديب", en: "Rider data sheet" },
+  "admin.rosterUploadButton": { ar: "تحديث بيانات المناديب", en: "Update rider directory" },
+  "admin.rosterUploadingButton": { ar: "جاري التحديث...", en: "Updating..." },
+  "admin.registeredRidersTitle": { ar: "المناديب المسجّلون", en: "Registered riders" },
+  "admin.noRidersYet": { ar: "لا يوجد مناديب مسجّلون بعد", en: "No riders registered yet" },
+  "admin.riderSearchPlaceholder": {
+    ar: "بحث بالاسم أو رقم الإقامة أو ID",
+    en: "Search by name, Iqama or ID",
+  },
+  "admin.riderSearchNoResults": {
+    ar: "لا يوجد مندوب مطابق للبحث",
+    en: "No rider matches the search",
+  },
+  "admin.statRegisteredRiders": { ar: "مناديب مسجّلون", en: "Registered riders" },
+  "admin.tablePhoto": { ar: "الصورة", en: "Photo" },
+  "admin.tableName": { ar: "الاسم", en: "Name" },
+  "admin.tableRider": { ar: "المندوب", en: "Rider" },
+  "admin.tableIqama": { ar: "رقم الإقامة", en: "Iqama" },
+  "admin.tableIdNumber": { ar: "الـ ID", en: "ID" },
+  "admin.tableStatus": { ar: "الحالة", en: "Status" },
+  "admin.riderBlockedLabel": { ar: "ممنوع من الاستعلام", en: "Blocked from lookup" },
+  "admin.riderBlockButton": { ar: "منع", en: "Block" },
+  "admin.riderUnblockButton": { ar: "سماح", en: "Allow" },
+  "admin.toastRiderBlocked": {
+    ar: "تم منع المندوب من الاستعلام عن تقاريره",
+    en: "Rider blocked from viewing their reports",
+  },
+  "admin.toastRiderUnblocked": {
+    ar: "تم السماح للمندوب بالاستعلام عن تقاريره",
+    en: "Rider allowed to view their reports again",
+  },
+  "admin.toastRiderBlockFailed": {
+    ar: "فشل تحديث حالة المندوب",
+    en: "Failed to update rider status",
+  },
+  "admin.toastRosterFailed": {
+    ar: "فشل تحديث بيانات المناديب",
+    en: "Failed to update rider directory",
+  },
+  "admin.rosterDownloadButton": { ar: "تنزيل الشيت", en: "Download sheet" },
+  "admin.rosterDeleteButton": { ar: "حذف بيانات المناديب", en: "Delete directory" },
+  "admin.rosterDeleteTitle": { ar: "حذف بيانات المناديب؟", en: "Delete rider directory?" },
+  "admin.rosterDeleteDesc": {
+    ar: "هيتم حذف الشيت المحفوظ وكل مندوب مسجّل لسه مالوش أي تقرير شهري. المناديب اللي عندهم تقارير مش هيتأثروا. لا يمكن التراجع.",
+    en: "The saved sheet and every registered rider that has no monthly report yet will be deleted. Riders that already have reports are not affected. This cannot be undone.",
+  },
+  "admin.toastRosterDeleteFailed": {
+    ar: "فشل حذف بيانات المناديب",
+    en: "Failed to delete rider directory",
+  },
   "admin.uploadCardTitle": { ar: "رفع تقرير جديد", en: "Upload New Report" },
   "admin.uploadCardDesc": {
     ar: "اختر الشهر والسنة ثم ارفع ملف Excel",
@@ -135,12 +202,15 @@ const dict = {
   },
   "admin.monthLabel": { ar: "الشهر", en: "Month" },
   "admin.yearLabel": { ar: "السنة", en: "Year" },
-  "admin.excelFileLabel": { ar: "ملف Excel", en: "Excel File" },
+  "admin.excelFileLabel": { ar: "ملف Excel أو CSV", en: "Excel or CSV file" },
   "admin.replaceCheckbox": {
     ar: "استبدال إذا كان يوجد تقرير لنفس الشهر",
     en: "Replace if a report already exists for this month",
   },
-  "admin.noteLabel": { ar: "ملحوظة عامة للشهر (اختياري)", en: "General note for the month (optional)" },
+  "admin.noteLabel": {
+    ar: "ملحوظة عامة للشهر (اختياري)",
+    en: "General note for the month (optional)",
+  },
   "admin.notePlaceholder": {
     ar: "مثال: سيتم صرف الرواتب يوم 5 بدلاً من يوم 1 هذا الشهر",
     en: "e.g. Salaries will be paid on the 5th instead of the 1st this month",
@@ -224,7 +294,10 @@ const dict = {
     en: "Reaches every company account right away, and shows up for them as a new notification in their dashboard.",
   },
   "superAdmin.announcementTitleLabel": { ar: "العنوان", en: "Title" },
-  "superAdmin.announcementTitlePlaceholder": { ar: "مثال: تحديث جديد على النظام", en: "e.g. New system update" },
+  "superAdmin.announcementTitlePlaceholder": {
+    ar: "مثال: تحديث جديد على النظام",
+    en: "e.g. New system update",
+  },
   "superAdmin.announcementBodyLabel": { ar: "الرسالة", en: "Message" },
   "superAdmin.announcementBodyPlaceholder": {
     ar: "اكتب اللي عايز كل الشركات تعرفه...",
@@ -287,6 +360,16 @@ const dict = {
   "superAdmin.toastPasswordUpdated": { ar: "تم تحديث كلمة المرور", en: "Password updated" },
   "superAdmin.toastLogoUpdated": { ar: "تم تحديث الشعار", en: "Logo updated" },
   "superAdmin.toastNameUpdated": { ar: "تم تحديث اسم الشركة", en: "Company name updated" },
+  "superAdmin.companyNoteTitle": { ar: "ملاحظة عن الشركة", en: "Company note" },
+  "superAdmin.companyNoteDesc": {
+    ar: "ملاحظة داخلية تظهر لك أنت فقط في هذه اللوحة، ولا يراها حساب الشركة.",
+    en: "Internal note, visible only to you on this dashboard — the company account never sees it.",
+  },
+  "superAdmin.companyNotePlaceholder": {
+    ar: "اكتب ملاحظتك عن هذه الشركة...",
+    en: "Write your note about this company...",
+  },
+  "superAdmin.toastNoteUpdated": { ar: "تم حفظ الملاحظة", en: "Note saved" },
   "superAdmin.toastChooseLogo": { ar: "اختر صورة الشعار", en: "Choose a logo image" },
   "superAdmin.toastMinPassword": { ar: "6 أحرف على الأقل", en: "At least 6 characters" },
 

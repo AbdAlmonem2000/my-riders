@@ -1,6 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import {
+  indexRiders,
+  matchRider,
+  cellText,
+  looksLikeIdentifier,
+  type RiderIdentity,
+} from "@/lib/rider-identity";
 
 const RowSchema = z.record(z.string(), z.unknown());
 
@@ -32,9 +39,9 @@ async function getCallerCompany(
 }
 
 // Helper for typing without exporting supabase
-function getSupabaseFromContext(
-  ctx: { supabase: unknown },
-): // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getSupabaseFromContext(ctx: {
+  supabase: unknown;
+}): // eslint-disable-next-line @typescript-eslint/no-explicit-any
 any {
   return ctx.supabase;
 }
@@ -94,146 +101,169 @@ export const uploadReport = createServerFn({ method: "POST" })
       .single();
     if (reportErr || !report) throw new Error(reportErr?.message ?? "فشل إنشاء التقرير");
 
-    const iqamaCol = data.iqamaColumn;
-    const idCol = data.idColumn;
-    const nameCol = data.nameColumn;
     type Row = Record<string, unknown>;
-    const cellText = (row: Row, col: string | null) => {
-      if (!col) return null;
-      const v = row[col];
-      if (v === undefined || v === null) return null;
-      const s = String(v).trim();
-      return s || null;
-    };
 
-    // A rider can show up across uploads under different combinations of
-    // Iqama/ID (e.g. one sheet has only the ID column, another has both
-    // Iqama and ID for the same person). Resolve each row against riders
-    // already on file — by either number — and merge into that existing
-    // row instead of letting an ID-only upload's "ID used as the key"
-    // fallback mint a second, duplicate rider for the same person.
-    type ExistingRider = {
-      id: string;
-      iqama_number: string;
-      id_number: string | null;
-      rider_name: string | null;
-    };
-    const { data: existingRidersRaw } = await supabase
+    // Resolve every report row against riders already on file. A rider is
+    // keyed by an Iqama number and/or a separate ID number — established up
+    // front via the rider-directory sheet, or the first time they appear in
+    // any report. A monthly report row only has to carry ONE of those
+    // numbers: matchRider() finds the existing rider by either, so an
+    // ID-only report still lands on the right person instead of minting a
+    // duplicate. A monthly report is never the authority on identity, so an
+    // existing name/number is left untouched and only blank fields get
+    // backfilled — the directory owns name/photo/extra data.
+    const { data: existingRaw } = await supabase
       .from("riders")
       .select("id, iqama_number, id_number, rider_name")
       .eq("company_id", companyId);
-    const existingRiders = (existingRidersRaw ?? []) as ExistingRider[];
-    const byIqama = new Map(existingRiders.map((r) => [r.iqama_number, r]));
-    const byIdNumber = new Map(
-      existingRiders.filter((r) => r.id_number).map((r) => [r.id_number as string, r]),
-    );
+    const existingRiders = (existingRaw ?? []) as RiderIdentity[];
+    const riderIndex = indexRiders(existingRiders);
+    const existingById = new Map(existingRiders.map((r) => [r.id, r]));
 
     interface Resolved {
-      key: string;
+      riderId: string | null;
+      iqama: string | null;
       idNumber: string | null;
       name: string | null;
       row: Row;
-      existingRiderId: string | null;
     }
     const resolvedRows: Resolved[] = [];
-    const seenKeys = new Set<string>();
+    const seen = new Set<string>();
+    let malformed = 0;
     for (const row of data.rows) {
-      const rawIqama = cellText(row, iqamaCol);
-      const rawId = cellText(row, idCol);
-      if (!rawIqama && !rawId) continue;
-      const name = nameCol ? (row[nameCol] != null ? String(row[nameCol]).trim() : null) : null;
-
-      let matched: ExistingRider | undefined;
-      if (rawIqama) matched = byIqama.get(rawIqama);
-      if (!matched && rawId) matched = byIdNumber.get(rawId) ?? byIqama.get(rawId);
-
-      const key = matched ? (rawIqama ?? matched.iqama_number) : (rawIqama ?? rawId!);
-      if (seenKeys.has(key)) continue;
-      seenKeys.add(key);
-
-      const idNumber = rawId && rawId !== key ? rawId : matched ? matched.id_number : null;
-      resolvedRows.push({ key, idNumber, name, row, existingRiderId: matched?.id ?? null });
+      const rawIqama0 = cellText(row, data.iqamaColumn);
+      const rawId0 = cellText(row, data.idColumn);
+      const rawIqama = rawIqama0 && looksLikeIdentifier(rawIqama0) ? rawIqama0 : null;
+      const rawId = rawId0 && looksLikeIdentifier(rawId0) ? rawId0 : null;
+      if (!rawIqama && !rawId) {
+        if (rawIqama0 || rawId0) malformed++;
+        continue;
+      }
+      const name = cellText(row, data.nameColumn);
+      const match = matchRider(riderIndex, rawIqama, rawId);
+      const dedupKey = match ? `r:${match.id}` : `n:${rawIqama ?? ""}|${rawId ?? ""}`;
+      if (seen.has(dedupKey)) continue;
+      seen.add(dedupKey);
+      resolvedRows.push({
+        riderId: match?.id ?? null,
+        iqama: rawIqama,
+        idNumber: rawId,
+        name,
+        row,
+      });
     }
 
-    // Reconcile rows that matched an existing rider under a different
-    // identity (e.g. correct a previous ID-only upload's iqama_number to
-    // the real Iqama number now that it's known, or backfill id_number for
-    // the first time on a large existing company). Batched into one
-    // upsert-by-id instead of one UPDATE per row — a company-wide backfill
-    // can touch hundreds of rows, and awaiting them one at a time serially
-    // is slow enough to blow past the serverless function's time limit.
-    const existingById = new Map(existingRiders.map((r) => [r.id, r]));
-    const reconcilePayload: {
+    if (resolvedRows.length === 0 && malformed > 0) {
+      // Nothing usable in the sheet — undo the report row we created above so
+      // it doesn't linger empty.
+      await supabase.from("reports").delete().eq("id", report.id);
+      if (data.storagePath) {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        await supabaseAdmin.storage.from("reports").remove([data.storagePath]);
+      }
+      throw new Error(
+        "الملف مش متقسّم لأعمدة صح — تأكد إن رقم الإقامة/الـ ID كل واحد في عمود مستقل (Excel) أو مفصول بفاصلة (CSV).",
+      );
+    }
+
+    // Backfill blank identity fields on matched riders, batched into one
+    // upsert-by-id instead of one UPDATE per row — a first-time ID backfill
+    // across a large company can touch hundreds of rows, and awaiting them
+    // serially is slow enough to blow the serverless function's time limit.
+    const patchPayload: {
       id: string;
       company_id: string;
-      iqama_number: string;
+      iqama_number: string | null;
       id_number: string | null;
       rider_name: string | null;
     }[] = [];
     for (const r of resolvedRows) {
-      if (!r.existingRiderId) continue;
-      const existing = existingById.get(r.existingRiderId)!;
-      const riderName = r.name && r.name !== existing.rider_name ? r.name : existing.rider_name;
-      const changed =
-        r.key !== existing.iqama_number ||
-        r.idNumber !== (existing.id_number ?? null) ||
-        riderName !== existing.rider_name;
-      if (!changed) continue;
-      reconcilePayload.push({
-        id: r.existingRiderId,
-        company_id: companyId,
-        iqama_number: r.key,
-        id_number: r.idNumber,
-        rider_name: riderName,
-      });
+      if (!r.riderId) continue;
+      const ex = existingById.get(r.riderId)!;
+      const nextIqama = ex.iqama_number ?? r.iqama;
+      const nextId = ex.id_number ?? r.idNumber;
+      const nextName = ex.rider_name ?? r.name;
+      if (nextIqama !== ex.iqama_number || nextId !== ex.id_number || nextName !== ex.rider_name) {
+        patchPayload.push({
+          id: r.riderId,
+          company_id: companyId,
+          iqama_number: nextIqama,
+          id_number: nextId,
+          rider_name: nextName,
+        });
+      }
     }
-    if (reconcilePayload.length > 0) {
-      const { error } = await supabase
-        .from("riders")
-        .upsert(reconcilePayload, { onConflict: "id" });
+    // Rows written to the DB in one call — kept modest so no single request
+    // is large enough to trip a body-size or gateway timeout on a big sheet.
+    const WRITE_CHUNK = 300;
+
+    for (let i = 0; i < patchPayload.length; i += WRITE_CHUNK) {
+      const slice = patchPayload.slice(i, i + WRITE_CHUNK);
+      const { error } = await supabase.from("riders").upsert(slice, { onConflict: "id" });
       if (error) throw new Error(error.message);
     }
 
-    const newRows = resolvedRows.filter((r) => !r.existingRiderId);
+    // Create riders seen for the first time. A row carrying only an ID
+    // becomes an ID-only rider (iqama_number stays null) rather than
+    // stuffing the ID into the Iqama column. `.select()` on the write hands
+    // back the generated ids directly — no separate re-read (a `.in()` over
+    // hundreds of numbers builds a URL long enough to be rejected).
+    const newRows = resolvedRows.filter((r) => !r.riderId);
     if (newRows.length > 0) {
-      const { error: upsertErr } = await supabase.from("riders").upsert(
-        newRows.map((r) => ({
-          company_id: companyId,
-          iqama_number: r.key,
-          id_number: r.idNumber,
-          rider_name: r.name,
-        })),
-        { onConflict: "company_id,iqama_number", ignoreDuplicates: false },
-      );
-      if (upsertErr) throw new Error(upsertErr.message);
-    }
+      const withIqama = newRows.filter((r) => r.iqama);
+      const idOnly = newRows.filter((r) => !r.iqama);
+      const createdList: RiderIdentity[] = [];
 
-    const riderIdByKey = new Map<string, string>();
-    for (const r of resolvedRows) {
-      if (r.existingRiderId) riderIdByKey.set(r.key, r.existingRiderId);
-    }
-    if (newRows.length > 0) {
-      const { data: created } = await supabase
-        .from("riders")
-        .select("id, iqama_number")
-        .eq("company_id", companyId)
-        .in(
-          "iqama_number",
-          newRows.map((r) => r.key),
-        );
-      for (const c of (created ?? []) as { id: string; iqama_number: string }[]) {
-        riderIdByKey.set(c.iqama_number, c.id);
+      for (let i = 0; i < withIqama.length; i += WRITE_CHUNK) {
+        const slice = withIqama.slice(i, i + WRITE_CHUNK);
+        const { data: c, error } = await supabase
+          .from("riders")
+          .upsert(
+            slice.map((r) => ({
+              company_id: companyId,
+              iqama_number: r.iqama,
+              id_number: r.idNumber,
+              rider_name: r.name,
+            })),
+            { onConflict: "company_id,iqama_number", ignoreDuplicates: false },
+          )
+          .select("id, iqama_number, id_number");
+        if (error) throw new Error(error.message);
+        createdList.push(...((c ?? []) as RiderIdentity[]));
+      }
+
+      for (let i = 0; i < idOnly.length; i += WRITE_CHUNK) {
+        const slice = idOnly.slice(i, i + WRITE_CHUNK);
+        const { data: c, error } = await supabase
+          .from("riders")
+          .insert(
+            slice.map((r) => ({
+              company_id: companyId,
+              iqama_number: null,
+              id_number: r.idNumber,
+              rider_name: r.name,
+            })),
+          )
+          .select("id, iqama_number, id_number");
+        if (error) throw new Error(error.message);
+        createdList.push(...((c ?? []) as RiderIdentity[]));
+      }
+
+      const createdIndex = indexRiders(createdList);
+      for (const r of resolvedRows) {
+        if (r.riderId) continue;
+        const m = matchRider(createdIndex, r.iqama, r.idNumber);
+        if (m) r.riderId = m.id;
       }
     }
 
     const riderReportsPayload = resolvedRows
       .map((r) => {
-        const riderId = riderIdByKey.get(r.key);
-        if (!riderId) return null;
+        if (!r.riderId) return null;
         return {
           company_id: companyId,
           report_id: report.id,
-          rider_id: riderId,
+          rider_id: r.riderId,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           data: r.row as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -242,9 +272,8 @@ export const uploadReport = createServerFn({ method: "POST" })
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
 
-    const CHUNK = 500;
-    for (let i = 0; i < riderReportsPayload.length; i += CHUNK) {
-      const chunk = riderReportsPayload.slice(i, i + CHUNK);
+    for (let i = 0; i < riderReportsPayload.length; i += WRITE_CHUNK) {
+      const chunk = riderReportsPayload.slice(i, i + WRITE_CHUNK);
       const { error } = await supabase.from("rider_reports").insert(chunk);
       if (error) throw new Error(error.message);
     }
@@ -293,20 +322,26 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let companyName: string | null = null;
     let companyLogoUrl: string | null = null;
     let isSuspended = false;
+    let rosterFileName: string | null = null;
+    let rosterUploadedAt: string | null = null;
     if (companyId) {
       const { data } = await supabase
         .from("companies")
-        .select("name, logo_url, is_suspended")
+        .select("name, logo_url, is_suspended, roster_file_name, roster_uploaded_at")
         .eq("id", companyId)
         .maybeSingle();
       companyName = (data?.name as string | undefined) ?? null;
       companyLogoUrl = (data?.logo_url as string | undefined) ?? null;
       isSuspended = (data?.is_suspended as boolean | undefined) ?? false;
+      rosterFileName = (data?.roster_file_name as string | undefined) ?? null;
+      rosterUploadedAt = (data?.roster_uploaded_at as string | undefined) ?? null;
     }
     return {
       isAdmin: isSuperAdmin || !!companyId,
       isSuperAdmin,
       companyId,
+      rosterFileName,
+      rosterUploadedAt,
       companyName,
       companyLogoUrl,
       isSuspended,

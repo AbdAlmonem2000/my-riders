@@ -14,6 +14,7 @@ dist-ssr
 .vinxi
 .tanstack/**
 .nitro
+.netlify
 *.local
 
 # Contains SUPABASE_SERVICE_ROLE_KEY (full admin access) — never commit

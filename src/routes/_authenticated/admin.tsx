@@ -4,14 +4,17 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  Ban,
   Bell,
   Building2,
   Download,
+  Eye,
   FileSpreadsheet,
   Loader2,
   Lock,
   LogOut,
   MessageSquare,
+  Search,
   Trash2,
   Upload,
   Users,
@@ -63,6 +66,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { checkIsAdmin, deleteReport, uploadReport } from "@/lib/reports.functions";
+import {
+  uploadRoster,
+  deleteRoster,
+  getRosterDownloadUrl,
+  setRiderBlocked,
+} from "@/lib/riders.functions";
 import { updateCompanyLogo, updateCompanyName } from "@/lib/accounts.functions";
 import { listAnnouncements, markAnnouncementsRead } from "@/lib/announcements.functions";
 import { parseExcelFile, monthLabel, MONTH_NAMES_AR, MONTH_NAMES_EN } from "@/lib/excel";
@@ -73,12 +82,34 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminPage,
 });
 
+function riderExtra(extra: unknown): Record<string, unknown> {
+  return extra && typeof extra === "object" && !Array.isArray(extra)
+    ? (extra as Record<string, unknown>)
+    : {};
+}
+
+// Surface *something* useful whatever shape the failure arrives in — a plain
+// Error, a serverFn wrapper, a swallowed gateway 500, an abort/timeout.
+function errText(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string" && err) return err;
+  if (err && typeof err === "object") {
+    const m = (err as { message?: unknown }).message;
+    if (typeof m === "string" && m) return m;
+  }
+  return fallback;
+}
+
 function AdminPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { t, lang } = useLanguage();
   const isAdminFn = useServerFn(checkIsAdmin);
   const uploadFn = useServerFn(uploadReport);
+  const rosterFn = useServerFn(uploadRoster);
+  const deleteRosterFn = useServerFn(deleteRoster);
+  const rosterUrlFn = useServerFn(getRosterDownloadUrl);
+  const setRiderBlockedFn = useServerFn(setRiderBlocked);
   const deleteFn = useServerFn(deleteReport);
   const listAnnouncementsFn = useServerFn(listAnnouncements);
   const markAnnouncementsReadFn = useServerFn(markAnnouncementsRead);
@@ -110,6 +141,31 @@ function AdminPage() {
     },
   });
 
+  const ridersQuery = useQuery({
+    queryKey: ["company-riders"],
+    enabled: !!adminCheck.data?.companyId && !adminCheck.data?.isSuperAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("riders")
+        .select("id, iqama_number, id_number, rider_name, photo_url, extra, is_blocked")
+        .order("created_at", { ascending: false })
+        .limit(1000);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Any column the directory sheet carried beyond Iqama/ID/name/photo is
+  // kept per-rider in `extra`; surface all of them as table columns.
+  const extraColumns = useMemo(() => {
+    const keys = new Set<string>();
+    for (const r of ridersQuery.data ?? []) {
+      const e = riderExtra(r.extra);
+      for (const k of Object.keys(e)) keys.add(k);
+    }
+    return [...keys];
+  }, [ridersQuery.data]);
+
   const now = new Date();
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
   const [year, setYear] = useState<number>(now.getFullYear());
@@ -118,6 +174,40 @@ function AdminPage() {
   const [replace, setReplace] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [rosterFile, setRosterFile] = useState<File | null>(null);
+  const [rosterUploading, setRosterUploading] = useState(false);
+  const rosterFileRef = useRef<HTMLInputElement>(null);
+  const [riderSearch, setRiderSearch] = useState("");
+  const [blockingRiderId, setBlockingRiderId] = useState<string | null>(null);
+
+  const toggleRiderBlocked = async (riderId: string, blocked: boolean) => {
+    setBlockingRiderId(riderId);
+    try {
+      await setRiderBlockedFn({ data: { riderId, blocked } });
+      toast.success(blocked ? t("admin.toastRiderBlocked") : t("admin.toastRiderUnblocked"));
+      queryClient.invalidateQueries({ queryKey: ["company-riders"] });
+    } catch (err) {
+      toast.error(errText(err, t("admin.toastRiderBlockFailed")));
+    } finally {
+      setBlockingRiderId(null);
+    }
+  };
+
+  const filteredRiders = useMemo(() => {
+    const rows = ridersQuery.data ?? [];
+    const q = riderSearch.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const haystack = [
+        r.rider_name,
+        r.iqama_number,
+        r.id_number,
+        ...Object.values(riderExtra(r.extra)).map((v) => (v == null ? "" : String(v))),
+      ];
+      return haystack.some((v) => (v ?? "").toLowerCase().includes(q));
+    });
+  }, [ridersQuery.data, riderSearch]);
 
   const years = useMemo(() => {
     const y = now.getFullYear();
@@ -179,11 +269,98 @@ function AdminPage() {
       setReplace(false);
       if (fileRef.current) fileRef.current.value = "";
       queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      toast.error(err.message ?? t("admin.toastUploadFailed"));
+    } catch (err) {
+      console.error("uploadReport failed", err);
+      toast.error(errText(err, t("admin.toastUploadFailed")));
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleRosterUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rosterFile) return toast.error(t("admin.toastSelectFile"));
+    setRosterUploading(true);
+    try {
+      const parsed = await parseExcelFile(rosterFile);
+      if (!parsed.iqamaColumn && !parsed.idColumn) {
+        throw new Error(t("admin.toastNoIqamaColumn"));
+      }
+      if (parsed.rows.length === 0) throw new Error(t("admin.toastEmptyFile"));
+
+      // Keep the raw sheet for re-download. Storage keys reject non-ASCII, so
+      // the path never embeds the original name — that's kept separately.
+      const companyId = adminCheck.data?.companyId;
+      const extMatch = /\.[a-zA-Z0-9]+$/.exec(rosterFile.name);
+      const safeExt = extMatch ? extMatch[0] : "";
+      const path = companyId ? `${companyId}/${Date.now()}${safeExt}` : null;
+      if (path) {
+        const { error: upErr } = await supabase.storage
+          .from("rosters")
+          .upload(path, rosterFile, { upsert: true });
+        if (upErr) throw new Error(upErr.message);
+      }
+
+      const res = await rosterFn({
+        data: {
+          headers: parsed.headers,
+          iqamaColumn: parsed.iqamaColumn,
+          idColumn: parsed.idColumn,
+          nameColumn: parsed.nameColumn,
+          photoColumn: parsed.photoColumn,
+          storagePath: path,
+          fileName: rosterFile.name,
+          rows: parsed.rows as Record<string, unknown>[],
+        },
+      });
+      const skippedNote = res.skipped
+        ? lang === "ar"
+          ? `، ${res.skipped} متخطى`
+          : `, ${res.skipped} skipped`
+        : "";
+      toast.success(
+        lang === "ar"
+          ? `تم تحديث بيانات المناديب (${res.created} جديد، ${res.updated} محدّث${skippedNote})`
+          : `Rider directory updated (${res.created} new, ${res.updated} updated${skippedNote})`,
+      );
+      setRosterFile(null);
+      if (rosterFileRef.current) rosterFileRef.current.value = "";
+      queryClient.invalidateQueries({ queryKey: ["company-riders"] });
+      queryClient.invalidateQueries({ queryKey: ["is-admin"] });
+    } catch (err) {
+      console.error("uploadRoster failed", err);
+      toast.error(errText(err, t("admin.toastRosterFailed")));
+    } finally {
+      setRosterUploading(false);
+    }
+  };
+
+  const [rosterDeleting, setRosterDeleting] = useState(false);
+
+  const handleRosterDownload = async () => {
+    try {
+      const { url } = await rosterUrlFn();
+      window.open(url, "_blank");
+    } catch (err) {
+      toast.error(errText(err, t("admin.toastDownloadFailed")));
+    }
+  };
+
+  const handleRosterDelete = async () => {
+    setRosterDeleting(true);
+    try {
+      const res = await deleteRosterFn();
+      toast.success(
+        lang === "ar"
+          ? `تم حذف بيانات المناديب (${res.deleted} مندوب)`
+          : `Rider directory deleted (${res.deleted} riders removed)`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["company-riders"] });
+      queryClient.invalidateQueries({ queryKey: ["is-admin"] });
+    } catch (err) {
+      toast.error(errText(err, t("admin.toastRosterDeleteFailed")));
+    } finally {
+      setRosterDeleting(false);
     }
   };
 
@@ -284,9 +461,7 @@ function AdminPage() {
               </div>
             )}
             <div>
-              <h1 className="text-lg font-semibold">
-                {companyName ?? t("admin.headerTitle")}
-              </h1>
+              <h1 className="text-lg font-semibold">{companyName ?? t("admin.headerTitle")}</h1>
               <p className="text-xs text-muted-foreground">
                 {companyName ? t("admin.headerTitle") : t("admin.headerSubtitleDefault")}
               </p>
@@ -340,7 +515,7 @@ function AdminPage() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label={t("admin.statReportsCount")}
             value={reportsQuery.data?.length ?? 0}
@@ -348,10 +523,16 @@ function AdminPage() {
             delay={0}
           />
           <StatCard
+            label={t("admin.statRegisteredRiders")}
+            value={ridersQuery.data?.length ?? 0}
+            icon={Users}
+            delay={80}
+          />
+          <StatCard
             label={t("admin.statTotalRiders")}
             value={totalRiders}
             icon={Users}
-            delay={80}
+            delay={160}
           />
           <StatCard
             label={t("admin.statLastReport")}
@@ -361,9 +542,263 @@ function AdminPage() {
                 : "—"
             }
             icon={CheckCircle2}
-            delay={160}
+            delay={240}
           />
         </div>
+
+        <Card
+          className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-[backwards]"
+          style={{ animationDelay: "200ms" }}
+        >
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              {t("admin.rosterCardTitle")}
+            </CardTitle>
+            <CardDescription>{t("admin.rosterCardDesc")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form onSubmit={handleRosterUpload} className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2 md:col-span-2">
+                <Label>{t("admin.rosterFileLabel")}</Label>
+                <Input
+                  ref={rosterFileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(e) => setRosterFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button
+                  type="submit"
+                  disabled={rosterUploading || !rosterFile}
+                  className="w-full transition-transform active:scale-[0.98]"
+                >
+                  {rosterUploading ? (
+                    <>
+                      <Loader2 className="ms-2 h-4 w-4 animate-spin" />
+                      {t("admin.rosterUploadingButton")}
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="ms-2 h-4 w-4" />
+                      {t("admin.rosterUploadButton")}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+
+            {adminCheck.data?.rosterFileName && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">
+                    {adminCheck.data.rosterFileName}
+                  </div>
+                  {adminCheck.data.rosterUploadedAt && (
+                    <div className="text-[11px] text-muted-foreground">
+                      {new Date(adminCheck.data.rosterUploadedAt).toLocaleString(
+                        lang === "ar" ? "ar-SA" : "en-US",
+                      )}
+                    </div>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRosterDownload}
+                  title={t("admin.rosterDownloadButton")}
+                >
+                  <Download className="ms-1.5 h-4 w-4" />
+                  {t("admin.rosterDownloadButton")}
+                </Button>
+              </div>
+            )}
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">
+                  {t("admin.registeredRidersTitle")}{" "}
+                  <span className="text-muted-foreground">({ridersQuery.data?.length ?? 0})</span>
+                </p>
+                {(ridersQuery.data?.length ?? 0) > 0 && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        disabled={rosterDeleting}
+                      >
+                        {rosterDeleting ? (
+                          <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="ms-1.5 h-4 w-4" />
+                        )}
+                        {t("admin.rosterDeleteButton")}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t("admin.rosterDeleteTitle")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t("admin.rosterDeleteDesc")}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={handleRosterDelete}
+                        >
+                          {t("admin.delete")}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </div>
+              {ridersQuery.isLoading && (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {ridersQuery.data && ridersQuery.data.length === 0 && (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  {t("admin.noRidersYet")}
+                </p>
+              )}
+              {ridersQuery.data && ridersQuery.data.length > 0 && (
+                <>
+                  <div className="relative mb-3">
+                    <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={riderSearch}
+                      onChange={(e) => setRiderSearch(e.target.value)}
+                      placeholder={t("admin.riderSearchPlaceholder")}
+                      className="pe-9"
+                    />
+                  </div>
+                  {filteredRiders.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      {t("admin.riderSearchNoResults")}
+                    </p>
+                  ) : (
+                    <div className="overflow-hidden rounded-xl border">
+                      <div className="max-h-[26rem] overflow-auto">
+                        <Table>
+                          <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:h-9 [&_th]:text-xs">
+                            <TableRow className="hover:bg-transparent">
+                              <TableHead className="min-w-[180px]">
+                                {t("admin.tableRider")}
+                              </TableHead>
+                              <TableHead className="whitespace-nowrap">
+                                {t("admin.tableIqama")}
+                              </TableHead>
+                              <TableHead className="whitespace-nowrap">
+                                {t("admin.tableIdNumber")}
+                              </TableHead>
+                              {extraColumns.map((col) => (
+                                <TableHead key={col} className="whitespace-nowrap">
+                                  {col}
+                                </TableHead>
+                              ))}
+                              <TableHead className="whitespace-nowrap text-end">
+                                {t("admin.tableStatus")}
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredRiders.map((r) => {
+                              const extra = riderExtra(r.extra);
+                              return (
+                                <TableRow
+                                  key={r.id}
+                                  className={r.is_blocked ? "bg-destructive/5" : undefined}
+                                >
+                                  <TableCell>
+                                    <div className="flex items-center gap-2.5">
+                                      {r.photo_url ? (
+                                        <img
+                                          src={r.photo_url}
+                                          alt={r.rider_name ?? ""}
+                                          className="h-9 w-9 shrink-0 rounded-full border border-border object-cover"
+                                          loading="lazy"
+                                        />
+                                      ) : (
+                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                                          <Users className="h-4 w-4" />
+                                        </div>
+                                      )}
+                                      <div className="min-w-0">
+                                        <div className="truncate font-medium">
+                                          {r.rider_name || "—"}
+                                        </div>
+                                        {r.is_blocked && (
+                                          <div className="text-[11px] font-medium text-destructive">
+                                            {t("admin.riderBlockedLabel")}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="font-mono text-xs text-muted-foreground">
+                                    {r.iqama_number || "—"}
+                                  </TableCell>
+                                  <TableCell className="font-mono text-xs text-muted-foreground">
+                                    {r.id_number || "—"}
+                                  </TableCell>
+                                  {extraColumns.map((col) => {
+                                    const v = extra[col];
+                                    return (
+                                      <TableCell
+                                        key={col}
+                                        className="whitespace-nowrap text-xs text-muted-foreground"
+                                      >
+                                        {v == null || v === "" ? "—" : String(v)}
+                                      </TableCell>
+                                    );
+                                  })}
+                                  <TableCell className="text-end">
+                                    <Button
+                                      size="sm"
+                                      variant={r.is_blocked ? "outline" : "ghost"}
+                                      disabled={blockingRiderId === r.id}
+                                      onClick={() => toggleRiderBlocked(r.id, !r.is_blocked)}
+                                      className={
+                                        r.is_blocked
+                                          ? "text-primary"
+                                          : "text-destructive hover:text-destructive"
+                                      }
+                                    >
+                                      {blockingRiderId === r.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : r.is_blocked ? (
+                                        <>
+                                          <Eye className="ms-1.5 h-4 w-4" />
+                                          {t("admin.riderUnblockButton")}
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Ban className="ms-1.5 h-4 w-4" />
+                                          {t("admin.riderBlockButton")}
+                                        </>
+                                      )}
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         <Card
           className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-[backwards]"
@@ -413,7 +848,7 @@ function AdminPage() {
                 <Input
                   ref={fileRef}
                   type="file"
-                  accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
               </div>
@@ -613,9 +1048,7 @@ function NotificationBell({
           {announcements.map((a, i) => (
             <div
               key={a.id}
-              className={`border-b px-4 py-3 last:border-b-0 ${
-                !a.isRead ? "bg-primary/5" : ""
-              }`}
+              className={`border-b px-4 py-3 last:border-b-0 ${!a.isRead ? "bg-primary/5" : ""}`}
               style={{ animationDelay: `${Math.min(i * 40, 300)}ms` }}
             >
               <div className="flex items-center justify-between gap-2">

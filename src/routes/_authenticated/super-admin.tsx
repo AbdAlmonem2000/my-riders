@@ -19,6 +19,7 @@ import {
   EyeOff,
   Megaphone,
   Send,
+  StickyNote,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -75,6 +76,7 @@ import {
   updateAccountPassword,
   updateCompanyLogo,
   updateCompanyName,
+  updateCompanyNotes,
 } from "@/lib/accounts.functions";
 import {
   createAnnouncement,
@@ -105,6 +107,7 @@ function SuperAdminPage() {
   const updateLogoFn = useServerFn(updateCompanyLogo);
   const setSuspendedFn = useServerFn(setCompanySuspended);
   const updateNameFn = useServerFn(updateCompanyName);
+  const updateNotesFn = useServerFn(updateCompanyNotes);
   const listAnnouncementsFn = useServerFn(listAnnouncements);
   const createAnnouncementFn = useServerFn(createAnnouncement);
   const deleteAnnouncementFn = useServerFn(deleteAnnouncement);
@@ -474,7 +477,14 @@ function SuperAdminPage() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="font-medium">{c.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <div>{c.name}</div>
+                        {c.notes && (
+                          <div className="mt-0.5 max-w-[220px] truncate text-xs font-normal text-muted-foreground">
+                            {c.notes}
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {c.is_suspended ? (
                           <Badge variant="destructive">{t("superAdmin.statusSuspended")}</Badge>
@@ -505,6 +515,16 @@ function SuperAdminPage() {
                             onSubmit={async (logoUrl) => {
                               await updateLogoFn({ data: { id: c.id, logoUrl } });
                               toast.success(t("superAdmin.toastLogoUpdated"));
+                              invalidate();
+                            }}
+                          />
+                          <CompanyNotesDialog
+                            companyName={c.name}
+                            currentNotes={c.notes}
+                            t={t}
+                            onSubmit={async (notes) => {
+                              await updateNotesFn({ data: { id: c.id, notes } });
+                              toast.success(t("superAdmin.toastNoteUpdated"));
                               invalidate();
                             }}
                           />
@@ -790,6 +810,83 @@ function SuperAdminPage() {
         </Card>
       </main>
     </div>
+  );
+}
+
+function CompanyNotesDialog({
+  companyName,
+  currentNotes,
+  onSubmit,
+  t,
+}: {
+  companyName: string;
+  currentNotes: string;
+  onSubmit: (notes: string) => Promise<void>;
+  t: (key: TranslationKey) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [notes, setNotes] = useState(currentNotes);
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await onSubmit(notes.trim());
+      setOpen(false);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (v) setNotes(currentNotes);
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          title={t("superAdmin.companyNoteTitle")}
+          className={`transition-transform hover:scale-110 ${currentNotes ? "text-primary" : ""}`}
+        >
+          <StickyNote className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t("superAdmin.companyNoteTitle")} — {companyName}
+          </DialogTitle>
+          <DialogDescription>{t("superAdmin.companyNoteDesc")}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <Textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder={t("superAdmin.companyNotePlaceholder")}
+            maxLength={5000}
+            rows={5}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="transition-transform active:scale-[0.98]"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("superAdmin.save")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

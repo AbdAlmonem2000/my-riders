@@ -50,7 +50,35 @@ export const listCompanies = createServerFn({ method: "GET" })
       .select("id, name, logo_url, is_suspended, created_at")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return data ?? [];
+
+    const { data: noteRows } = await context.supabase
+      .from("company_notes")
+      .select("company_id, notes");
+    const noteByCompany = new Map(
+      (noteRows ?? []).map((r: { company_id: string; notes: string }) => [r.company_id, r.notes]),
+    );
+
+    return (data ?? []).map((c) => ({
+      ...c,
+      notes: noteByCompany.get(c.id) ?? "",
+    }));
+  });
+
+export const updateCompanyNotes = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ id: z.string().uuid(), notes: z.string().max(5000) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertSuperAdmin(context.supabase, context.userId);
+    const { error } = await context.supabase
+      .from("company_notes")
+      .upsert(
+        { company_id: data.id, notes: data.notes, updated_at: new Date().toISOString() },
+        { onConflict: "company_id" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 export const createCompany = createServerFn({ method: "POST" })

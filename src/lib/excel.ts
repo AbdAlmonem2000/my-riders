@@ -30,6 +30,26 @@ const ID_ALIASES = [
   "emp id",
 ];
 
+// The rider's photo is provided as a plain link in the directory sheet
+// (Google Drive, a CDN, etc.) — stored and shown as-is.
+const PHOTO_ALIASES = [
+  "صورة",
+  "الصورة",
+  "الصوره",
+  "صوره",
+  "صورة المندوب",
+  "صوره المندوب",
+  "رابط الصورة",
+  "لينك الصورة",
+  "photo",
+  "photo url",
+  "photo link",
+  "image",
+  "image url",
+  "picture",
+  "avatar",
+];
+
 const NAME_ALIASES = [
   "اسم المندوب",
   "اسم الموظف",
@@ -72,11 +92,18 @@ export interface ParsedExcel {
   iqamaColumn: string | null;
   idColumn: string | null;
   nameColumn: string | null;
+  photoColumn: string | null;
 }
 
 export async function parseExcelFile(file: File): Promise<ParsedExcel> {
-  const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: "array" });
+  const isCsv = /\.csv$/i.test(file.name) || /csv/i.test(file.type);
+  // SheetJS reads CSV as well as .xlsx/.xls, and auto-detects the delimiter
+  // (comma / semicolon / tab). Arabic CSV is only reliably decoded when read
+  // as text via file.text() (always UTF-8) — the byte-array path guesses a
+  // codepage and can mojibake Arabic names.
+  const wb = isCsv
+    ? XLSX.read(await file.text(), { type: "string" })
+    : XLSX.read(await file.arrayBuffer(), { type: "array" });
   const sheetName = wb.SheetNames[0];
   if (!sheetName) throw new Error("الملف لا يحتوي على أوراق عمل");
   const ws = wb.Sheets[sheetName];
@@ -99,7 +126,16 @@ export async function parseExcelFile(file: File): Promise<ParsedExcel> {
   // distinct identifiers.
   if (idColumn && idColumn === iqamaColumn) idColumn = null;
   const nameColumn = findColumn(headers, NAME_ALIASES);
-  return { headers, rows, iqamaColumn, idColumn, nameColumn };
+  let photoColumn = findColumn(headers, PHOTO_ALIASES);
+  // Don't let a fuzzy match steal a column already claimed as an identifier
+  // or the name.
+  if (
+    photoColumn &&
+    (photoColumn === iqamaColumn || photoColumn === idColumn || photoColumn === nameColumn)
+  ) {
+    photoColumn = null;
+  }
+  return { headers, rows, iqamaColumn, idColumn, nameColumn, photoColumn };
 }
 
 export const MONTH_NAMES_AR = [

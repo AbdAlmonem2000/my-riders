@@ -1,7 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Building2, Calendar, Loader2, Megaphone, Search, User } from "lucide-react";
+import {
+  ArrowRight,
+  Ban,
+  Building2,
+  Calendar,
+  Loader2,
+  Megaphone,
+  Search,
+  User,
+} from "lucide-react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -23,6 +32,9 @@ export const Route = createFileRoute("/rider/$iqama")({
 interface RiderMatch {
   rider_id: string;
   rider_name: string | null;
+  rider_photo_url: string | null;
+  rider_extra: Record<string, unknown> | null;
+  rider_is_blocked: boolean;
   company_id: string;
   company_name: string;
   company_logo_url: string | null;
@@ -72,7 +84,10 @@ function RiderPage() {
     },
   });
 
-  const matches = lookupQuery.data ?? [];
+  const allMatches = lookupQuery.data ?? [];
+  const matches = allMatches.filter((m) => !m.rider_is_blocked);
+  // Rows exist for this number but every one of them is blocked.
+  const isBlocked = allMatches.length > 0 && matches.length === 0;
   const needsDisambiguation = matches.length > 1 && !selectedRiderId;
   const activeRiderId = selectedRiderId ?? (matches.length === 1 ? matches[0].rider_id : null);
   const activeRider = matches.find((m) => m.rider_id === activeRiderId) ?? null;
@@ -140,7 +155,7 @@ function RiderPage() {
           </div>
         )}
 
-        {!lookupQuery.isLoading && matches.length === 0 && (
+        {!lookupQuery.isLoading && allMatches.length === 0 && (
           <Card className="animate-in fade-in slide-in-from-bottom-4 mx-auto max-w-md text-center duration-500">
             <CardContent className="pt-8 pb-8">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
@@ -150,6 +165,18 @@ function RiderPage() {
               <p className="mt-2 text-sm text-muted-foreground">
                 {t("rider.notFoundDesc")} <span className="font-mono">{iqama}</span>
               </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!lookupQuery.isLoading && isBlocked && (
+          <Card className="animate-in fade-in slide-in-from-bottom-4 mx-auto max-w-md border-destructive/30 text-center duration-500">
+            <CardContent className="pt-8 pb-8">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                <Ban className="h-6 w-6" />
+              </div>
+              <h3 className="text-lg font-semibold">{t("rider.blockedTitle")}</h3>
+              <p className="mt-2 text-sm text-muted-foreground">{t("rider.blockedDesc")}</p>
             </CardContent>
           </Card>
         )}
@@ -198,12 +225,8 @@ function RiderPage() {
                       className="h-16 w-16 shrink-0"
                     />
                     <div className="min-w-0">
-                      <div className="text-xs text-muted-foreground">
-                        {t("rider.companyLabel")}
-                      </div>
-                      <div className="truncate text-lg font-bold">
-                        {activeRider.company_name}
-                      </div>
+                      <div className="text-xs text-muted-foreground">{t("rider.companyLabel")}</div>
+                      <div className="truncate text-lg font-bold">{activeRider.company_name}</div>
                     </div>
                   </CardContent>
                 </Card>
@@ -212,9 +235,17 @@ function RiderPage() {
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <User className="h-6 w-6" />
-                    </div>
+                    {activeRider.rider_photo_url ? (
+                      <img
+                        src={activeRider.rider_photo_url}
+                        alt={activeRider.rider_name ?? ""}
+                        className="h-14 w-14 shrink-0 rounded-full border border-border object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <User className="h-6 w-6" />
+                      </div>
+                    )}
                     <div>
                       <div className="text-sm text-muted-foreground">{t("rider.riderLabel")}</div>
                       <div className="font-semibold">{activeRider.rider_name || "—"}</div>
@@ -232,6 +263,19 @@ function RiderPage() {
                     >
                       {t("rider.changeCompany")}
                     </button>
+                  )}
+                  {activeRider.rider_extra && Object.keys(activeRider.rider_extra).length > 0 && (
+                    <div className="mt-4 space-y-1.5 border-t pt-3">
+                      <div className="text-xs font-medium text-muted-foreground">
+                        {t("rider.riderInfo")}
+                      </div>
+                      {Object.entries(activeRider.rider_extra).map(([k, v]) => (
+                        <div key={k} className="flex justify-between gap-3 text-sm">
+                          <span className="text-muted-foreground">{k}</span>
+                          <span className="text-end font-medium break-all">{String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </CardContent>
               </Card>

@@ -64,6 +64,32 @@ export type Database = {
           },
         ]
       }
+      company_notes: {
+        Row: {
+          company_id: string
+          notes: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          notes?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          notes?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_notes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           created_at: string
@@ -71,6 +97,9 @@ export type Database = {
           is_suspended: boolean
           logo_url: string | null
           name: string
+          roster_file_name: string | null
+          roster_path: string | null
+          roster_uploaded_at: string | null
         }
         Insert: {
           created_at?: string
@@ -78,6 +107,9 @@ export type Database = {
           is_suspended?: boolean
           logo_url?: string | null
           name: string
+          roster_file_name?: string | null
+          roster_path?: string | null
+          roster_uploaded_at?: string | null
         }
         Update: {
           created_at?: string
@@ -85,6 +117,9 @@ export type Database = {
           is_suspended?: boolean
           logo_url?: string | null
           name?: string
+          roster_file_name?: string | null
+          roster_path?: string | null
+          roster_uploaded_at?: string | null
         }
         Relationships: []
       }
@@ -191,25 +226,34 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string
+          extra: Json
           id: string
           id_number: string | null
-          iqama_number: string
+          iqama_number: string | null
+          is_blocked: boolean
+          photo_url: string | null
           rider_name: string | null
         }
         Insert: {
           company_id: string
           created_at?: string
+          extra?: Json
           id?: string
           id_number?: string | null
-          iqama_number: string
+          iqama_number?: string | null
+          is_blocked?: boolean
+          photo_url?: string | null
           rider_name?: string | null
         }
         Update: {
           company_id?: string
           created_at?: string
+          extra?: Json
           id?: string
           id_number?: string | null
-          iqama_number?: string
+          iqama_number?: string | null
+          is_blocked?: boolean
+          photo_url?: string | null
           rider_name?: string | null
         }
         Relationships: [
@@ -316,8 +360,11 @@ export type Database = {
           company_id: string
           company_logo_url: string
           company_name: string
+          rider_extra: Json
           rider_id: string
+          rider_is_blocked: boolean
           rider_name: string
+          rider_photo_url: string
         }[]
       }
     }
