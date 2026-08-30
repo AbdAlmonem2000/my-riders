@@ -11,6 +11,53 @@ import {
 
 const RowSchema = z.record(z.string(), z.unknown());
 
+// A plain number: an integer or decimal, optionally with thousands commas.
+// A percentage ("95.00%") or anything with letters is deliberately NOT
+// treated as summable — adding two percentages/rates is meaningless.
+function numericCell(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!s || s.includes("%")) return null;
+  const cleaned = s.replace(/,/g, "");
+  if (!/^-?\d*\.?\d+$/.test(cleaned)) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatSum(sum: number): string {
+  return Number.isInteger(sum) ? String(sum) : String(Number(sum.toFixed(4)));
+}
+
+// Merge a rider's repeated rows within one report: numeric columns are
+// added, blank cells are filled from whichever row has a value, everything
+// else keeps the first row's value.
+function mergeReportRows(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  headers: string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...a };
+  const keys = headers.length > 0 ? headers : [...new Set([...Object.keys(a), ...Object.keys(b)])];
+  for (const k of keys) {
+    const av = a[k];
+    const bv = b[k];
+    const an = numericCell(av);
+    const bn = numericCell(bv);
+    if (an !== null && bn !== null) {
+      out[k] = formatSum(an + bn);
+    } else if (
+      (av === undefined || av === null || av === "") &&
+      bv !== undefined &&
+      bv !== null &&
+      bv !== ""
+    ) {
+      out[k] = bv;
+    }
+  }
+  return out;
+}
+
 const UploadInput = z
   .object({
     month: z.number().int().min(1).max(12),
@@ -127,8 +174,11 @@ export const uploadReport = createServerFn({ method: "POST" })
       name: string | null;
       row: Row;
     }
-    const resolvedRows: Resolved[] = [];
-    const seen = new Set<string>();
+    // When the same rider shows up on more than one row of the same sheet
+    // (e.g. one line per shift), the rows are merged into a single record:
+    // plain numeric columns are added together, and a blank cell is filled
+    // from a later row that has a value. So orders 5 + orders 6 becomes 11.
+    const resolvedByKey = new Map<string, Resolved>();
     let malformed = 0;
     for (const row of data.rows) {
       const rawIqama0 = cellText(row, data.iqamaColumn);
@@ -142,16 +192,23 @@ export const uploadReport = createServerFn({ method: "POST" })
       const name = cellText(row, data.nameColumn);
       const match = matchRider(riderIndex, rawIqama, rawId);
       const dedupKey = match ? `r:${match.id}` : `n:${rawIqama ?? ""}|${rawId ?? ""}`;
-      if (seen.has(dedupKey)) continue;
-      seen.add(dedupKey);
-      resolvedRows.push({
-        riderId: match?.id ?? null,
-        iqama: rawIqama,
-        idNumber: rawId,
-        name,
-        row,
-      });
+      const prev = resolvedByKey.get(dedupKey);
+      if (prev) {
+        prev.row = mergeReportRows(prev.row, row, data.headers);
+        prev.name ??= name;
+        prev.iqama ??= rawIqama;
+        prev.idNumber ??= rawId;
+      } else {
+        resolvedByKey.set(dedupKey, {
+          riderId: match?.id ?? null,
+          iqama: rawIqama,
+          idNumber: rawId,
+          name,
+          row: { ...row },
+        });
+      }
     }
+    const resolvedRows = [...resolvedByKey.values()];
 
     if (resolvedRows.length === 0 && malformed > 0) {
       // Nothing usable in the sheet — undo the report row we created above so
