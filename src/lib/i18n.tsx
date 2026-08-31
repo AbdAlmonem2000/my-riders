@@ -271,6 +271,27 @@ const dict = {
   "admin.toastUploadFailed": { ar: "فشل الرفع", en: "Upload failed" },
   "admin.toastDeleteSuccess": { ar: "تم حذف التقرير", en: "Report deleted" },
   "admin.toastDeleteFailed": { ar: "فشل الحذف", en: "Delete failed" },
+  "admin.sheetsWord": { ar: "شيت", en: "sheets" },
+  "admin.sheetsTitle": { ar: "شيتات هذا الشهر", en: "Sheets in this month" },
+  "admin.sheetsDesc": {
+    ar: "كل شيت اترفع للشهر ده. تقدر تنزّل أو تحذف أي واحد.",
+    en: "Every sheet uploaded for this month. Download or delete any one.",
+  },
+  "admin.sheetsEmpty": { ar: "لا توجد شيتات مسجّلة", en: "No sheets recorded" },
+  "admin.sheetDeleteTitle": { ar: "حذف الشيت؟", en: "Delete sheet?" },
+  "admin.sheetDeleteDesc": {
+    ar: "هيتم شيل الأعمدة اللي جت من الشيت ده من تقرير الشهر. باقي الشيتات مش هتتأثر.",
+    en: "The columns this sheet added will be removed from the month's report. Other sheets are unaffected.",
+  },
+  "admin.sheetDeleteLastDesc": {
+    ar: "ده آخر شيت في الشهر — حذفه هيحذف تقرير الشهر كله.",
+    en: "This is the month's last sheet — deleting it removes the whole month's report.",
+  },
+  "admin.toastSheetDeleted": { ar: "تم حذف الشيت", en: "Sheet deleted" },
+  "admin.toastSheetDeletedWithReport": {
+    ar: "تم حذف الشيت وتقرير الشهر",
+    en: "Sheet and the month's report deleted",
+  },
 
   "superAdmin.unauthorizedDesc": {
     ar: "هذه الصفحة مخصصة للسوبر أدمن فقط.",

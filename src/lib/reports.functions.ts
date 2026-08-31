@@ -157,12 +157,19 @@ export const uploadReport = createServerFn({ method: "POST" })
       throw new Error("يوجد تقرير لهذا الشهر بالفعل. اختر «استبدال» أو «دمج مع الموجود».");
     }
     if (existing && mode === "replace") {
-      // The replacement file was already uploaded under a new storage path
-      // above, so the old file is now orphaned unless removed explicitly —
-      // deleting the row alone doesn't touch storage.
-      if (existing.storage_path) {
+      // Deleting the report row cascades its sheets and rider rows, but the
+      // stored files stay behind unless removed explicitly.
+      const { data: oldSheets } = await supabase
+        .from("report_sheets")
+        .select("storage_path")
+        .eq("report_id", existing.id);
+      const orphans = [
+        existing.storage_path,
+        ...(oldSheets ?? []).map((s) => s.storage_path),
+      ].filter((p): p is string => !!p);
+      if (orphans.length > 0) {
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        await supabaseAdmin.storage.from("reports").remove([existing.storage_path]);
+        await supabaseAdmin.storage.from("reports").remove(orphans);
       }
       await supabase.from("reports").delete().eq("id", existing.id);
     }
@@ -363,6 +370,31 @@ export const uploadReport = createServerFn({ method: "POST" })
 
     const withRider = resolvedRows.filter((r): r is Resolved & { riderId: string } => !!r.riderId);
 
+    // Record this upload as one sheet of the month's report.
+    const { data: sheet, error: sheetErr } = await supabase
+      .from("report_sheets")
+      .insert({
+        report_id: report.id,
+        company_id: companyId,
+        file_name: data.fileName,
+        storage_path: data.storagePath,
+        headers: data.headers as Json,
+        rider_count: withRider.length,
+      })
+      .select("id")
+      .single();
+    if (sheetErr || !sheet) throw new Error(sheetErr?.message ?? "فشل تسجيل الشيت");
+    const sheetId: string = sheet.id;
+    // Only the cells this sheet actually filled are attributed to it, so
+    // deleting the sheet later strips exactly those columns and no others.
+    const sourcesFor = (row: Row): Record<string, string> => {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(row)) {
+        if (v !== undefined && v !== null && v !== "") out[k] = sheetId;
+      }
+      return out;
+    };
+
     if (mergeIntoExisting) {
       // Pull the rows this month already has for the riders in this sheet,
       // then lay the new columns on top (or insert a fresh row for a rider
@@ -370,13 +402,18 @@ export const uploadReport = createServerFn({ method: "POST" })
       const riderIds = withRider.map((r) => r.riderId);
       const existingRR = new Map<
         string,
-        { id: string; data: Record<string, unknown>; columns: unknown }
+        {
+          id: string;
+          data: Record<string, unknown>;
+          columns: unknown;
+          column_sources: Record<string, string>;
+        }
       >();
       for (let i = 0; i < riderIds.length; i += 200) {
         const slice = riderIds.slice(i, i + 200);
         const { data: rows, error } = await supabase
           .from("rider_reports")
-          .select("id, rider_id, data, columns")
+          .select("id, rider_id, data, columns, column_sources")
           .eq("report_id", report.id)
           .in("rider_id", slice);
         if (error) throw new Error(error.message);
@@ -385,6 +422,7 @@ export const uploadReport = createServerFn({ method: "POST" })
             id: row.id,
             data: (row.data ?? {}) as Record<string, unknown>,
             columns: row.columns,
+            column_sources: (row.column_sources ?? {}) as Record<string, string>,
           });
         }
       }
@@ -395,6 +433,7 @@ export const uploadReport = createServerFn({ method: "POST" })
         rider_id: string;
         data: Json;
         columns: Json;
+        column_sources: Json;
       };
       const updates: (RRRow & { id: string })[] = [];
       const inserts: RRRow[] = [];
@@ -406,6 +445,9 @@ export const uploadReport = createServerFn({ method: "POST" })
           rider_id: r.riderId,
           data: (ex ? overlayReportRows(ex.data, r.row) : r.row) as Json,
           columns: (ex ? unionColumns(ex.columns, data.headers) : data.headers) as Json,
+          column_sources: (ex
+            ? { ...ex.column_sources, ...sourcesFor(r.row) }
+            : sourcesFor(r.row)) as Json,
         };
         if (ex) updates.push({ ...base, id: ex.id });
         else inserts.push(base);
@@ -433,7 +475,7 @@ export const uploadReport = createServerFn({ method: "POST" })
         .update({ rider_count: count ?? 0 })
         .eq("id", report.id);
 
-      return { reportId: report.id, count: withRider.length, merged: true };
+      return { reportId: report.id, count: withRider.length, merged: true, sheetId };
     }
 
     const riderReportsPayload = withRider.map((r) => ({
@@ -444,6 +486,8 @@ export const uploadReport = createServerFn({ method: "POST" })
       data: r.row as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       columns: data.headers as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      column_sources: sourcesFor(r.row) as any,
     }));
 
     for (let i = 0; i < riderReportsPayload.length; i += WRITE_CHUNK) {
@@ -457,7 +501,7 @@ export const uploadReport = createServerFn({ method: "POST" })
       .update({ rider_count: riderReportsPayload.length })
       .eq("id", report.id);
 
-    return { reportId: report.id, count: riderReportsPayload.length, merged: false };
+    return { reportId: report.id, count: riderReportsPayload.length, merged: false, sheetId };
   });
 
 export const deleteReport = createServerFn({ method: "POST" })
@@ -470,9 +514,16 @@ export const deleteReport = createServerFn({ method: "POST" })
       .select("storage_path")
       .eq("id", data.id)
       .maybeSingle();
-    if (rep?.storage_path) {
+    const { data: sheets } = await supabase
+      .from("report_sheets")
+      .select("storage_path")
+      .eq("report_id", data.id);
+    const paths = [rep?.storage_path, ...(sheets ?? []).map((s) => s.storage_path)].filter(
+      (p): p is string => !!p,
+    );
+    if (paths.length > 0) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin.storage.from("reports").remove([rep.storage_path]);
+      await supabaseAdmin.storage.from("reports").remove(paths);
     }
     // RLS filters a DELETE's WHERE clause rather than rejecting it, so a
     // blocked delete would otherwise return success with nothing removed.
@@ -486,6 +537,141 @@ export const deleteReport = createServerFn({ method: "POST" })
       throw new Error("لم يتم حذف التقرير — تأكد أن التقرير يتبع شركتك");
     }
     return { ok: true };
+  });
+
+// Delete one sheet from a month's report: strip the columns it contributed
+// from every rider row, drop any rider left with an empty row, and remove
+// the whole month's report if that was its last sheet.
+export const deleteReportSheet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ sheetId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: sheet } = await supabase
+      .from("report_sheets")
+      .select("id, report_id, storage_path")
+      .eq("id", data.sheetId)
+      .maybeSingle();
+    if (!sheet) throw new Error("الشيت غير موجود أو لا يتبع شركتك");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: siblings } = await supabase
+      .from("report_sheets")
+      .select("id, file_name, storage_path")
+      .eq("report_id", sheet.report_id);
+    const others = (siblings ?? []).filter((s) => s.id !== data.sheetId);
+
+    // Last sheet — the whole month's report goes with it.
+    if (others.length === 0) {
+      const { data: rep } = await supabase
+        .from("reports")
+        .select("storage_path")
+        .eq("id", sheet.report_id)
+        .maybeSingle();
+      const paths = [rep?.storage_path, sheet.storage_path].filter((p): p is string => !!p);
+      if (paths.length > 0) await supabaseAdmin.storage.from("reports").remove(paths);
+      const { data: del, error } = await supabase
+        .from("reports")
+        .delete()
+        .eq("id", sheet.report_id)
+        .select("id");
+      if (error) throw new Error(error.message);
+      if (!del || del.length === 0) {
+        throw new Error("لم يتم الحذف — تأكد أن التقرير يتبع شركتك");
+      }
+      return { deletedReport: true, removed: 0 };
+    }
+
+    const { data: rrRows, error: rrErr } = await supabase
+      .from("rider_reports")
+      .select("id, rider_id, report_id, company_id, data, columns, column_sources")
+      .eq("report_id", sheet.report_id);
+    if (rrErr) throw new Error(rrErr.message);
+
+    const updates: {
+      id: string;
+      rider_id: string;
+      report_id: string;
+      company_id: string;
+      data: Json;
+      columns: Json;
+      column_sources: Json;
+    }[] = [];
+    const removeIds: string[] = [];
+    for (const rr of rrRows ?? []) {
+      const sources = (rr.column_sources ?? {}) as Record<string, string>;
+      const oldData = (rr.data ?? {}) as Record<string, unknown>;
+      const nextData: Record<string, unknown> = {};
+      const nextSources: Record<string, string> = {};
+      for (const [k, v] of Object.entries(oldData)) {
+        if (sources[k] === data.sheetId) continue;
+        nextData[k] = v;
+        if (sources[k]) nextSources[k] = sources[k];
+      }
+      const hasValue = Object.values(nextData).some(
+        (v) => v !== undefined && v !== null && v !== "",
+      );
+      if (!hasValue) {
+        removeIds.push(rr.id);
+        continue;
+      }
+      const oldCols = Array.isArray(rr.columns) ? (rr.columns as unknown[]).map(String) : [];
+      updates.push({
+        id: rr.id,
+        rider_id: rr.rider_id,
+        report_id: rr.report_id,
+        company_id: rr.company_id,
+        data: nextData as Json,
+        columns: oldCols.filter((c) => c in nextData) as Json,
+        column_sources: nextSources as Json,
+      });
+    }
+
+    const CHUNK = 300;
+    for (let i = 0; i < updates.length; i += CHUNK) {
+      const { error } = await supabase
+        .from("rider_reports")
+        .upsert(updates.slice(i, i + CHUNK), { onConflict: "id" });
+      if (error) throw new Error(error.message);
+    }
+    for (let i = 0; i < removeIds.length; i += CHUNK) {
+      const { error } = await supabase
+        .from("rider_reports")
+        .delete()
+        .in("id", removeIds.slice(i, i + CHUNK));
+      if (error) throw new Error(error.message);
+    }
+
+    if (sheet.storage_path) {
+      await supabaseAdmin.storage.from("reports").remove([sheet.storage_path]);
+    }
+    await supabase.from("report_sheets").delete().eq("id", data.sheetId);
+
+    // Keep reports.storage_path/file_name pointing at a sheet that still exists.
+    const { data: rep } = await supabase
+      .from("reports")
+      .select("storage_path")
+      .eq("id", sheet.report_id)
+      .maybeSingle();
+    if (rep && rep.storage_path === sheet.storage_path) {
+      const fallback = others.find((s) => s.storage_path) ?? others[0];
+      await supabase
+        .from("reports")
+        .update({ storage_path: fallback.storage_path ?? null, file_name: fallback.file_name })
+        .eq("id", sheet.report_id);
+    }
+
+    const { count } = await supabase
+      .from("rider_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("report_id", sheet.report_id);
+    await supabase
+      .from("reports")
+      .update({ rider_count: count ?? 0 })
+      .eq("id", sheet.report_id);
+
+    return { deletedReport: false, removed: removeIds.length };
   });
 
 export const checkIsAdmin = createServerFn({ method: "GET" })

@@ -10,6 +10,7 @@ import {
   Download,
   Eye,
   FileSpreadsheet,
+  Layers,
   Loader2,
   Lock,
   LogOut,
@@ -64,7 +65,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { checkIsAdmin, deleteReport, uploadReport } from "@/lib/reports.functions";
+import {
+  checkIsAdmin,
+  deleteReport,
+  deleteReportSheet,
+  uploadReport,
+} from "@/lib/reports.functions";
 import {
   uploadRoster,
   deleteRoster,
@@ -110,6 +116,7 @@ function AdminPage() {
   const rosterUrlFn = useServerFn(getRosterDownloadUrl);
   const setRiderBlockedFn = useServerFn(setRiderBlocked);
   const deleteFn = useServerFn(deleteReport);
+  const deleteSheetFn = useServerFn(deleteReportSheet);
   const listAnnouncementsFn = useServerFn(listAnnouncements);
   const markAnnouncementsReadFn = useServerFn(markAnnouncementsRead);
   const updateNameFn = useServerFn(updateCompanyName);
@@ -139,6 +146,30 @@ function AdminPage() {
       return data;
     },
   });
+
+  const sheetsQuery = useQuery({
+    queryKey: ["report-sheets"],
+    enabled: !!adminCheck.data?.companyId && !adminCheck.data?.isSuperAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("report_sheets")
+        .select("id, report_id, file_name, storage_path, rider_count, created_at")
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const sheetRows = sheetsQuery.data;
+  const sheetsByReport = useMemo(() => {
+    const map = new Map<string, ReportSheet[]>();
+    for (const s of sheetRows ?? []) {
+      const list = map.get(s.report_id) ?? [];
+      list.push(s);
+      map.set(s.report_id, list);
+    }
+    return map;
+  }, [sheetRows]);
 
   const ridersQuery = useQuery({
     queryKey: ["company-riders"],
@@ -234,19 +265,15 @@ function AdminPage() {
       // Upload raw file to storage. Supabase Storage object keys reject
       // non-ASCII characters (e.g. Arabic file names) and some symbols, so
       // the storage path must not embed the raw file name — the original
-      // name is kept separately in fileName/reports.file_name for display.
-      // In "merge" mode the month's report already has a stored file, so
-      // this extra sheet isn't uploaded (its columns just merge into the DB).
-      let path: string | null = null;
-      if (uploadMode !== "merge") {
-        const extMatch = /\.[a-zA-Z0-9]+$/.exec(file.name);
-        const safeExt = extMatch ? extMatch[0] : "";
-        path = `${year}/${String(month).padStart(2, "0")}-${Date.now()}${safeExt}`;
-        const { error: upErr } = await supabase.storage
-          .from("reports")
-          .upload(path, file, { upsert: true });
-        if (upErr) throw new Error(upErr.message);
-      }
+      // name is kept separately for display. Every sheet keeps its own file
+      // so it can be downloaded or deleted individually later.
+      const extMatch = /\.[a-zA-Z0-9]+$/.exec(file.name);
+      const safeExt = extMatch ? extMatch[0] : "";
+      const path = `${year}/${String(month).padStart(2, "0")}-${Date.now()}${safeExt}`;
+      const { error: upErr } = await supabase.storage
+        .from("reports")
+        .upload(path, file, { upsert: true });
+      if (upErr) throw new Error(upErr.message);
 
       const res = await uploadFn({
         data: {
@@ -277,6 +304,7 @@ function AdminPage() {
       setUploadMode("new");
       if (fileRef.current) fileRef.current.value = "";
       queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["report-sheets"] });
     } catch (err) {
       console.error("uploadReport failed", err);
       toast.error(errText(err, t("admin.toastUploadFailed")));
@@ -395,9 +423,27 @@ function AdminPage() {
       await deleteFn({ data: { id } });
       toast.success(t("admin.toastDeleteSuccess"));
       queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      toast.error(err.message ?? t("admin.toastDeleteFailed"));
+      queryClient.invalidateQueries({ queryKey: ["report-sheets"] });
+    } catch (err) {
+      toast.error(errText(err, t("admin.toastDeleteFailed")));
+    }
+  };
+
+  const [deletingSheetId, setDeletingSheetId] = useState<string | null>(null);
+
+  const handleDeleteSheet = async (sheetId: string) => {
+    setDeletingSheetId(sheetId);
+    try {
+      const res = await deleteSheetFn({ data: { sheetId } });
+      toast.success(
+        res.deletedReport ? t("admin.toastSheetDeletedWithReport") : t("admin.toastSheetDeleted"),
+      );
+      queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["report-sheets"] });
+    } catch (err) {
+      toast.error(errText(err, t("admin.toastDeleteFailed")));
+    } finally {
+      setDeletingSheetId(null);
     }
   };
 
@@ -956,7 +1002,14 @@ function AdminPage() {
                         {(lang === "ar" ? MONTH_NAMES_AR : MONTH_NAMES_EN)[r.month - 1]}
                       </TableCell>
                       <TableCell>{r.year}</TableCell>
-                      <TableCell className="max-w-xs truncate">{r.file_name}</TableCell>
+                      <TableCell className="max-w-xs">
+                        <div className="truncate">{r.file_name}</div>
+                        {(sheetsByReport.get(r.id)?.length ?? 0) > 1 && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {(sheetsByReport.get(r.id)?.length ?? 0) + " " + t("admin.sheetsWord")}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="secondary">{r.rider_count}</Badge>
                       </TableCell>
@@ -966,6 +1019,15 @@ function AdminPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-end">
+                        <ReportSheetsDialog
+                          title={monthLabel(r.month, r.year, lang)}
+                          sheets={sheetsByReport.get(r.id) ?? []}
+                          deletingSheetId={deletingSheetId}
+                          lang={lang}
+                          t={t}
+                          onDownload={handleDownload}
+                          onDelete={handleDeleteSheet}
+                        />
                         <Button
                           size="sm"
                           variant="ghost"
@@ -1091,6 +1153,125 @@ function NotificationBell({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+interface ReportSheet {
+  id: string;
+  file_name: string;
+  storage_path: string | null;
+  rider_count: number;
+  created_at: string;
+}
+
+function ReportSheetsDialog({
+  title,
+  sheets,
+  deletingSheetId,
+  lang,
+  t,
+  onDownload,
+  onDelete,
+}: {
+  title: string;
+  sheets: ReportSheet[];
+  deletingSheetId: string | null;
+  lang: "ar" | "en";
+  t: (key: TranslationKey) => string;
+  onDownload: (storagePath: string | null, fileName: string) => void;
+  onDelete: (sheetId: string) => void;
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          title={t("admin.sheetsTitle")}
+          className="relative transition-transform hover:scale-110"
+        >
+          <Layers className="h-4 w-4" />
+          {sheets.length > 1 && (
+            <span className="absolute -end-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+              {sheets.length}
+            </span>
+          )}
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t("admin.sheetsTitle")} — {title}
+          </DialogTitle>
+          <DialogDescription>{t("admin.sheetsDesc")}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          {sheets.length === 0 && (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              {t("admin.sheetsEmpty")}
+            </p>
+          )}
+          {sheets.map((s) => (
+            <div
+              key={s.id}
+              className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{s.file_name}</div>
+                <div className="text-[11px] text-muted-foreground">
+                  {new Date(s.created_at).toLocaleString(lang === "ar" ? "ar-SA" : "en-US")} ·{" "}
+                  {s.rider_count} {t("admin.statTotalRiders")}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onDownload(s.storage_path, s.file_name)}
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive"
+                      disabled={deletingSheetId === s.id}
+                    >
+                      {deletingSheetId === s.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t("admin.sheetDeleteTitle")}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {sheets.length === 1
+                          ? t("admin.sheetDeleteLastDesc")
+                          : t("admin.sheetDeleteDesc")}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={() => onDelete(s.id)}
+                      >
+                        {t("admin.delete")}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </div>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

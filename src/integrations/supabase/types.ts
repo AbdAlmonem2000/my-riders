@@ -170,9 +170,51 @@ export type Database = {
           },
         ]
       }
+      report_sheets: {
+        Row: {
+          company_id: string
+          created_at: string
+          file_name: string
+          headers: Json
+          id: string
+          report_id: string
+          rider_count: number
+          storage_path: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          file_name: string
+          headers?: Json
+          id?: string
+          report_id: string
+          rider_count?: number
+          storage_path?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          file_name?: string
+          headers?: Json
+          id?: string
+          report_id?: string
+          rider_count?: number
+          storage_path?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_sheets_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rider_reports: {
         Row: {
           columns: Json
+          column_sources: Json
           company_id: string
           created_at: string
           data: Json
@@ -182,6 +224,7 @@ export type Database = {
         }
         Insert: {
           columns?: Json
+          column_sources?: Json
           company_id: string
           created_at?: string
           data?: Json
@@ -191,6 +234,7 @@ export type Database = {
         }
         Update: {
           columns?: Json
+          column_sources?: Json
           company_id?: string
           created_at?: string
           data?: Json
