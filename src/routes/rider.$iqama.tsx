@@ -56,16 +56,6 @@ interface RiderMatch {
   company_logo_url: string | null;
 }
 
-const pwKey = (riderId: string) => `rider-pw:${riderId}`;
-
-function readStoredPw(riderId: string): string {
-  try {
-    return sessionStorage.getItem(pwKey(riderId)) ?? "";
-  } catch {
-    return "";
-  }
-}
-
 function CompanyLogo({
   url,
   name,
@@ -245,8 +235,8 @@ function RiderPage() {
   // Set when the rider disambiguates between multiple companies sharing
   // this iqama number. Reset whenever the iqama itself changes.
   const [selectedRiderId, setSelectedRiderId] = useState<string | null>(null);
-  // Password the rider typed to unlock this visit (also mirrored to
-  // sessionStorage so moving between months doesn't re-prompt).
+  // Password the rider typed. Held only for the current search — a fresh
+  // lookup clears it, so a protected rider is asked again every time.
   const [pwInput, setPwInput] = useState("");
   const [unlocked, setUnlocked] = useState<Record<string, string>>({});
   const [pwChecking, setPwChecking] = useState(false);
@@ -254,6 +244,7 @@ function RiderPage() {
   useEffect(() => {
     setSelectedRiderId(null);
     setPwInput("");
+    setUnlocked({});
   }, [iqama]);
 
   const lookupQuery = useQuery({
@@ -273,13 +264,6 @@ function RiderPage() {
   const activeRiderId = selectedRiderId ?? (matches.length === 1 ? matches[0].rider_id : null);
   const activeRider = matches.find((m) => m.rider_id === activeRiderId) ?? null;
 
-  // Pick up a password remembered earlier this visit.
-  useEffect(() => {
-    if (!activeRiderId) return;
-    const stored = readStoredPw(activeRiderId);
-    if (stored) setUnlocked((u) => (u[activeRiderId] ? u : { ...u, [activeRiderId]: stored }));
-  }, [activeRiderId]);
-
   const activePw = activeRiderId ? (unlocked[activeRiderId] ?? "") : "";
   const locked = !!activeRider?.rider_has_password && !activePw;
 
@@ -297,11 +281,6 @@ function RiderPage() {
       if (error) throw error;
       if (data === true) {
         setUnlocked((u) => ({ ...u, [activeRiderId]: pw }));
-        try {
-          sessionStorage.setItem(pwKey(activeRiderId), pw);
-        } catch {
-          /* private mode */
-        }
         setPwInput("");
       } else {
         toast.error(t("rider.wrongPassword"));
@@ -316,11 +295,6 @@ function RiderPage() {
   const onPasswordSet = (pw: string) => {
     if (!activeRiderId) return;
     setUnlocked((u) => ({ ...u, [activeRiderId]: pw }));
-    try {
-      sessionStorage.setItem(pwKey(activeRiderId), pw);
-    } catch {
-      /* private mode */
-    }
     queryClient.invalidateQueries({ queryKey: ["rider-lookup", iqama] });
   };
 
