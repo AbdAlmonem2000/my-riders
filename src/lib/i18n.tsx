@@ -87,6 +87,33 @@ const dict = {
     ar: "تم إيقاف استعلامك عن التقارير من قبل شركتك. للاستفسار، تواصل مع الشركة مباشرة.",
     en: "Your access to reports has been disabled by your company. Please contact the company directly.",
   },
+  "rider.passwordGateTitle": {
+    ar: "تقاريرك محمية بكلمة مرور",
+    en: "Your reports are password-protected",
+  },
+  "rider.passwordGateDesc": {
+    ar: "أدخل كلمة المرور الخاصة بك لعرض تقاريرك.",
+    en: "Enter your password to view your reports.",
+  },
+  "rider.passwordLabel": { ar: "كلمة المرور", en: "Password" },
+  "rider.unlockButton": { ar: "دخول", en: "Unlock" },
+  "rider.wrongPassword": { ar: "كلمة المرور غير صحيحة", en: "Wrong password" },
+  "rider.setPasswordButton": { ar: "اعمل كلمة مرور لحسابك", en: "Set a password" },
+  "rider.changePasswordButton": { ar: "غيّر كلمة المرور", en: "Change password" },
+  "rider.passwordDialogDesc": {
+    ar: "هتُطلب منك كل مرة تدخل تشوف تقاريرك على هذا الجهاز.",
+    en: "You'll be asked for it each time you view your reports on a device.",
+  },
+  "rider.currentPasswordLabel": { ar: "كلمة المرور الحالية", en: "Current password" },
+  "rider.newPasswordLabel": { ar: "كلمة المرور الجديدة", en: "New password" },
+  "rider.confirmPasswordLabel": { ar: "تأكيد كلمة المرور", en: "Confirm password" },
+  "rider.passwordTooShort": {
+    ar: "كلمة المرور يجب أن تكون 4 أحرف على الأقل",
+    en: "Password must be at least 4 characters",
+  },
+  "rider.passwordMismatch": { ar: "كلمتا المرور غير متطابقتين", en: "Passwords do not match" },
+  "rider.passwordSaved": { ar: "تم حفظ كلمة المرور", en: "Password saved" },
+  "rider.passwordSave": { ar: "حفظ", en: "Save" },
   "rider.multipleResultsTitle": { ar: "تم العثور على أكثر من نتيجة", en: "Multiple results found" },
   "rider.multipleResultsDesc": {
     ar: "هذا الرقم مسجل لدى أكثر من شركة. اختر شركتك للمتابعة:",
@@ -168,6 +195,23 @@ const dict = {
   "admin.riderBlockedLabel": { ar: "ممنوع من الاستعلام", en: "Blocked from lookup" },
   "admin.riderBlockButton": { ar: "منع", en: "Block" },
   "admin.riderUnblockButton": { ar: "سماح", en: "Allow" },
+  "admin.riderPasswordButton": { ar: "كلمة المرور", en: "Password" },
+  "admin.riderPasswordTitle": { ar: "كلمة مرور المندوب", en: "Rider password" },
+  "admin.riderPasswordDesc": {
+    ar: "لو عملت كلمة مرور، المندوب هيطلبها مع رقم الإقامة/الـ ID عشان يشوف تقاريره. سيبها فاضية عشان تشيلها.",
+    en: "If set, the rider must enter it with their Iqama/ID to view reports. Leave empty to remove it.",
+  },
+  "admin.riderPasswordPlaceholder": {
+    ar: "كلمة مرور جديدة (أو فاضي لإزالتها)",
+    en: "New password (or empty to remove)",
+  },
+  "admin.riderHasPassword": { ar: "بكلمة مرور", en: "Password set" },
+  "admin.toastRiderPasswordSet": { ar: "تم تعيين كلمة المرور", en: "Password set" },
+  "admin.toastRiderPasswordCleared": { ar: "تم إزالة كلمة المرور", en: "Password removed" },
+  "admin.toastRiderPasswordFailed": {
+    ar: "فشل تحديث كلمة المرور",
+    en: "Failed to update password",
+  },
   "admin.toastRiderBlocked": {
     ar: "تم منع المندوب من الاستعلام عن تقاريره",
     en: "Rider blocked from viewing their reports",

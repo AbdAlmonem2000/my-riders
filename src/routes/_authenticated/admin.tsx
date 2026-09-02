@@ -9,7 +9,9 @@ import {
   Building2,
   Download,
   Eye,
+  EyeOff,
   FileSpreadsheet,
+  KeyRound,
   Layers,
   Loader2,
   Lock,
@@ -76,6 +78,7 @@ import {
   deleteRoster,
   getRosterDownloadUrl,
   setRiderBlocked,
+  setRiderPassword,
 } from "@/lib/riders.functions";
 import { updateCompanyLogo, updateCompanyName } from "@/lib/accounts.functions";
 import { listAnnouncements, markAnnouncementsRead } from "@/lib/announcements.functions";
@@ -115,6 +118,7 @@ function AdminPage() {
   const deleteRosterFn = useServerFn(deleteRoster);
   const rosterUrlFn = useServerFn(getRosterDownloadUrl);
   const setRiderBlockedFn = useServerFn(setRiderBlocked);
+  const setRiderPasswordFn = useServerFn(setRiderPassword);
   const deleteFn = useServerFn(deleteReport);
   const deleteSheetFn = useServerFn(deleteReportSheet);
   const listAnnouncementsFn = useServerFn(listAnnouncements);
@@ -177,7 +181,9 @@ function AdminPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("riders")
-        .select("id, iqama_number, id_number, rider_name, photo_url, extra, is_blocked")
+        .select(
+          "id, iqama_number, id_number, rider_name, photo_url, extra, is_blocked, password_hash",
+        )
         .order("created_at", { ascending: false })
         .limit(1000);
       if (error) throw error;
@@ -221,6 +227,25 @@ function AdminPage() {
       toast.error(errText(err, t("admin.toastRiderBlockFailed")));
     } finally {
       setBlockingRiderId(null);
+    }
+  };
+
+  const [pwRiderId, setPwRiderId] = useState<string | null>(null);
+
+  const handleSetRiderPassword = async (riderId: string, password: string) => {
+    setPwRiderId(riderId);
+    try {
+      const res = await setRiderPasswordFn({ data: { riderId, password } });
+      toast.success(
+        res.cleared ? t("admin.toastRiderPasswordCleared") : t("admin.toastRiderPasswordSet"),
+      );
+      queryClient.invalidateQueries({ queryKey: ["company-riders"] });
+      return true;
+    } catch (err) {
+      toast.error(errText(err, t("admin.toastRiderPasswordFailed")));
+      return false;
+    } finally {
+      setPwRiderId(null);
     }
   };
 
@@ -814,31 +839,41 @@ function AdminPage() {
                                     );
                                   })}
                                   <TableCell className="text-end">
-                                    <Button
-                                      size="sm"
-                                      variant={r.is_blocked ? "outline" : "ghost"}
-                                      disabled={blockingRiderId === r.id}
-                                      onClick={() => toggleRiderBlocked(r.id, !r.is_blocked)}
-                                      className={
-                                        r.is_blocked
-                                          ? "text-primary"
-                                          : "text-destructive hover:text-destructive"
-                                      }
-                                    >
-                                      {blockingRiderId === r.id ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : r.is_blocked ? (
-                                        <>
-                                          <Eye className="ms-1.5 h-4 w-4" />
-                                          {t("admin.riderUnblockButton")}
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Ban className="ms-1.5 h-4 w-4" />
-                                          {t("admin.riderBlockButton")}
-                                        </>
-                                      )}
-                                    </Button>
+                                    <div className="flex items-center justify-end gap-1">
+                                      <RiderPasswordAdminDialog
+                                        riderId={r.id}
+                                        riderName={r.rider_name}
+                                        hasPassword={!!r.password_hash}
+                                        saving={pwRiderId === r.id}
+                                        t={t}
+                                        onSubmit={handleSetRiderPassword}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        variant={r.is_blocked ? "outline" : "ghost"}
+                                        disabled={blockingRiderId === r.id}
+                                        onClick={() => toggleRiderBlocked(r.id, !r.is_blocked)}
+                                        className={
+                                          r.is_blocked
+                                            ? "text-primary"
+                                            : "text-destructive hover:text-destructive"
+                                        }
+                                      >
+                                        {blockingRiderId === r.id ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : r.is_blocked ? (
+                                          <>
+                                            <Eye className="ms-1.5 h-4 w-4" />
+                                            {t("admin.riderUnblockButton")}
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Ban className="ms-1.5 h-4 w-4" />
+                                            {t("admin.riderBlockButton")}
+                                          </>
+                                        )}
+                                      </Button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               );
@@ -1153,6 +1188,91 @@ function NotificationBell({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function RiderPasswordAdminDialog({
+  riderId,
+  riderName,
+  hasPassword,
+  saving,
+  t,
+  onSubmit,
+}: {
+  riderId: string;
+  riderName: string | null;
+  hasPassword: boolean;
+  saving: boolean;
+  t: (key: TranslationKey) => string;
+  onSubmit: (riderId: string, password: string) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState("");
+  const [show, setShow] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const ok = await onSubmit(riderId, pw.trim());
+    if (ok) {
+      setOpen(false);
+      setPw("");
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) setPw("");
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          title={t("admin.riderPasswordTitle")}
+          className={hasPassword ? "text-primary" : "text-muted-foreground"}
+        >
+          <KeyRound className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t("admin.riderPasswordTitle")}
+            {riderName ? ` — ${riderName}` : ""}
+          </DialogTitle>
+          <DialogDescription>{t("admin.riderPasswordDesc")}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <div className="relative">
+            <Input
+              type={show ? "text" : "password"}
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              placeholder={t("admin.riderPasswordPlaceholder")}
+              dir="ltr"
+              className="pl-10"
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={() => setShow((v) => !v)}
+              tabIndex={-1}
+              className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.save")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

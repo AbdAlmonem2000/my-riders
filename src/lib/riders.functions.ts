@@ -254,6 +254,23 @@ export const getRosterDownloadUrl = createServerFn({ method: "GET" })
     return { url: data.signedUrl };
   });
 
+// Company admin sets, changes, or clears (empty string) a rider's lookup
+// password. Hashing happens in the SECURITY DEFINER RPC.
+export const setRiderPassword = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ riderId: z.string().uuid(), password: z.string().max(200) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase.rpc("admin_set_rider_password", {
+      _rider_id: data.riderId,
+      _password: data.password,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true, cleared: data.password.trim() === "" };
+  });
+
 // Block / unblock one rider from looking up or viewing their reports.
 export const setRiderBlocked = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

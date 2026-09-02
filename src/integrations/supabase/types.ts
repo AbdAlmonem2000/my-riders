@@ -275,6 +275,7 @@ export type Database = {
           id_number: string | null
           iqama_number: string | null
           is_blocked: boolean
+          password_hash: string | null
           photo_url: string | null
           rider_name: string | null
         }
@@ -286,6 +287,7 @@ export type Database = {
           id_number?: string | null
           iqama_number?: string | null
           is_blocked?: boolean
+          password_hash?: string | null
           photo_url?: string | null
           rider_name?: string | null
         }
@@ -297,6 +299,7 @@ export type Database = {
           id_number?: string | null
           iqama_number?: string | null
           is_blocked?: boolean
+          password_hash?: string | null
           photo_url?: string | null
           rider_name?: string | null
         }
@@ -348,6 +351,18 @@ export type Database = {
     }
     Functions: {
       admin_delete_user: { Args: { _user_id: string }; Returns: undefined }
+      admin_set_rider_password: {
+        Args: { _password: string; _rider_id: string }
+        Returns: undefined
+      }
+      rider_password_ok: {
+        Args: { _password: string; _rider_id: string }
+        Returns: boolean
+      }
+      set_rider_password: {
+        Args: { _current_password?: string; _new_password: string; _rider_id: string }
+        Returns: undefined
+      }
       admin_list_accounts: {
         Args: never
         Returns: {
@@ -369,7 +384,7 @@ export type Database = {
         Returns: undefined
       }
       get_rider_report: {
-        Args: { _report_id: string; _rider_id: string }
+        Args: { _password?: string; _report_id: string; _rider_id: string }
         Returns: {
           columns: Json
           data: Json
@@ -390,7 +405,7 @@ export type Database = {
       }
       is_super_admin: { Args: { _user_id: string }; Returns: boolean }
       list_rider_reports: {
-        Args: { _rider_id: string }
+        Args: { _password?: string; _rider_id: string }
         Returns: {
           file_name: string
           month: number
@@ -405,6 +420,7 @@ export type Database = {
           company_logo_url: string
           company_name: string
           rider_extra: Json
+          rider_has_password: boolean
           rider_id: string
           rider_is_blocked: boolean
           rider_name: string
