@@ -168,19 +168,28 @@ const NAV_TABS = [
   },
 ];
 
-// checkIsAdmin resolves these five fields identically for both roles: for a
+// checkIsAdmin resolves these fields identically for both roles: for a
 // real company admin they ARE the company's plan (set only by the super
 // admin — see accounts.functions.ts and the super-admin companies page); for a staff account
 // they're already the intersection of the company's plan and that staff
 // member's own personal permission. So the same page-access map below gates
 // both — an admin whose company plan doesn't include, say, Riders sees
 // exactly what a staff account without riders_access would see.
+//
+// Notifications, Users and Company Profile are different: staff never gets
+// them regardless of plan (no personal permission exists for these), so
+// their gates also require !isStaff — a company's plan can only ever turn
+// them OFF for its own admin, never ON for staff.
 interface PagePermissions {
+  isStaff: boolean;
   overviewAccess: boolean;
   ridersAccess: "none" | "view" | "full";
   reportsAccess: "none" | "view" | "full";
   documentsAccess: "none" | "view_only" | "full";
   lettersAccess: "none" | "view" | "full";
+  notificationsAccess: boolean;
+  usersAccess: boolean;
+  companyProfileAccess: boolean;
 }
 const PAGE_ACCESS: Record<string, (d: PagePermissions) => boolean> = {
   "/admin": (d) => d.overviewAccess,
@@ -188,6 +197,9 @@ const PAGE_ACCESS: Record<string, (d: PagePermissions) => boolean> = {
   "/admin/reports": (d) => d.reportsAccess !== "none",
   "/admin/documents": (d) => d.documentsAccess !== "none",
   "/admin/letters": (d) => d.lettersAccess !== "none",
+  "/admin/notifications": (d) => !d.isStaff && d.notificationsAccess,
+  "/admin/users": (d) => !d.isStaff && d.usersAccess,
+  "/admin/company-profile": (d) => !d.isStaff && d.companyProfileAccess,
 };
 
 function AdminLayout() {
@@ -304,9 +316,7 @@ function AdminLayout() {
 
   // "My account" lives in the sidebar for staff (their one place to see
   // their own info/permissions and change their password) but not for real
-  // admins, who already manage that through Company Profile. Notifications,
-  // Users, and Company Profile stay admin-only regardless of plan — they're
-  // never gated by PAGE_ACCESS, just hidden from staff entirely.
+  // admins, who already manage that through Company Profile.
   const visibleNavTabs = NAV_TABS.filter((tab) => {
     if (tab.to === "/admin/account") return isStaff;
     const gate = PAGE_ACCESS[tab.to];
@@ -411,7 +421,11 @@ function AdminLayout() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-muted/30">
+    <div className="relative min-h-screen bg-muted/30">
+      {/* overflow-hidden lives on the blob layer itself, not here — putting it
+          on this wrapper would make the sidebar's position:sticky treat this
+          div as its scroll container instead of the page, breaking the
+          "stays put while scrolling" behavior entirely. */}
       {/* Decorative drifting blobs — purely visual, so they're pulled out of
           the tab order and frozen for anyone who prefers reduced motion.
           Fixed so they stay put behind the sidebar/content while scrolling. */}

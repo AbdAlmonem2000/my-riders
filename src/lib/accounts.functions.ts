@@ -48,7 +48,7 @@ export const listCompanies = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("companies")
       .select(
-        "id, name, logo_url, is_suspended, created_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access",
+        "id, name, logo_url, is_suspended, created_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access",
       )
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
@@ -274,6 +274,9 @@ export const updateCompanyPlan = createServerFn({ method: "POST" })
         reportsAccess: TieredAccessSchema,
         documentsAccess: DocumentsAccessSchema,
         lettersAccess: TieredAccessSchema,
+        notificationsAccess: z.boolean(),
+        usersAccess: z.boolean(),
+        companyProfileAccess: z.boolean(),
       })
       .parse(d),
   )
@@ -287,6 +290,9 @@ export const updateCompanyPlan = createServerFn({ method: "POST" })
         plan_reports_access: data.reportsAccess,
         plan_documents_access: data.documentsAccess,
         plan_letters_access: data.lettersAccess,
+        plan_notifications_access: data.notificationsAccess,
+        plan_users_access: data.usersAccess,
+        plan_company_profile_access: data.companyProfileAccess,
       })
       .eq("id", data.id)
       .select("id");

@@ -92,11 +92,14 @@ export type Database = {
           is_suspended: boolean
           logo_url: string | null
           name: string
+          plan_company_profile_access: boolean
           plan_documents_access: string
           plan_letters_access: string
+          plan_notifications_access: boolean
           plan_overview_access: boolean
           plan_reports_access: string
           plan_riders_access: string
+          plan_users_access: boolean
           roster_file_name: string | null
           roster_path: string | null
           roster_uploaded_at: string | null
@@ -111,11 +114,14 @@ export type Database = {
           is_suspended?: boolean
           logo_url?: string | null
           name: string
+          plan_company_profile_access?: boolean
           plan_documents_access?: string
           plan_letters_access?: string
+          plan_notifications_access?: boolean
           plan_overview_access?: boolean
           plan_reports_access?: string
           plan_riders_access?: string
+          plan_users_access?: boolean
           roster_file_name?: string | null
           roster_path?: string | null
           roster_uploaded_at?: string | null
@@ -130,11 +136,14 @@ export type Database = {
           is_suspended?: boolean
           logo_url?: string | null
           name?: string
+          plan_company_profile_access?: boolean
           plan_documents_access?: string
           plan_letters_access?: string
+          plan_notifications_access?: boolean
           plan_overview_access?: boolean
           plan_reports_access?: string
           plan_riders_access?: string
+          plan_users_access?: boolean
           roster_file_name?: string | null
           roster_path?: string | null
           roster_uploaded_at?: string | null

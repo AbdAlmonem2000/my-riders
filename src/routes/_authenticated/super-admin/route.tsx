@@ -98,7 +98,11 @@ function SuperAdminLayout() {
   ));
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-muted/30">
+    <div className="relative min-h-screen bg-muted/30">
+      {/* overflow-hidden lives on the blob layer itself, not here — putting it
+          on this wrapper would make the sidebar's position:sticky treat this
+          div as its scroll container instead of the page, breaking the
+          "stays put while scrolling" behavior entirely. */}
       {/* Decorative drifting blobs — purely visual, so they're pulled out of
           the tab order and frozen for anyone who prefers reduced motion.
           Fixed so they stay put behind the sidebar/content while scrolling. */}

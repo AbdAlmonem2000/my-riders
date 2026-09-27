@@ -671,6 +671,15 @@ const dict = {
     en: "Set which pages are open to this company and to any user it creates — closing a page here closes it even if the company's own admin grants it to a staff member.",
   },
   "superAdmin.toastPlanUpdated": { ar: "تم تحديث باقة الشركة", en: "Company plan updated" },
+  "superAdmin.notificationsAccessLabel": {
+    ar: "صفحة الإشعارات والإنذارات",
+    en: "Notifications & Warnings page",
+  },
+  "superAdmin.usersAccessLabel": { ar: "صفحة المستخدمين", en: "Users page" },
+  "superAdmin.companyProfileAccessLabel": {
+    ar: "صفحة بيانات الشركة",
+    en: "Company profile page",
+  },
   "superAdmin.toastPlanUpdateFailed": {
     ar: "فشل تحديث باقة الشركة",
     en: "Failed to update the company plan",

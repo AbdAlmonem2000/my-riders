@@ -82,6 +82,9 @@ interface CompanyPlan {
   reportsAccess: TieredAccess;
   documentsAccess: DocumentsAccess;
   lettersAccess: TieredAccess;
+  notificationsAccess: boolean;
+  usersAccess: boolean;
+  companyProfileAccess: boolean;
 }
 
 const ALL_ACCESS_PLAN: CompanyPlan = {
@@ -90,6 +93,9 @@ const ALL_ACCESS_PLAN: CompanyPlan = {
   reportsAccess: "full",
   documentsAccess: "full",
   lettersAccess: "full",
+  notificationsAccess: true,
+  usersAccess: true,
+  companyProfileAccess: true,
 };
 
 function CompanyPlanDialog({
@@ -196,6 +202,27 @@ function CompanyPlanDialog({
               t={t}
             />
           </div>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={plan.notificationsAccess}
+              onCheckedChange={(v) => setPlan((p) => ({ ...p, notificationsAccess: !!v }))}
+            />
+            {t("superAdmin.notificationsAccessLabel")}
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={plan.usersAccess}
+              onCheckedChange={(v) => setPlan((p) => ({ ...p, usersAccess: !!v }))}
+            />
+            {t("superAdmin.usersAccessLabel")}
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={plan.companyProfileAccess}
+              onCheckedChange={(v) => setPlan((p) => ({ ...p, companyProfileAccess: !!v }))}
+            />
+            {t("superAdmin.companyProfileAccessLabel")}
+          </label>
           <Button type="submit" size="sm" disabled={saving} className="w-full">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("superAdmin.save")}
           </Button>
@@ -441,6 +468,9 @@ function CompaniesPage() {
                           reportsAccess: c.plan_reports_access as TieredAccess,
                           documentsAccess: c.plan_documents_access as DocumentsAccess,
                           lettersAccess: c.plan_letters_access as TieredAccess,
+                          notificationsAccess: c.plan_notifications_access,
+                          usersAccess: c.plan_users_access,
+                          companyProfileAccess: c.plan_company_profile_access,
                         }}
                         t={t}
                         onSubmit={async (plan) => {

@@ -746,6 +746,12 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let documentsAccess: DocTier = "full";
     let lettersAccess: Tier = "full";
     let allowedAreas: string[] | null = null;
+    // Notifications, Users, and Company Profile are never a staff
+    // permission — a staff account simply never sees them, so these three
+    // only ever matter for a real company admin (gated below by the plan).
+    let notificationsAccess = true;
+    let usersAccess = true;
+    let companyProfileAccess = true;
 
     if (!isSuperAdmin && !companyId) {
       const { data: memberCompanyId } = await supabase.rpc("get_member_company", {
@@ -793,7 +799,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       const { data } = await supabase
         .from("companies")
         .select(
-          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access",
+          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access",
         )
         .eq("id", companyId)
         .maybeSingle();
@@ -814,18 +820,29 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       const planReports = (data?.plan_reports_access as Tier | undefined) ?? "none";
       const planDocuments = (data?.plan_documents_access as DocTier | undefined) ?? "none";
       const planLetters = (data?.plan_letters_access as Tier | undefined) ?? "none";
+      const planNotifications = (data?.plan_notifications_access as boolean | undefined) ?? true;
+      const planUsers = (data?.plan_users_access as boolean | undefined) ?? true;
+      const planCompanyProfile = (data?.plan_company_profile_access as boolean | undefined) ?? true;
       if (isStaff) {
         overviewAccess = overviewAccess && planOverview;
         ridersAccess = minTier(ridersAccess, planRiders);
         reportsAccess = minTier(reportsAccess, planReports);
         documentsAccess = minTier(documentsAccess, planDocuments);
         lettersAccess = minTier(lettersAccess, planLetters);
+        // Staff never has these three regardless of plan — nothing to
+        // intersect, just make sure the returned value reflects reality.
+        notificationsAccess = false;
+        usersAccess = false;
+        companyProfileAccess = false;
       } else if (!isSuperAdmin) {
         overviewAccess = planOverview;
         ridersAccess = planRiders;
         reportsAccess = planReports;
         documentsAccess = planDocuments;
         lettersAccess = planLetters;
+        notificationsAccess = planNotifications;
+        usersAccess = planUsers;
+        companyProfileAccess = planCompanyProfile;
       }
     }
     // Deleting/blocking a rider outright is never something the company plan
@@ -848,6 +865,9 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       reportsAccess,
       documentsAccess,
       lettersAccess,
+      notificationsAccess,
+      usersAccess,
+      companyProfileAccess,
       allowedAreas,
       companyId,
       rosterFileName,
