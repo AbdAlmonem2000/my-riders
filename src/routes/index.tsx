@@ -1,6 +1,6 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Search, ShieldCheck, Truck } from "lucide-react";
+import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/lib/i18n";
@@ -22,26 +22,25 @@ function Index() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background">
-      <header className="animate-in fade-in slide-in-from-top-2 border-b border-border/50 bg-background/60 backdrop-blur duration-500">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-transform duration-300 hover:scale-105">
-              <img src="/logo.png" alt="logo" />
-            </div>
-            <span className="font-semibold">{t("index.headerTitle")}</span>
-          </div>
-          <Link
-            to="/auth"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            {t("index.adminLogin")}
-          </Link>
-        </div>
-      </header>
+    <div className="relative min-h-[calc(100vh-4.25rem)] overflow-hidden bg-gradient-to-b from-primary/5 via-background to-background">
+      {/* Decorative drifting blobs — purely visual, so they're pulled out of
+          the tab order and frozen for anyone who prefers reduced motion. */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="animate-blob absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[oklch(0.6_0.118_184.704)]/25 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "0s" }}
+        />
+        <div
+          className="animate-blob absolute -right-16 top-1/3 h-80 w-80 rounded-full bg-[oklch(0.627_0.265_303.9)]/20 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "-5s" }}
+        />
+        <div
+          className="animate-blob absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-primary/15 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "-10s" }}
+        />
+      </div>
 
-      <main className="mx-auto flex max-w-3xl flex-col items-center px-6 pb-20 pt-20 text-center">
+      <main className="relative mx-auto flex max-w-3xl flex-col items-center px-6 pb-20 pt-20 text-center">
         <div className="animate-in fade-in slide-in-from-bottom-2 mb-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-background px-3 py-1 text-xs text-muted-foreground duration-500">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
           {t("index.liveBadge")}

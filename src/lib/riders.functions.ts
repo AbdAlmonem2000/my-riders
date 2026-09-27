@@ -22,6 +22,7 @@ const RosterInput = z
     idColumn: z.string().nullable(),
     nameColumn: z.string().nullable(),
     photoColumn: z.string().nullable(),
+    areaColumn: z.string().nullable().optional(),
     storagePath: z.string().nullable(),
     fileName: z.string().nullable(),
     rows: z.array(RowSchema),
@@ -32,10 +33,39 @@ const RosterInput = z
 
 type ExistingRider = RiderIdentity & {
   photo_url: string | null;
+  area: string | null;
   extra: Record<string, unknown> | null;
 };
 
-async function resolveActiveCompany(
+// Shared by the manual add/edit-rider dialog. A rider must be identifiable
+// by at least one number — same rule as every other rider-creating path —
+// so a monthly report uploaded later can find and link to this row.
+const RiderFieldsInput = z.object({
+  iqamaNumber: z.string().nullable(),
+  idNumber: z.string().nullable(),
+  riderName: z.string().nullable(),
+  photoUrl: z.string().nullable(),
+  area: z.string().nullable().optional(),
+  extra: z.record(z.string(), z.string()).optional(),
+});
+
+function normalizeRiderFields(d: z.infer<typeof RiderFieldsInput>) {
+  const iqama = d.iqamaNumber?.trim() || null;
+  const idNumber = d.idNumber?.trim() || null;
+  if (!iqama && !idNumber) {
+    throw new Error("لازم رقم إقامة أو ID على الأقل");
+  }
+  return {
+    iqama,
+    idNumber,
+    name: d.riderName?.trim() || null,
+    photo: d.photoUrl?.trim() || null,
+    area: d.area?.trim() || null,
+    extra: (d.extra ?? {}) as Json,
+  };
+}
+
+export async function resolveActiveCompany(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   userId: string,
@@ -53,6 +83,64 @@ async function resolveActiveCompany(
   return companyId as string;
 }
 
+// Resolves the caller's company for editing/blocking a rider specifically.
+// Unlike resolveActiveCompany (admin-only — still used for roster upload,
+// creating brand-new riders, and everything else in this file), this also
+// accepts a staff account (role 'user') whose riders_access is 'full'.
+// Doesn't check allowed_areas itself — that's enforced by the RLS UPDATE
+// policy on `riders`, which silently touches 0 rows for an out-of-area
+// rider, surfaced below as the same "not found" error a wrong company id
+// would give.
+//
+// requireDelete/requireBlock each additionally require their own dedicated
+// permission for a staff account — deleting or blocking a rider is a step
+// up from editing one, so a company admin can grant riders_access='full'
+// without automatically trusting that staff member to also remove or block
+// a rider.
+async function resolveRidersCompany(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  options: { requireDelete?: boolean; requireBlock?: boolean } = {},
+): Promise<string> {
+  const { data: companyId } = await supabase.rpc("get_member_company", { _user_id: userId });
+  if (!companyId) {
+    throw new Error("هذا الحساب غير مرتبط بشركة");
+  }
+  const { data: isActive } = await supabase.rpc("is_company_active", {
+    _company_id: companyId,
+  });
+  if (!isActive) {
+    throw new Error("هذا الحساب موقوف مؤقتًا من قبل الإدارة، تواصل معهم لإعادة التفعيل");
+  }
+  const { data: role } = await supabase.rpc("get_member_role", { _user_id: userId });
+  if (role === "user") {
+    const { data: access } = await supabase.rpc("get_member_riders_access", {
+      _user_id: userId,
+    });
+    if (access !== "full") {
+      throw new Error("غير مصرح: صلاحيتك على المناديب للعرض فقط");
+    }
+    if (options.requireDelete) {
+      const { data: canDelete } = await supabase.rpc("get_member_riders_delete_access", {
+        _user_id: userId,
+      });
+      if (!canDelete) {
+        throw new Error("غير مصرح: ليس لديك صلاحية حذف المناديب");
+      }
+    }
+    if (options.requireBlock) {
+      const { data: canBlock } = await supabase.rpc("get_member_riders_block_access", {
+        _user_id: userId,
+      });
+      if (!canBlock) {
+        throw new Error("غير مصرح: ليس لديك صلاحية منع المناديب");
+      }
+    }
+  }
+  return companyId as string;
+}
+
 export const uploadRoster = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => RosterInput.parse(d))
@@ -62,14 +150,15 @@ export const uploadRoster = createServerFn({ method: "POST" })
 
     const { data: existingRaw } = await supabase
       .from("riders")
-      .select("id, iqama_number, id_number, rider_name, photo_url, extra")
-      .eq("company_id", companyId);
+      .select("id, iqama_number, id_number, rider_name, photo_url, area, extra")
+      .eq("company_id", companyId)
+      .is("deleted_at", null);
     const existing = (existingRaw ?? []) as ExistingRider[];
     const index = indexRiders(existing);
     const existingById = new Map(existing.map((r) => [r.id, r]));
 
     const knownCols = new Set(
-      [data.iqamaColumn, data.idColumn, data.nameColumn, data.photoColumn].filter(
+      [data.iqamaColumn, data.idColumn, data.nameColumn, data.photoColumn, data.areaColumn].filter(
         (c): c is string => !!c,
       ),
     );
@@ -81,6 +170,7 @@ export const uploadRoster = createServerFn({ method: "POST" })
       id_number: string | null;
       rider_name: string | null;
       photo_url: string | null;
+      area: string | null;
       extra: Json;
     }
     const inserts: RiderRow[] = [];
@@ -103,6 +193,7 @@ export const uploadRoster = createServerFn({ method: "POST" })
       }
       const name = cellText(row, data.nameColumn);
       const photo = cellText(row, data.photoColumn);
+      const area = cellText(row, data.areaColumn ?? null);
       const extra: Record<string, string> = {};
       for (const c of extraCols) {
         const v = cellText(row, c);
@@ -116,6 +207,12 @@ export const uploadRoster = createServerFn({ method: "POST" })
 
       if (match) {
         const ex = existingById.get(match.id)!;
+        // A column detected as the area column now (e.g. it wasn't
+        // recognised before this rider's row was first uploaded) may still
+        // be sitting in the rider's old `extra` under that same header —
+        // drop it there now that it lives in its own dedicated field.
+        const mergedExtra = { ...(ex.extra ?? {}), ...extra };
+        if (data.areaColumn) delete mergedExtra[data.areaColumn];
         updates.push({
           id: match.id,
           company_id: companyId,
@@ -125,7 +222,8 @@ export const uploadRoster = createServerFn({ method: "POST" })
           id_number: id ?? ex.id_number,
           rider_name: name ?? ex.rider_name,
           photo_url: photo ?? ex.photo_url,
-          extra: { ...(ex.extra ?? {}), ...extra } as Json,
+          area: area ?? ex.area,
+          extra: mergedExtra as Json,
         });
       } else {
         inserts.push({
@@ -134,6 +232,7 @@ export const uploadRoster = createServerFn({ method: "POST" })
           id_number: id,
           rider_name: name,
           photo_url: photo,
+          area,
           extra: extra as Json,
         });
       }
@@ -279,7 +378,7 @@ export const setRiderBlocked = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const companyId = await resolveActiveCompany(supabase, userId);
+    const companyId = await resolveRidersCompany(supabase, userId, { requireBlock: true });
     const { data: updated, error } = await supabase
       .from("riders")
       .update({ is_blocked: data.blocked })
@@ -291,4 +390,245 @@ export const setRiderBlocked = createServerFn({ method: "POST" })
       throw new Error("لم يتم تحديث حالة المندوب — تأكد أنه يتبع شركتك");
     }
     return { ok: true };
+  });
+
+// Same as setRiderBlocked, applied to a whole selection at once — used by
+// the riders page's "select several, then act" bulk toolbar.
+export const bulkSetRidersBlocked = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ riderIds: z.array(z.string().uuid()).min(1), blocked: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveRidersCompany(supabase, userId, { requireBlock: true });
+    const { data: updated, error } = await supabase
+      .from("riders")
+      .update({ is_blocked: data.blocked })
+      .in("id", data.riderIds)
+      .eq("company_id", companyId)
+      .select("id");
+    if (error) throw new Error(error.message);
+    return { updated: updated?.length ?? 0 };
+  });
+
+// Manually add one rider. It becomes an ordinary row in `riders`, so a
+// monthly report uploaded afterwards that carries the same Iqama/ID links to
+// it automatically via the same matching every other upload path uses.
+export const createRider = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => RiderFieldsInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveActiveCompany(supabase, userId);
+    const { iqama, idNumber, name, photo, area, extra } = normalizeRiderFields(data);
+
+    const { data: existingRaw } = await supabase
+      .from("riders")
+      .select("id, iqama_number, id_number, rider_name")
+      .eq("company_id", companyId)
+      .is("deleted_at", null);
+    const index = indexRiders((existingRaw ?? []) as RiderIdentity[]);
+    if (matchRider(index, iqama, idNumber)) {
+      throw new Error(
+        "مندوب بنفس رقم الإقامة أو الـ ID موجود بالفعل — عدّل عليه بدل إضافته من جديد",
+      );
+    }
+
+    const { data: created, error } = await supabase
+      .from("riders")
+      .insert({
+        company_id: companyId,
+        iqama_number: iqama,
+        id_number: idNumber,
+        rider_name: name,
+        photo_url: photo,
+        area,
+        extra,
+      })
+      .select("id")
+      .single();
+    if (error || !created) throw new Error(error?.message ?? "فشل إضافة المندوب");
+    return { id: created.id };
+  });
+
+// Manually edit one rider's identity/name/photo/extra fields.
+export const updateRider = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => RiderFieldsInput.extend({ riderId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveRidersCompany(supabase, userId);
+    const { iqama, idNumber, name, photo, area, extra } = normalizeRiderFields(data);
+
+    // Catch a collision with a *different* rider before hitting the DB
+    // constraint, so the error message is clear.
+    const { data: existingRaw } = await supabase
+      .from("riders")
+      .select("id, iqama_number, id_number, rider_name")
+      .eq("company_id", companyId)
+      .is("deleted_at", null);
+    const others = ((existingRaw ?? []) as (RiderIdentity & { id: string })[]).filter(
+      (r) => r.id !== data.riderId,
+    );
+    if (matchRider(indexRiders(others), iqama, idNumber)) {
+      throw new Error("رقم الإقامة أو الـ ID ده مستخدم بالفعل لمندوب تاني");
+    }
+
+    const { data: updated, error } = await supabase
+      .from("riders")
+      .update({
+        iqama_number: iqama,
+        id_number: idNumber,
+        rider_name: name,
+        photo_url: photo,
+        area,
+        extra,
+      })
+      .eq("id", data.riderId)
+      .eq("company_id", companyId)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error("لم يتم تحديث المندوب — تأكد أنه يتبع شركتك");
+    }
+    return { ok: true };
+  });
+
+// Saves the rotation a company chose for a rider's photo (0/90/180/270), so
+// it stays the same everywhere that photo is shown instead of resetting.
+export const updateRiderPhotoRotation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        riderId: z.string().uuid(),
+        rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveRidersCompany(supabase, userId);
+    const { data: updated, error } = await supabase
+      .from("riders")
+      .update({ photo_rotation: data.rotation })
+      .eq("id", data.riderId)
+      .eq("company_id", companyId)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error("لم يتم تحديث الصورة — تأكد أنه يتبع شركتك");
+    }
+    return { ok: true };
+  });
+
+// How many report rows still reference this rider — shown to the admin
+// before deleting, so they know what a permanent delete would take with it.
+export const getRiderReportCount = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ riderId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveRidersCompany(supabase, userId);
+    const { count, error } = await supabase
+      .from("rider_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("rider_id", data.riderId)
+      .eq("company_id", companyId);
+    if (error) throw new Error(error.message);
+    return { count: count ?? 0 };
+  });
+
+// Same as getRiderReportCount, summed over a whole selection — shown before
+// a bulk delete so the admin knows what a permanent delete would take with
+// it, without one round trip per rider.
+export const getRidersReportCount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ riderIds: z.array(z.string().uuid()).min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveRidersCompany(supabase, userId);
+    const { count, error } = await supabase
+      .from("rider_reports")
+      .select("id", { count: "exact", head: true })
+      .in("rider_id", data.riderIds)
+      .eq("company_id", companyId);
+    if (error) throw new Error(error.message);
+    return { count: count ?? 0 };
+  });
+
+// Removes a rider one of two ways:
+//  - deleteReports: true  — a real row delete. The existing ON DELETE
+//    CASCADE foreign keys take their reports, documents, letters, push
+//    subscriptions and notifications with them. Irreversible.
+//  - deleteReports: false — a soft delete (deleted_at). The rider
+//    disappears from every roster/search screen and can no longer be
+//    looked up, but rows that already reference them (old report data)
+//    are left exactly as they were.
+export const deleteRider = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ riderId: z.string().uuid(), deleteReports: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveRidersCompany(supabase, userId, { requireDelete: true });
+
+    if (data.deleteReports) {
+      const { data: deleted, error } = await supabase
+        .from("riders")
+        .delete()
+        .eq("id", data.riderId)
+        .eq("company_id", companyId)
+        .select("id");
+      if (error) throw new Error(error.message);
+      if (!deleted || deleted.length === 0) {
+        throw new Error("لم يتم حذف المندوب — تأكد أنه يتبع شركتك");
+      }
+    } else {
+      const { data: updated, error } = await supabase
+        .from("riders")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", data.riderId)
+        .eq("company_id", companyId)
+        .select("id");
+      if (error) throw new Error(error.message);
+      if (!updated || updated.length === 0) {
+        throw new Error("لم يتم حذف المندوب — تأكد أنه يتبع شركتك");
+      }
+    }
+    return { ok: true };
+  });
+
+// Same as deleteRider, applied to a whole selection at once.
+export const bulkDeleteRiders = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ riderIds: z.array(z.string().uuid()).min(1), deleteReports: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveRidersCompany(supabase, userId, { requireDelete: true });
+
+    if (data.deleteReports) {
+      const { data: deleted, error } = await supabase
+        .from("riders")
+        .delete()
+        .in("id", data.riderIds)
+        .eq("company_id", companyId)
+        .select("id");
+      if (error) throw new Error(error.message);
+      return { deleted: deleted?.length ?? 0 };
+    }
+    const { data: updated, error } = await supabase
+      .from("riders")
+      .update({ deleted_at: new Date().toISOString() })
+      .in("id", data.riderIds)
+      .eq("company_id", companyId)
+      .select("id");
+    if (error) throw new Error(error.message);
+    return { deleted: updated?.length ?? 0 };
   });

@@ -11,11 +11,24 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RiderIqamaRouteImport } from './routes/rider.$iqama'
-import { Route as AuthenticatedSuperAdminRouteImport } from './routes/_authenticated/super-admin'
-import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedSuperAdminRouteRouteImport } from './routes/_authenticated/super-admin/route'
+import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
+import { Route as AuthenticatedSuperAdminIndexRouteImport } from './routes/_authenticated/super-admin/index'
+import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedSuperAdminAnnouncementsRouteImport } from './routes/_authenticated/super-admin/announcements'
+import { Route as AuthenticatedSuperAdminAccountsRouteImport } from './routes/_authenticated/super-admin/accounts'
+import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
+import { Route as AuthenticatedAdminRidersRouteImport } from './routes/_authenticated/admin/riders'
+import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin/reports'
+import { Route as AuthenticatedAdminNotificationsRouteImport } from './routes/_authenticated/admin/notifications'
+import { Route as AuthenticatedAdminLettersRouteImport } from './routes/_authenticated/admin/letters'
+import { Route as AuthenticatedAdminDocumentsRouteImport } from './routes/_authenticated/admin/documents'
+import { Route as AuthenticatedAdminCompanyProfileRouteImport } from './routes/_authenticated/admin/company-profile'
+import { Route as AuthenticatedAdminAccountRouteImport } from './routes/_authenticated/admin/account'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
@@ -25,6 +38,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -41,74 +59,220 @@ const RiderIqamaRoute = RiderIqamaRouteImport.update({
   path: '/rider/$iqama',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedSuperAdminRoute = AuthenticatedSuperAdminRouteImport.update({
-  id: '/super-admin',
-  path: '/super-admin',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+const AuthenticatedSuperAdminRouteRoute =
+  AuthenticatedSuperAdminRouteRouteImport.update({
+    id: '/super-admin',
+    path: '/super-admin',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAdminRouteRoute = AuthenticatedAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSuperAdminIndexRoute =
+  AuthenticatedSuperAdminIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedSuperAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
+} as any)
+const AuthenticatedSuperAdminAnnouncementsRoute =
+  AuthenticatedSuperAdminAnnouncementsRouteImport.update({
+    id: '/announcements',
+    path: '/announcements',
+    getParentRoute: () => AuthenticatedSuperAdminRouteRoute,
+  } as any)
+const AuthenticatedSuperAdminAccountsRoute =
+  AuthenticatedSuperAdminAccountsRouteImport.update({
+    id: '/accounts',
+    path: '/accounts',
+    getParentRoute: () => AuthenticatedSuperAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
+} as any)
+const AuthenticatedAdminRidersRoute =
+  AuthenticatedAdminRidersRouteImport.update({
+    id: '/riders',
+    path: '/riders',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminReportsRoute =
+  AuthenticatedAdminReportsRouteImport.update({
+    id: '/reports',
+    path: '/reports',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminNotificationsRoute =
+  AuthenticatedAdminNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminLettersRoute =
+  AuthenticatedAdminLettersRouteImport.update({
+    id: '/letters',
+    path: '/letters',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminDocumentsRoute =
+  AuthenticatedAdminDocumentsRouteImport.update({
+    id: '/documents',
+    path: '/documents',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminCompanyProfileRoute =
+  AuthenticatedAdminCompanyProfileRouteImport.update({
+    id: '/company-profile',
+    path: '/company-profile',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminAccountRoute =
+  AuthenticatedAdminAccountRouteImport.update({
+    id: '/account',
+    path: '/account',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/admin': typeof AuthenticatedAdminRoute
-  '/super-admin': typeof AuthenticatedSuperAdminRoute
+  '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
+  '/super-admin': typeof AuthenticatedSuperAdminRouteRouteWithChildren
   '/rider/$iqama': typeof RiderIqamaRoute
+  '/admin/account': typeof AuthenticatedAdminAccountRoute
+  '/admin/company-profile': typeof AuthenticatedAdminCompanyProfileRoute
+  '/admin/documents': typeof AuthenticatedAdminDocumentsRoute
+  '/admin/letters': typeof AuthenticatedAdminLettersRoute
+  '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/riders': typeof AuthenticatedAdminRidersRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/super-admin/accounts': typeof AuthenticatedSuperAdminAccountsRoute
+  '/super-admin/announcements': typeof AuthenticatedSuperAdminAnnouncementsRoute
+  '/admin/': typeof AuthenticatedAdminIndexRoute
+  '/super-admin/': typeof AuthenticatedSuperAdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/admin': typeof AuthenticatedAdminRoute
-  '/super-admin': typeof AuthenticatedSuperAdminRoute
   '/rider/$iqama': typeof RiderIqamaRoute
+  '/admin/account': typeof AuthenticatedAdminAccountRoute
+  '/admin/company-profile': typeof AuthenticatedAdminCompanyProfileRoute
+  '/admin/documents': typeof AuthenticatedAdminDocumentsRoute
+  '/admin/letters': typeof AuthenticatedAdminLettersRoute
+  '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/riders': typeof AuthenticatedAdminRidersRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/super-admin/accounts': typeof AuthenticatedSuperAdminAccountsRoute
+  '/super-admin/announcements': typeof AuthenticatedSuperAdminAnnouncementsRoute
+  '/admin': typeof AuthenticatedAdminIndexRoute
+  '/super-admin': typeof AuthenticatedSuperAdminIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/about': typeof AboutRoute
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/_authenticated/admin': typeof AuthenticatedAdminRoute
-  '/_authenticated/super-admin': typeof AuthenticatedSuperAdminRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
+  '/_authenticated/super-admin': typeof AuthenticatedSuperAdminRouteRouteWithChildren
   '/rider/$iqama': typeof RiderIqamaRoute
+  '/_authenticated/admin/account': typeof AuthenticatedAdminAccountRoute
+  '/_authenticated/admin/company-profile': typeof AuthenticatedAdminCompanyProfileRoute
+  '/_authenticated/admin/documents': typeof AuthenticatedAdminDocumentsRoute
+  '/_authenticated/admin/letters': typeof AuthenticatedAdminLettersRoute
+  '/_authenticated/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/_authenticated/admin/riders': typeof AuthenticatedAdminRidersRoute
+  '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/super-admin/accounts': typeof AuthenticatedSuperAdminAccountsRoute
+  '/_authenticated/super-admin/announcements': typeof AuthenticatedSuperAdminAnnouncementsRoute
+  '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
+  '/_authenticated/super-admin/': typeof AuthenticatedSuperAdminIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
     | '/auth'
     | '/reset-password'
     | '/admin'
     | '/super-admin'
     | '/rider/$iqama'
+    | '/admin/account'
+    | '/admin/company-profile'
+    | '/admin/documents'
+    | '/admin/letters'
+    | '/admin/notifications'
+    | '/admin/reports'
+    | '/admin/riders'
+    | '/admin/users'
+    | '/super-admin/accounts'
+    | '/super-admin/announcements'
+    | '/admin/'
+    | '/super-admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
     | '/auth'
     | '/reset-password'
+    | '/rider/$iqama'
+    | '/admin/account'
+    | '/admin/company-profile'
+    | '/admin/documents'
+    | '/admin/letters'
+    | '/admin/notifications'
+    | '/admin/reports'
+    | '/admin/riders'
+    | '/admin/users'
+    | '/super-admin/accounts'
+    | '/super-admin/announcements'
     | '/admin'
     | '/super-admin'
-    | '/rider/$iqama'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/about'
     | '/auth'
     | '/reset-password'
     | '/_authenticated/admin'
     | '/_authenticated/super-admin'
     | '/rider/$iqama'
+    | '/_authenticated/admin/account'
+    | '/_authenticated/admin/company-profile'
+    | '/_authenticated/admin/documents'
+    | '/_authenticated/admin/letters'
+    | '/_authenticated/admin/notifications'
+    | '/_authenticated/admin/reports'
+    | '/_authenticated/admin/riders'
+    | '/_authenticated/admin/users'
+    | '/_authenticated/super-admin/accounts'
+    | '/_authenticated/super-admin/announcements'
+    | '/_authenticated/admin/'
+    | '/_authenticated/super-admin/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AboutRoute: typeof AboutRoute
   AuthRoute: typeof AuthRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   RiderIqamaRoute: typeof RiderIqamaRoute
@@ -128,6 +292,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -155,27 +326,162 @@ declare module '@tanstack/react-router' {
       id: '/_authenticated/super-admin'
       path: '/super-admin'
       fullPath: '/super-admin'
-      preLoaderRoute: typeof AuthenticatedSuperAdminRouteImport
+      preLoaderRoute: typeof AuthenticatedSuperAdminRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
       fullPath: '/admin'
-      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      preLoaderRoute: typeof AuthenticatedAdminRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/super-admin/': {
+      id: '/_authenticated/super-admin/'
+      path: '/'
+      fullPath: '/super-admin/'
+      preLoaderRoute: typeof AuthenticatedSuperAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedSuperAdminRouteRoute
+    }
+    '/_authenticated/admin/': {
+      id: '/_authenticated/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/super-admin/announcements': {
+      id: '/_authenticated/super-admin/announcements'
+      path: '/announcements'
+      fullPath: '/super-admin/announcements'
+      preLoaderRoute: typeof AuthenticatedSuperAdminAnnouncementsRouteImport
+      parentRoute: typeof AuthenticatedSuperAdminRouteRoute
+    }
+    '/_authenticated/super-admin/accounts': {
+      id: '/_authenticated/super-admin/accounts'
+      path: '/accounts'
+      fullPath: '/super-admin/accounts'
+      preLoaderRoute: typeof AuthenticatedSuperAdminAccountsRouteImport
+      parentRoute: typeof AuthenticatedSuperAdminRouteRoute
+    }
+    '/_authenticated/admin/users': {
+      id: '/_authenticated/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/riders': {
+      id: '/_authenticated/admin/riders'
+      path: '/riders'
+      fullPath: '/admin/riders'
+      preLoaderRoute: typeof AuthenticatedAdminRidersRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/reports': {
+      id: '/_authenticated/admin/reports'
+      path: '/reports'
+      fullPath: '/admin/reports'
+      preLoaderRoute: typeof AuthenticatedAdminReportsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/notifications': {
+      id: '/_authenticated/admin/notifications'
+      path: '/notifications'
+      fullPath: '/admin/notifications'
+      preLoaderRoute: typeof AuthenticatedAdminNotificationsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/letters': {
+      id: '/_authenticated/admin/letters'
+      path: '/letters'
+      fullPath: '/admin/letters'
+      preLoaderRoute: typeof AuthenticatedAdminLettersRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/documents': {
+      id: '/_authenticated/admin/documents'
+      path: '/documents'
+      fullPath: '/admin/documents'
+      preLoaderRoute: typeof AuthenticatedAdminDocumentsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/company-profile': {
+      id: '/_authenticated/admin/company-profile'
+      path: '/company-profile'
+      fullPath: '/admin/company-profile'
+      preLoaderRoute: typeof AuthenticatedAdminCompanyProfileRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/account': {
+      id: '/_authenticated/admin/account'
+      path: '/account'
+      fullPath: '/admin/account'
+      preLoaderRoute: typeof AuthenticatedAdminAccountRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
   }
 }
 
+interface AuthenticatedAdminRouteRouteChildren {
+  AuthenticatedAdminAccountRoute: typeof AuthenticatedAdminAccountRoute
+  AuthenticatedAdminCompanyProfileRoute: typeof AuthenticatedAdminCompanyProfileRoute
+  AuthenticatedAdminDocumentsRoute: typeof AuthenticatedAdminDocumentsRoute
+  AuthenticatedAdminLettersRoute: typeof AuthenticatedAdminLettersRoute
+  AuthenticatedAdminNotificationsRoute: typeof AuthenticatedAdminNotificationsRoute
+  AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
+  AuthenticatedAdminRidersRoute: typeof AuthenticatedAdminRidersRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+}
+
+const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren =
+  {
+    AuthenticatedAdminAccountRoute: AuthenticatedAdminAccountRoute,
+    AuthenticatedAdminCompanyProfileRoute:
+      AuthenticatedAdminCompanyProfileRoute,
+    AuthenticatedAdminDocumentsRoute: AuthenticatedAdminDocumentsRoute,
+    AuthenticatedAdminLettersRoute: AuthenticatedAdminLettersRoute,
+    AuthenticatedAdminNotificationsRoute: AuthenticatedAdminNotificationsRoute,
+    AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
+    AuthenticatedAdminRidersRoute: AuthenticatedAdminRidersRoute,
+    AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
+    AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+  }
+
+const AuthenticatedAdminRouteRouteWithChildren =
+  AuthenticatedAdminRouteRoute._addFileChildren(
+    AuthenticatedAdminRouteRouteChildren,
+  )
+
+interface AuthenticatedSuperAdminRouteRouteChildren {
+  AuthenticatedSuperAdminAccountsRoute: typeof AuthenticatedSuperAdminAccountsRoute
+  AuthenticatedSuperAdminAnnouncementsRoute: typeof AuthenticatedSuperAdminAnnouncementsRoute
+  AuthenticatedSuperAdminIndexRoute: typeof AuthenticatedSuperAdminIndexRoute
+}
+
+const AuthenticatedSuperAdminRouteRouteChildren: AuthenticatedSuperAdminRouteRouteChildren =
+  {
+    AuthenticatedSuperAdminAccountsRoute: AuthenticatedSuperAdminAccountsRoute,
+    AuthenticatedSuperAdminAnnouncementsRoute:
+      AuthenticatedSuperAdminAnnouncementsRoute,
+    AuthenticatedSuperAdminIndexRoute: AuthenticatedSuperAdminIndexRoute,
+  }
+
+const AuthenticatedSuperAdminRouteRouteWithChildren =
+  AuthenticatedSuperAdminRouteRoute._addFileChildren(
+    AuthenticatedSuperAdminRouteRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
-  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
-  AuthenticatedSuperAdminRoute: typeof AuthenticatedSuperAdminRoute
+  AuthenticatedAdminRouteRoute: typeof AuthenticatedAdminRouteRouteWithChildren
+  AuthenticatedSuperAdminRouteRoute: typeof AuthenticatedSuperAdminRouteRouteWithChildren
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedAdminRoute: AuthenticatedAdminRoute,
-  AuthenticatedSuperAdminRoute: AuthenticatedSuperAdminRoute,
+  AuthenticatedAdminRouteRoute: AuthenticatedAdminRouteRouteWithChildren,
+  AuthenticatedSuperAdminRouteRoute:
+    AuthenticatedSuperAdminRouteRouteWithChildren,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -184,6 +490,7 @@ const AuthenticatedRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AboutRoute: AboutRoute,
   AuthRoute: AuthRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   RiderIqamaRoute: RiderIqamaRoute,

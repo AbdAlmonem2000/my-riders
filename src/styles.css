@@ -142,3 +142,45 @@
     color: var(--color-foreground);
   }
 }
+
+@theme {
+  --animate-nav-progress: nav-progress 1.1s ease-in-out infinite;
+  --animate-blob: blob 16s ease-in-out infinite;
+  --animate-float: float 5s ease-in-out infinite;
+
+  @keyframes nav-progress {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
+
+  /* A slow, organic drift for decorative background blobs — never fast
+     enough to distract from the form sitting on top of it. */
+  @keyframes blob {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+    }
+    33% {
+      transform: translate(4%, -6%) scale(1.08);
+    }
+    66% {
+      transform: translate(-3%, 4%) scale(0.94);
+    }
+  }
+
+  /* A gentle bob for a logo or icon, so it reads as alive without looking
+     like a loading spinner. */
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
+  }
+}

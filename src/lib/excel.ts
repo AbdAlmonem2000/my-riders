@@ -63,6 +63,21 @@ const NAME_ALIASES = [
   "courier name",
 ];
 
+const AREA_ALIASES = [
+  "المنطقة",
+  "منطقة",
+  "المنطقه",
+  "منطقه",
+  "منطقة العمل",
+  "المدينة",
+  "مدينة",
+  "area",
+  "region",
+  "city",
+  "location",
+  "zone",
+];
+
 const norm = (s: string) =>
   String(s ?? "")
     .toLowerCase()
@@ -93,6 +108,7 @@ export interface ParsedExcel {
   idColumn: string | null;
   nameColumn: string | null;
   photoColumn: string | null;
+  areaColumn: string | null;
 }
 
 export async function parseExcelFile(file: File): Promise<ParsedExcel> {
@@ -135,40 +151,15 @@ export async function parseExcelFile(file: File): Promise<ParsedExcel> {
   ) {
     photoColumn = null;
   }
-  return { headers, rows, iqamaColumn, idColumn, nameColumn, photoColumn };
-}
-
-export const MONTH_NAMES_AR = [
-  "يناير",
-  "فبراير",
-  "مارس",
-  "أبريل",
-  "مايو",
-  "يونيو",
-  "يوليو",
-  "أغسطس",
-  "سبتمبر",
-  "أكتوبر",
-  "نوفمبر",
-  "ديسمبر",
-];
-
-export const MONTH_NAMES_EN = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-export function monthLabel(month: number, year: number, lang: "ar" | "en" = "ar") {
-  const names = lang === "en" ? MONTH_NAMES_EN : MONTH_NAMES_AR;
-  return `${names[month - 1] ?? month} ${year}`;
+  let areaColumn = findColumn(headers, AREA_ALIASES);
+  if (
+    areaColumn &&
+    (areaColumn === iqamaColumn ||
+      areaColumn === idColumn ||
+      areaColumn === nameColumn ||
+      areaColumn === photoColumn)
+  ) {
+    areaColumn = null;
+  }
+  return { headers, rows, iqamaColumn, idColumn, nameColumn, photoColumn, areaColumn };
 }

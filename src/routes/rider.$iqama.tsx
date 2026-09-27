@@ -3,21 +3,28 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  ArrowRight,
+  AlertTriangle,
   Ban,
+  Bell,
+  BellOff,
+  BellRing,
   Building2,
   Calendar,
   Eye,
   EyeOff,
+  FileSignature,
   KeyRound,
   Loader2,
   Lock,
   Megaphone,
+  Printer,
   Search,
   User,
+  type LucideIcon,
 } from "lucide-react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,8 +38,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
-import { monthLabel } from "@/lib/excel";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { LetterDocument, useLetterPrint } from "@/components/letter-document";
+import { PushBanner } from "@/components/push-banner";
+import { RiderPhoto } from "@/components/rider-photo";
+import { UserMenu } from "@/components/user-menu";
+import { useRiderPush } from "@/lib/push-client";
+import { formatDate, formatDateTime } from "@/lib/date-format";
+import { monthLabel } from "@/lib/month-label";
+import { HIGHLIGHT_KEYS, pickMetric } from "@/lib/rider-metrics";
 import { useLanguage, type Lang, type TranslationKey } from "@/lib/i18n";
 
 const search = z.object({
@@ -48,12 +64,221 @@ interface RiderMatch {
   rider_id: string;
   rider_name: string | null;
   rider_photo_url: string | null;
+  rider_photo_rotation: number;
+  rider_area: string | null;
   rider_extra: Record<string, unknown> | null;
   rider_is_blocked: boolean;
   rider_has_password: boolean;
   company_id: string;
   company_name: string;
   company_logo_url: string | null;
+}
+
+interface RiderNotification {
+  notification_id: string;
+  title: string;
+  body: string;
+  kind: "notification" | "warning";
+  created_at: string;
+  is_read: boolean;
+}
+
+function AlertPopover({
+  items,
+  icon: Icon,
+  titleText,
+  emptyText,
+  toneClass,
+  lang,
+  onOpen,
+}: {
+  items: RiderNotification[];
+  icon: LucideIcon;
+  titleText: string;
+  emptyText: string;
+  toneClass: string;
+  lang: Lang;
+  onOpen: () => void;
+}) {
+  const unreadCount = items.filter((n) => !n.is_read).length;
+  return (
+    <Popover onOpenChange={(open) => open && onOpen()}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className={`relative ${toneClass}`}>
+          <Icon className="h-4 w-4" />
+          {unreadCount > 0 && (
+            <span className="absolute -end-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="end">
+        <div className="border-b px-4 py-3 text-sm font-semibold">{titleText}</div>
+        <div className="max-h-80 overflow-y-auto">
+          {items.length === 0 && (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">{emptyText}</p>
+          )}
+          {items.map((n, i) => (
+            <div
+              key={n.notification_id}
+              className={`border-b px-4 py-3 last:border-b-0 ${!n.is_read ? "bg-primary/5" : ""}`}
+              style={{ animationDelay: `${Math.min(i * 40, 300)}ms` }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">{n.title}</span>
+                {!n.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{n.body}</p>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {formatDateTime(n.created_at)}
+              </p>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Two separate indicators — a warning (إنذار) never gets lost among routine
+// notifications since it has its own bell with its own unread count.
+function RiderAlertsBar({
+  riderId,
+  lang,
+  t,
+}: {
+  riderId: string;
+  lang: Lang;
+  t: (key: TranslationKey) => string;
+}) {
+  const queryClient = useQueryClient();
+  const notificationsQuery = useQuery({
+    queryKey: ["rider-notifications", riderId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("list_rider_notifications", {
+        _rider_id: riderId,
+      });
+      if (error) throw error;
+      return (data ?? []) as RiderNotification[];
+    },
+    refetchInterval: 60_000,
+  });
+
+  const all = notificationsQuery.data ?? [];
+  const notifications = all.filter((n) => n.kind !== "warning");
+  const warnings = all.filter((n) => n.kind === "warning");
+
+  const markRead = (items: RiderNotification[]) => {
+    const unreadIds = items.filter((n) => !n.is_read).map((n) => n.notification_id);
+    if (unreadIds.length === 0) return;
+    supabase
+      .rpc("mark_rider_notifications_read", { _rider_id: riderId, _notification_ids: unreadIds })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["rider-notifications", riderId] }));
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <AlertPopover
+        items={warnings}
+        icon={AlertTriangle}
+        titleText={t("rider.warningsTitle")}
+        emptyText={t("rider.warningsEmpty")}
+        toneClass={warnings.some((n) => !n.is_read) ? "border-destructive/50 text-destructive" : ""}
+        lang={lang}
+        onOpen={() => markRead(warnings)}
+      />
+      <AlertPopover
+        items={notifications}
+        icon={Bell}
+        titleText={t("rider.notificationsTitle")}
+        emptyText={t("rider.notificationsEmpty")}
+        toneClass=""
+        lang={lang}
+        onOpen={() => markRead(notifications)}
+      />
+    </div>
+  );
+}
+
+interface RiderLetter {
+  letter_id: string;
+  title: string;
+  body: string;
+  letter_date: string;
+  include_stamp: boolean;
+  include_signature: boolean;
+  created_at: string;
+  rider_name: string | null;
+  company_name: string;
+  company_logo_url: string | null;
+  company_stamp_url: string | null;
+  company_signature_url: string | null;
+  company_unified_number: string | null;
+  company_commercial_registration: string | null;
+}
+
+function RiderLetterDialog({
+  letter,
+  t,
+}: {
+  letter: RiderLetter;
+  t: (key: TranslationKey) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const letterNode = (
+    <LetterDocument
+      t={t}
+      assets={{
+        companyName: letter.company_name,
+        companyLogoUrl: letter.company_logo_url,
+        companyStampUrl: letter.company_stamp_url,
+        companySignatureUrl: letter.company_signature_url,
+        companyUnifiedNumber: letter.company_unified_number,
+        companyCommercialRegistration: letter.company_commercial_registration,
+        includeStamp: letter.include_stamp,
+        includeSignature: letter.include_signature,
+      }}
+      content={{
+        title: letter.title,
+        body: letter.body,
+        letterDate: letter.letter_date,
+      }}
+    />
+  );
+  const { portal, print } = useLetterPrint(letterNode);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-sm transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-accent hover:shadow-sm"
+        >
+          <span className="flex items-center gap-2">
+            <FileSignature className="h-4 w-4 text-muted-foreground" />
+            {letter.title}
+          </span>
+          <span className="text-xs text-muted-foreground">{formatDate(letter.letter_date)}</span>
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{letter.title}</DialogTitle>
+        </DialogHeader>
+        {letterNode}
+        {portal}
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <Button type="button" onClick={print}>
+            <Printer className="ms-1.5 h-4 w-4" />
+            {t("letters.printButton")}
+          </Button>
+          <Button type="button" variant="outline" onClick={print}>
+            {t("letters.downloadPdfButton")}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function CompanyLogo({
@@ -116,16 +341,19 @@ function RiderPasswordDialog({
   riderId,
   hasPassword,
   currentPw,
+  open,
+  onOpenChange,
   t,
   onDone,
 }: {
   riderId: string;
   hasPassword: boolean;
   currentPw: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   t: (key: TranslationKey) => string;
   onDone: (pw: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -154,7 +382,7 @@ function RiderPasswordDialog({
       if (error) throw error;
       toast.success(t("rider.passwordSaved"));
       onDone(next);
-      setOpen(false);
+      onOpenChange(false);
       reset();
     } catch (err) {
       toast.error((err as Error).message);
@@ -167,19 +395,10 @@ function RiderPasswordDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        setOpen(v);
+        onOpenChange(v);
         if (!v) reset();
       }}
     >
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 text-xs font-medium text-primary transition-colors hover:underline"
-        >
-          <KeyRound className="h-3.5 w-3.5" />
-          {hasPassword ? t("rider.changePasswordButton") : t("rider.setPasswordButton")}
-        </button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
@@ -240,6 +459,7 @@ function RiderPage() {
   const [pwInput, setPwInput] = useState("");
   const [unlocked, setUnlocked] = useState<Record<string, string>>({});
   const [pwChecking, setPwChecking] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   useEffect(() => {
     setSelectedRiderId(null);
@@ -311,6 +531,18 @@ function RiderPage() {
     },
   });
 
+  const lettersQuery = useQuery({
+    queryKey: ["rider-letters", activeRiderId],
+    enabled: !!activeRiderId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("list_rider_letters", {
+        _rider_id: activeRiderId!,
+      });
+      if (error) throw error;
+      return (data ?? []) as RiderLetter[];
+    },
+  });
+
   const reportData = useQuery({
     queryKey: ["rider-report", activeRiderId, reportId, locked],
     enabled: !!reportId && !!activeRiderId && !locked,
@@ -332,13 +564,56 @@ function RiderPage() {
     navigate({ to: "/rider/$iqama", params: { iqama: q }, search: {} });
   };
 
+  // A rider has no login session — "exit" means dropping everything this
+  // visit unlocked and returning to the lookup page.
+  const exit = () => {
+    queryClient.clear();
+    navigate({ to: "/" });
+  };
+  const canManagePassword = !!activeRider && !needsDisambiguation && !locked;
+  const push = useRiderPush(canManagePassword ? activeRider.rider_id : null, activePw);
+
+  // A rider with no password of their own can be looked up by anyone who
+  // has their Iqama number — nudge them to set one, every time they show up
+  // unprotected. Stops for good the moment they set one, since this only
+  // ever fires while rider_has_password is still false.
+  useEffect(() => {
+    if (!canManagePassword || activeRider!.rider_has_password) return;
+    toast(t("rider.setPasswordToastTitle"), {
+      description: t("rider.setPasswordToastDesc"),
+      duration: 8000,
+      action: {
+        label: t("rider.setPasswordButton"),
+        onClick: () => setPasswordDialogOpen(true),
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManagePassword, activeRiderId, activeRider?.rider_has_password]);
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background">
-      <header className="border-b border-border/50 bg-background/70 backdrop-blur">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-primary/5 via-background to-background">
+      {/* Decorative drifting blobs — purely visual, so they're pulled out of
+          the tab order and frozen for anyone who prefers reduced motion. */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div
+          className="animate-blob absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[oklch(0.6_0.118_184.704)]/20 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "0s" }}
+        />
+        <div
+          className="animate-blob absolute -right-16 top-1/3 h-80 w-80 rounded-full bg-[oklch(0.627_0.265_303.9)]/15 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "-5s" }}
+        />
+        <div
+          className="animate-blob absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-primary/10 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "-10s" }}
+        />
+      </div>
+
+      <header className="relative border-b border-border/50 bg-background/70 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link to="/" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-            <ArrowRight className="ms-1 inline h-4 w-4" />
-            {t("rider.back")}
+          <Link to="/" className="flex items-center gap-2 text-sm font-semibold hover:text-primary">
+            <BrandLogo />
+            {t("index.headerTitle")}
           </Link>
           {/* <form onSubmit={submit} className="flex flex-1 max-w-md gap-2 mx-4">
             <div className="relative flex-1">
@@ -352,11 +627,60 @@ function RiderPage() {
             </div>
             <Button type="submit">استعلام</Button>
           </form> */}
-          <div className="w-16" />
+          <div className="flex items-center justify-end gap-2">
+            {activeRiderId && !isBlocked && (
+              <RiderAlertsBar riderId={activeRiderId} lang={lang} t={t} />
+            )}
+            <UserMenu
+              name={activeRider?.rider_name || iqama}
+              subtitle={activeRider?.rider_name ? iqama : undefined}
+              onSignOut={exit}
+            >
+              {canManagePassword && push.available && !push.denied && (
+                <DropdownMenuItem
+                  className="cursor-pointer gap-2"
+                  disabled={push.busy}
+                  onClick={push.subscribed ? push.disable : push.enable}
+                >
+                  {push.subscribed ? (
+                    <BellOff className="h-4 w-4" />
+                  ) : (
+                    <BellRing className="h-4 w-4" />
+                  )}
+                  {push.subscribed ? t("push.menuDisable") : t("push.menuEnable")}
+                </DropdownMenuItem>
+              )}
+              {canManagePassword && (
+                <DropdownMenuItem
+                  className="cursor-pointer gap-2"
+                  onClick={() => setPasswordDialogOpen(true)}
+                >
+                  <KeyRound className="h-4 w-4" />
+                  {activeRider.rider_has_password
+                    ? t("rider.changePasswordButton")
+                    : t("rider.setPasswordButton")}
+                </DropdownMenuItem>
+              )}
+            </UserMenu>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-8">
+      {canManagePassword && (
+        <RiderPasswordDialog
+          riderId={activeRider.rider_id}
+          hasPassword={activeRider.rider_has_password}
+          currentPw={activePw}
+          open={passwordDialogOpen}
+          onOpenChange={setPasswordDialogOpen}
+          t={t}
+          onDone={onPasswordSet}
+        />
+      )}
+
+      <main className="relative mx-auto max-w-6xl px-6 py-8">
+        {canManagePassword && <PushBanner push={push} />}
+
         {lookupQuery.isLoading && (
           <div className="flex justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -473,10 +797,12 @@ function RiderPage() {
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-3">
                     {activeRider.rider_photo_url ? (
-                      <img
+                      <RiderPhoto
+                        riderId={activeRider.rider_id}
                         src={activeRider.rider_photo_url}
                         alt={activeRider.rider_name ?? ""}
-                        className="h-14 w-14 shrink-0 rounded-full border border-border object-cover"
+                        rotation={activeRider.rider_photo_rotation}
+                        className="h-14 w-14 shrink-0 rounded-full border border-border"
                       />
                     ) : (
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -492,6 +818,14 @@ function RiderPage() {
                 <CardContent>
                   <div className="text-xs text-muted-foreground">{t("rider.iqamaLabel")}</div>
                   <div className="font-mono text-sm">{iqama}</div>
+                  {activeRider.rider_area && (
+                    <>
+                      <div className="mt-3 text-xs text-muted-foreground">
+                        {t("rider.areaLabel")}
+                      </div>
+                      <div className="text-sm font-medium">{activeRider.rider_area}</div>
+                    </>
+                  )}
                   {matches.length > 1 && (
                     <button
                       type="button"
@@ -514,15 +848,6 @@ function RiderPage() {
                       ))}
                     </div>
                   )}
-                  <div className="mt-4 border-t pt-3">
-                    <RiderPasswordDialog
-                      riderId={activeRider.rider_id}
-                      hasPassword={activeRider.rider_has_password}
-                      currentPw={activePw}
-                      t={t}
-                      onDone={onPasswordSet}
-                    />
-                  </div>
                 </CardContent>
               </Card>
 
@@ -564,6 +889,19 @@ function RiderPage() {
                   })}
                 </CardContent>
               </Card>
+
+              {lettersQuery.data && lettersQuery.data.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">{t("rider.lettersTitle")}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {lettersQuery.data.map((l) => (
+                      <RiderLetterDialog key={l.letter_id} letter={l} t={t} />
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
             </aside>
 
             <section>
@@ -605,29 +943,6 @@ interface RiderReportView {
   year: number;
   file_name: string;
   note: string | null;
-}
-
-function isNumericLike(v: unknown): v is number {
-  if (typeof v === "number") return Number.isFinite(v);
-  if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return true;
-  return false;
-}
-
-const HIGHLIGHT_KEYS = {
-  total: ["total", "orders", "الطلبات", "إجمالي", "اجمالي", "deliveries", "التوصيلات"],
-  hours: ["hour", "ساعات", "ساعة"],
-  salary: ["net", "salary", "راتب", "صافي", "المستحق"],
-};
-
-function pickMetric(data: Record<string, unknown>, keys: string[]) {
-  const lower = Object.keys(data).map((k) => [k, k.toLowerCase()] as const);
-  for (const key of keys) {
-    const hit = lower.find(([, l]) => l.includes(key.toLowerCase()));
-    if (hit && isNumericLike(data[hit[0]])) {
-      return { label: hit[0], value: data[hit[0]] };
-    }
-  }
-  return null;
 }
 
 function ReportView({

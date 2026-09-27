@@ -45,8 +45,25 @@ function ResetPasswordPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-primary/5 via-background to-background px-4">
-      <Card className="animate-in fade-in slide-in-from-bottom-4 w-full max-w-md duration-500">
+    <div className="relative flex min-h-[calc(100vh-4.25rem)] items-center justify-center overflow-hidden bg-gradient-to-b from-primary/5 via-background to-background px-4">
+      {/* Decorative drifting blobs — purely visual, so they're pulled out of
+          the tab order and frozen for anyone who prefers reduced motion. */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="animate-blob absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[oklch(0.6_0.118_184.704)]/25 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "0s" }}
+        />
+        <div
+          className="animate-blob absolute -right-16 top-1/3 h-80 w-80 rounded-full bg-[oklch(0.627_0.265_303.9)]/20 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "-5s" }}
+        />
+        <div
+          className="animate-blob absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-primary/15 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "-10s" }}
+        />
+      </div>
+
+      <Card className="animate-in fade-in slide-in-from-bottom-4 relative w-full max-w-md duration-500">
         <CardHeader className="text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform duration-300 hover:scale-105">
             <ShieldCheck className="h-6 w-6" />

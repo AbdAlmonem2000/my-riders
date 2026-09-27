@@ -6,7 +6,7 @@ export function LanguageSwitcher() {
   return (
     <div
       dir="ltr"
-      className="fixed end-4 top-4 z-50 flex overflow-hidden rounded-full border border-border/60 bg-background/80 text-xs shadow-sm backdrop-blur"
+      className="flex overflow-hidden rounded-full border border-border/60 bg-background/80 text-xs shadow-sm backdrop-blur"
     >
       <button
         type="button"

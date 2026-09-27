@@ -13,7 +13,7 @@ async function assertSuperAdmin(
 
 // Super admin can manage any company; a company admin can only manage
 // their own — used for name/logo edits, which either role may perform.
-async function assertCanManageCompany(
+export async function assertCanManageCompany(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   userId: string,
@@ -47,7 +47,9 @@ export const listCompanies = createServerFn({ method: "GET" })
     await assertSuperAdmin(context.supabase, context.userId);
     const { data, error } = await context.supabase
       .from("companies")
-      .select("id, name, logo_url, is_suspended, created_at")
+      .select(
+        "id, name, logo_url, is_suspended, created_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access",
+      )
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
 
@@ -133,6 +135,68 @@ export const updateCompanyLogo = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const updateCompanyStamp = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ id: z.string().uuid(), stampUrl: z.string().url().nullable() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertCanManageCompany(context.supabase, context.userId, data.id);
+
+    const { data: co } = await context.supabase
+      .from("companies")
+      .select("stamp_url")
+      .eq("id", data.id)
+      .maybeSingle();
+
+    const { error } = await context.supabase
+      .from("companies")
+      .update({ stamp_url: data.stampUrl })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+
+    const oldPath = co?.stamp_url ? extractStoragePath(co.stamp_url, "company-stamps") : null;
+    const newPath = data.stampUrl ? extractStoragePath(data.stampUrl, "company-stamps") : null;
+    if (oldPath && oldPath !== newPath) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.storage.from("company-stamps").remove([oldPath]);
+    }
+    return { ok: true };
+  });
+
+export const updateCompanySignature = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ id: z.string().uuid(), signatureUrl: z.string().url().nullable() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertCanManageCompany(context.supabase, context.userId, data.id);
+
+    const { data: co } = await context.supabase
+      .from("companies")
+      .select("signature_url")
+      .eq("id", data.id)
+      .maybeSingle();
+
+    const { error } = await context.supabase
+      .from("companies")
+      .update({ signature_url: data.signatureUrl })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+
+    const oldPath = co?.signature_url
+      ? extractStoragePath(co.signature_url, "company-stamps")
+      : null;
+    const newPath = data.signatureUrl
+      ? extractStoragePath(data.signatureUrl, "company-stamps")
+      : null;
+    if (oldPath && oldPath !== newPath) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.storage.from("company-stamps").remove([oldPath]);
+    }
+    return { ok: true };
+  });
+
 export const updateCompanyName = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -147,6 +211,87 @@ export const updateCompanyName = createServerFn({ method: "POST" })
       .select("id");
     if (error) throw new Error(error.message);
     if (!updated || updated.length === 0) throw new Error("لم يتم تحديث اسم الشركة");
+    return { ok: true };
+  });
+
+// السجل التجاري يبدأ بـ 10 والرقم الموحد يبدأ بـ 7 — كل واحد 10 أرقام. نص
+// فاضي أو null يعني مسح الرقم المسجّل.
+const UnifiedNumberSchema = z
+  .string()
+  .trim()
+  .refine((v) => v === "" || /^7\d{9}$/.test(v), "الرقم الموحد لازم يكون 10 أرقام ويبدأ بـ 7")
+  .nullable();
+const CommercialRegistrationSchema = z
+  .string()
+  .trim()
+  .refine(
+    (v) => v === "" || /^10\d{8}$/.test(v),
+    "رقم السجل التجاري لازم يكون 10 أرقام ويبدأ بـ 10",
+  )
+  .nullable();
+
+export const updateCompanyRegistration = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        unifiedNumber: UnifiedNumberSchema,
+        commercialRegistration: CommercialRegistrationSchema,
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertCanManageCompany(context.supabase, context.userId, data.id);
+    const { data: updated, error } = await context.supabase
+      .from("companies")
+      .update({
+        unified_number: data.unifiedNumber || null,
+        commercial_registration: data.commercialRegistration || null,
+      })
+      .eq("id", data.id)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error("لم يتم تحديث بيانات الشركة");
+    return { ok: true };
+  });
+
+// Which pages a company's own admin (and, by extension, any staff it
+// creates — see get_member_* intersection in checkIsAdmin) can reach at
+// all. Only the super admin ever sets this — a company itself has no way
+// to touch its own plan.
+const TieredAccessSchema = z.enum(["none", "view", "full"]);
+const DocumentsAccessSchema = z.enum(["none", "view_only", "full"]);
+
+export const updateCompanyPlan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        overviewAccess: z.boolean(),
+        ridersAccess: TieredAccessSchema,
+        reportsAccess: TieredAccessSchema,
+        documentsAccess: DocumentsAccessSchema,
+        lettersAccess: TieredAccessSchema,
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertSuperAdmin(context.supabase, context.userId);
+    const { data: updated, error } = await context.supabase
+      .from("companies")
+      .update({
+        plan_overview_access: data.overviewAccess,
+        plan_riders_access: data.ridersAccess,
+        plan_reports_access: data.reportsAccess,
+        plan_documents_access: data.documentsAccess,
+        plan_letters_access: data.lettersAccess,
+      })
+      .eq("id", data.id)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error("لم يتم تحديث باقة الشركة");
     return { ok: true };
   });
 
@@ -169,9 +314,38 @@ export const setCompanySuspended = createServerFn({ method: "POST" })
 
 export const deleteCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .inputValidator((d: unknown) =>
+    z.object({ id: z.string().uuid(), password: z.string().min(1) }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context.supabase, context.userId);
+
+    // Re-confirm it's really the super admin at the keyboard before this
+    // irreversible action, not just whoever is sitting at an unlocked
+    // session. context.supabase carries no session of its own to disturb
+    // (persistSession: false), so signing in again here is just a check.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: caller, error: callerErr } = await supabaseAdmin.auth.admin.getUserById(
+      context.userId,
+    );
+    if (callerErr || !caller.user?.email) throw new Error("تعذّر التحقق من هويتك");
+    const { error: pwErr } = await context.supabase.auth.signInWithPassword({
+      email: caller.user.email,
+      password: data.password,
+    });
+    if (pwErr) throw new Error("كلمة المرور غير صحيحة");
+
+    // A company can only be deleted once every account tied to it (its own
+    // admin and any staff) has been deleted first — deleting a company used
+    // to cascade-delete those accounts automatically, which meant one click
+    // could silently take down logins nobody had confirmed losing.
+    const { count: accountCount } = await context.supabase
+      .from("user_roles")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", data.id);
+    if (accountCount && accountCount > 0) {
+      throw new Error("لا يمكن حذف الشركة قبل حذف كل حساباتها من صفحة الحسابات أولاً");
+    }
 
     // Delete storage files
     const { data: reps } = await context.supabase
@@ -182,7 +356,6 @@ export const deleteCompany = createServerFn({ method: "POST" })
       .map((r: { storage_path: string | null }) => r.storage_path)
       .filter((p: string | null): p is string => !!p);
     if (paths.length > 0) {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       await supabaseAdmin.storage.from("reports").remove(paths);
     }
 
@@ -193,22 +366,7 @@ export const deleteCompany = createServerFn({ method: "POST" })
       .maybeSingle();
     const logoPath = co?.logo_url ? extractStoragePath(co.logo_url, "company-logos") : null;
     if (logoPath) {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       await supabaseAdmin.storage.from("company-logos").remove([logoPath]);
-    }
-
-    // Delete users linked to this company
-    const { data: roles } = await context.supabase
-      .from("user_roles")
-      .select("user_id")
-      .eq("company_id", data.id);
-    for (const r of (roles ?? []) as { user_id: string }[]) {
-      const { error: userDeleteErr } = await context.supabase.rpc("admin_delete_user", {
-        _user_id: r.user_id,
-      });
-      if (userDeleteErr) {
-        throw new Error(`فشل حذف حساب مرتبط بالشركة: ${userDeleteErr.message}`);
-      }
     }
 
     const { data: deleted, error } = await context.supabase
@@ -255,6 +413,7 @@ export const listAccounts = createServerFn({ method: "GET" })
       (r: any) => ({
         id: r.user_id,
         email: r.email as string | null,
+        displayName: r.display_name as string | null,
         createdAt: r.created_at,
         lastSignInAt: r.last_sign_in_at,
         role: r.role,

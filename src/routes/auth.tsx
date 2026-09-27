@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, ShieldCheck, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,22 +52,46 @@ function AuthPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-primary/5 via-background to-background px-4">
-      <Card className="animate-in fade-in slide-in-from-bottom-4 w-full max-w-md duration-500">
+    <div className="relative flex min-h-[calc(100vh-4.25rem)] items-center justify-center overflow-hidden bg-gradient-to-b from-primary/5 via-background to-background px-4">
+      {/* Decorative drifting blobs — purely visual, so they're pulled out of
+          the tab order and frozen for anyone who prefers reduced motion. */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="animate-blob absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[oklch(0.6_0.118_184.704)]/25 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "0s" }}
+        />
+        <div
+          className="animate-blob absolute -right-16 top-1/3 h-80 w-80 rounded-full bg-[oklch(0.627_0.265_303.9)]/20 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "-5s" }}
+        />
+        <div
+          className="animate-blob absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-primary/15 blur-3xl motion-reduce:animate-none"
+          style={{ animationDelay: "-10s" }}
+        />
+      </div>
+
+      <Card className="animate-in fade-in slide-in-from-bottom-4 zoom-in-95 relative w-full max-w-md border-border/60 bg-card/90 shadow-xl backdrop-blur-sm duration-500">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform duration-300 hover:scale-105">
-            {/* <ShieldCheck className="h-6 w-6" /> */}
-            <img src="/logo.png" alt="logo" />
+          <div className="animate-float motion-reduce:animate-none">
+            <BrandLogo className="mx-auto mb-3 shadow-md transition-transform duration-300 hover:scale-110" />
           </div>
-          <CardTitle>{t("auth.title")}</CardTitle>
-          <CardDescription>
+          <CardTitle className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+            {t("auth.title")}
+          </CardTitle>
+          <CardDescription
+            className="animate-in fade-in slide-in-from-bottom-2 duration-500"
+            style={{ animationDelay: "80ms" }}
+          >
             {mode === "signin" ? t("auth.descSignin") : t("auth.descForgot")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {mode === "signin" ? (
             <form onSubmit={signIn} className="space-y-4">
-              <div className="space-y-2">
+              <div
+                className="animate-in fade-in slide-in-from-bottom-2 space-y-2 duration-500 fill-mode-[backwards]"
+                style={{ animationDelay: "120ms" }}
+              >
                 <Label htmlFor="email">{t("auth.emailLabel")}</Label>
                 <Input
                   id="email"
@@ -75,9 +100,13 @@ function AuthPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   dir="ltr"
+                  className="transition-shadow duration-200 focus-visible:ring-2 focus-visible:ring-ring/50"
                 />
               </div>
-              <div className="space-y-2">
+              <div
+                className="animate-in fade-in slide-in-from-bottom-2 space-y-2 duration-500 fill-mode-[backwards]"
+                style={{ animationDelay: "180ms" }}
+              >
                 <Label htmlFor="password">{t("auth.passwordLabel")}</Label>
                 <div className="relative">
                   <Input
@@ -87,7 +116,7 @@ function AuthPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     dir="ltr"
-                    className="pl-10"
+                    className="pl-10 transition-shadow duration-200 focus-visible:ring-2 focus-visible:ring-ring/50"
                   />
                   <button
                     type="button"
@@ -100,20 +129,25 @@ function AuthPage() {
                   </button>
                 </div>
               </div>
-              <Button
-                type="submit"
-                className="w-full transition-transform active:scale-[0.98]"
-                disabled={loading}
+              <div
+                className="animate-in fade-in slide-in-from-bottom-2 space-y-3 duration-500 fill-mode-[backwards]"
+                style={{ animationDelay: "240ms" }}
               >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("auth.signInButton")}
-              </Button>
-              <button
-                type="button"
-                onClick={() => setMode("forgot")}
-                className="block w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {t("auth.forgotPassword")}
-              </button>
+                <Button
+                  type="submit"
+                  className="w-full transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] active:shadow-none"
+                  disabled={loading}
+                >
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("auth.signInButton")}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setMode("forgot")}
+                  className="block w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {t("auth.forgotPassword")}
+                </button>
+              </div>
             </form>
           ) : (
             <form
@@ -133,7 +167,7 @@ function AuthPage() {
               </div>
               <Button
                 type="submit"
-                className="w-full transition-transform active:scale-[0.98]"
+                className="w-full transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] active:shadow-none"
                 disabled={loading}
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("auth.sendResetButton")}

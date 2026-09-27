@@ -3,6 +3,7 @@ import {
   Outlet,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
   Link,
@@ -11,8 +12,11 @@ import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { SiteFooter } from "@/components/site-footer";
 import { LanguageProvider, useLanguage } from "@/lib/i18n";
-import { LanguageSwitcher } from "@/components/language-switcher";
+import { ThemeProvider } from "@/lib/theme";
+import { PublicHeader } from "@/components/public-header";
+import { NavigationProgress } from "@/components/navigation-progress";
 import { PwaInstallButton } from "@/components/pwa-install-button";
+import { clearAppBadge } from "@/lib/app-badge";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -105,10 +109,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
+// Runs before hydration so the page never paints the wrong theme for a
+// split second — reads the same source ThemeProvider's initial state does
+// (localStorage, else the OS preference) and sets the class immediately.
+const NO_FLASH_THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}if(t==="dark")document.documentElement.classList.add("dark");}catch(e){}})();`;
+
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="ar" dir="rtl">
       <head>
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME_SCRIPT }} />
         <HeadContent />
       </head>
       <body>
@@ -121,6 +131,11 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  // The signed-in areas and the rider page have their own header with an
+  // account menu; every other page gets the shared public one.
+  const hasOwnHeader = useRouterState({
+    select: (s) => /^\/(admin|super-admin|rider)(\/|$)/.test(s.location.pathname),
+  });
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -128,15 +143,27 @@ function RootComponent() {
     }
   }, []);
 
+  useEffect(() => {
+    clearAppBadge();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") clearAppBadge();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
-      <LanguageProvider>
-        <LanguageSwitcher />
-        <Outlet />
-        <SiteFooter />
-        <PwaInstallButton />
-        <Toaster richColors position="top-center" />
-      </LanguageProvider>
+      <ThemeProvider>
+        <LanguageProvider>
+          {!hasOwnHeader && <PublicHeader />}
+          <NavigationProgress />
+          <Outlet />
+          <SiteFooter />
+          <PwaInstallButton />
+          <Toaster richColors position="top-center" />
+        </LanguageProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

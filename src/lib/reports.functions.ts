@@ -117,6 +117,45 @@ async function getCallerCompany(
   return { isSuperAdmin: !!isSuper, companyId: (companyId as string | null) ?? null };
 }
 
+// Resolves the caller's company for the Reports feature specifically.
+// Unlike getCallerCompany/resolveActiveCompany (admin-only), this also
+// accepts a staff account (role 'user') whose reports_access is 'full' —
+// reports are never area-scoped (one sheet covers every area at once), so
+// unlike documents/riders/letters there's no allowed_areas check here.
+export async function resolveReportsCompany(
+  supabase: ReturnType<typeof getSupabaseFromContext>,
+  userId: string,
+): Promise<string> {
+  const { data: companyId } = await supabase.rpc("get_member_company", { _user_id: userId });
+  if (!companyId) {
+    throw new Error("هذا الحساب غير مرتبط بشركة، لا يمكن رفع تقارير");
+  }
+  const { data: isActive } = await supabase.rpc("is_company_active", {
+    _company_id: companyId,
+  });
+  if (!isActive) {
+    throw new Error("هذا الحساب موقوف مؤقتًا من قبل الإدارة، تواصل معهم لإعادة التفعيل");
+  }
+  // Checked explicitly (not just left to RLS) because uploadReport writes
+  // riders through the service client, which bypasses the plan's policies.
+  const { data: planAccess } = await supabase.rpc("get_company_plan_reports_access", {
+    _company_id: companyId,
+  });
+  if (planAccess !== "full") {
+    throw new Error("غير مصرح: باقة الشركة لا تتيح رفع التقارير وإدارتها");
+  }
+  const { data: role } = await supabase.rpc("get_member_role", { _user_id: userId });
+  if (role === "user") {
+    const { data: access } = await supabase.rpc("get_member_reports_access", {
+      _user_id: userId,
+    });
+    if (access !== "full") {
+      throw new Error("غير مصرح: صلاحيتك على التقارير للعرض فقط");
+    }
+  }
+  return companyId as string;
+}
+
 // Helper for typing without exporting supabase
 function getSupabaseFromContext(ctx: {
   supabase: unknown;
@@ -130,16 +169,12 @@ export const uploadReport = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => UploadInput.parse(data))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { companyId } = await getCallerCompany(supabase, userId);
-    if (!companyId) {
-      throw new Error("هذا الحساب غير مرتبط بشركة، لا يمكن رفع تقارير");
-    }
-    const { data: isActive } = await supabase.rpc("is_company_active", {
-      _company_id: companyId,
-    });
-    if (!isActive) {
-      throw new Error("هذا الحساب موقوف مؤقتًا من قبل الإدارة، تواصل معهم لإعادة التفعيل");
-    }
+    const companyId = await resolveReportsCompany(supabase, userId);
+    // Uploading a report also creates/backfills the company's riders, which a
+    // plan or staff account without the Riders page couldn't do under RLS.
+    // resolveReportsCompany has already authorized the caller for this
+    // company, so every riders query below is scoped to it explicitly.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     // Check for existing report same month/year within this company
     const { data: existing } = await supabase
@@ -168,7 +203,6 @@ export const uploadReport = createServerFn({ method: "POST" })
         ...(oldSheets ?? []).map((s) => s.storage_path),
       ].filter((p): p is string => !!p);
       if (orphans.length > 0) {
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         await supabaseAdmin.storage.from("reports").remove(orphans);
       }
       await supabase.from("reports").delete().eq("id", existing.id);
@@ -210,10 +244,11 @@ export const uploadReport = createServerFn({ method: "POST" })
     // duplicate. A monthly report is never the authority on identity, so an
     // existing name/number is left untouched and only blank fields get
     // backfilled — the directory owns name/photo/extra data.
-    const { data: existingRaw } = await supabase
+    const { data: existingRaw } = await supabaseAdmin
       .from("riders")
       .select("id, iqama_number, id_number, rider_name")
-      .eq("company_id", companyId);
+      .eq("company_id", companyId)
+      .is("deleted_at", null);
     const existingRiders = (existingRaw ?? []) as RiderIdentity[];
     const riderIndex = indexRiders(existingRiders);
     const existingById = new Map(existingRiders.map((r) => [r.id, r]));
@@ -268,7 +303,6 @@ export const uploadReport = createServerFn({ method: "POST" })
       if (!mergeIntoExisting) {
         await supabase.from("reports").delete().eq("id", report.id);
         if (data.storagePath) {
-          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           await supabaseAdmin.storage.from("reports").remove([data.storagePath]);
         }
       }
@@ -310,7 +344,7 @@ export const uploadReport = createServerFn({ method: "POST" })
 
     for (let i = 0; i < patchPayload.length; i += WRITE_CHUNK) {
       const slice = patchPayload.slice(i, i + WRITE_CHUNK);
-      const { error } = await supabase.from("riders").upsert(slice, { onConflict: "id" });
+      const { error } = await supabaseAdmin.from("riders").upsert(slice, { onConflict: "id" });
       if (error) throw new Error(error.message);
     }
 
@@ -327,7 +361,7 @@ export const uploadReport = createServerFn({ method: "POST" })
 
       for (let i = 0; i < withIqama.length; i += WRITE_CHUNK) {
         const slice = withIqama.slice(i, i + WRITE_CHUNK);
-        const { data: c, error } = await supabase
+        const { data: c, error } = await supabaseAdmin
           .from("riders")
           .upsert(
             slice.map((r) => ({
@@ -345,7 +379,7 @@ export const uploadReport = createServerFn({ method: "POST" })
 
       for (let i = 0; i < idOnly.length; i += WRITE_CHUNK) {
         const slice = idOnly.slice(i, i + WRITE_CHUNK);
-        const { data: c, error } = await supabase
+        const { data: c, error } = await supabaseAdmin
           .from("riders")
           .insert(
             slice.map((r) => ({
@@ -674,11 +708,82 @@ export const deleteReportSheet = createServerFn({ method: "POST" })
     return { deletedReport: false, removed: removeIds.length };
   });
 
+type Tier = "none" | "view" | "full";
+type DocTier = "none" | "view_only" | "full";
+const TIER_RANK: Record<string, number> = { none: 0, view: 1, view_only: 1, full: 2 };
+function minTier<T extends string>(a: T, b: T): T {
+  return TIER_RANK[a] <= TIER_RANK[b] ? a : b;
+}
+
 export const checkIsAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const { isSuperAdmin, companyId } = await getCallerCompany(supabase, userId);
+    // getCallerCompany is also used to gate real authorization elsewhere
+    // (report uploads, roster uploads, ...) and must stay admin-only, so
+    // staff detection is done here instead, as a separate, additive check
+    // that only affects what this client-facing "who am I" endpoint reports.
+    const { isSuperAdmin, companyId: adminCompanyId } = await getCallerCompany(supabase, userId);
+
+    // Own row only ("Users can read their own roles" RLS policy) — used for
+    // the "Hello, <name>" greeting and the staff self-service account page.
+    // Most rows (companies created before this feature, or a real admin who
+    // never set one) simply have no name yet.
+    const { data: myRoleRow } = await supabase
+      .from("user_roles")
+      .select("display_name")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const displayName = (myRoleRow?.display_name as string | null) ?? null;
+
+    let companyId = adminCompanyId;
+    let isStaff = false;
+    let overviewAccess = true;
+    let ridersAccess: Tier = "full";
+    let ridersDeleteAccess = true;
+    let ridersBlockAccess = true;
+    let reportsAccess: Tier = "full";
+    let documentsAccess: DocTier = "full";
+    let lettersAccess: Tier = "full";
+    let allowedAreas: string[] | null = null;
+
+    if (!isSuperAdmin && !companyId) {
+      const { data: memberCompanyId } = await supabase.rpc("get_member_company", {
+        _user_id: userId,
+      });
+      if (memberCompanyId) {
+        companyId = memberCompanyId as string;
+        isStaff = true;
+        const [
+          { data: overview },
+          { data: riders },
+          { data: ridersDelete },
+          { data: ridersBlock },
+          { data: reports },
+          { data: documents },
+          { data: letters },
+          { data: areas },
+        ] = await Promise.all([
+          supabase.rpc("get_member_overview_access", { _user_id: userId }),
+          supabase.rpc("get_member_riders_access", { _user_id: userId }),
+          supabase.rpc("get_member_riders_delete_access", { _user_id: userId }),
+          supabase.rpc("get_member_riders_block_access", { _user_id: userId }),
+          supabase.rpc("get_member_reports_access", { _user_id: userId }),
+          supabase.rpc("get_member_documents_access", { _user_id: userId }),
+          supabase.rpc("get_member_letters_access", { _user_id: userId }),
+          supabase.rpc("get_member_allowed_areas", { _user_id: userId }),
+        ]);
+        overviewAccess = !!overview;
+        ridersAccess = (riders as Tier | null) ?? "none";
+        ridersDeleteAccess = !!ridersDelete;
+        ridersBlockAccess = !!ridersBlock;
+        reportsAccess = (reports as Tier | null) ?? "none";
+        documentsAccess = (documents as DocTier | null) ?? "none";
+        lettersAccess = (letters as Tier | null) ?? "none";
+        allowedAreas = (areas as string[] | null) ?? null;
+      }
+    }
+
     let companyName: string | null = null;
     let companyLogoUrl: string | null = null;
     let isSuspended = false;
@@ -687,7 +792,9 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     if (companyId) {
       const { data } = await supabase
         .from("companies")
-        .select("name, logo_url, is_suspended, roster_file_name, roster_uploaded_at")
+        .select(
+          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access",
+        )
         .eq("id", companyId)
         .maybeSingle();
       companyName = (data?.name as string | undefined) ?? null;
@@ -695,10 +802,53 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       isSuspended = (data?.is_suspended as boolean | undefined) ?? false;
       rosterFileName = (data?.roster_file_name as string | undefined) ?? null;
       rosterUploadedAt = (data?.roster_uploaded_at as string | undefined) ?? null;
+
+      // The company's plan is the ceiling on what anyone in it can reach —
+      // a real admin's access IS the plan (they carry no personal
+      // restriction of their own), while a staff account's access is
+      // whichever is narrower between their personal permission and the
+      // company's plan, so a restricted-plan company can't be routed
+      // around by handing a staff member broader personal permissions.
+      const planOverview = (data?.plan_overview_access as boolean | undefined) ?? false;
+      const planRiders = (data?.plan_riders_access as Tier | undefined) ?? "none";
+      const planReports = (data?.plan_reports_access as Tier | undefined) ?? "none";
+      const planDocuments = (data?.plan_documents_access as DocTier | undefined) ?? "none";
+      const planLetters = (data?.plan_letters_access as Tier | undefined) ?? "none";
+      if (isStaff) {
+        overviewAccess = overviewAccess && planOverview;
+        ridersAccess = minTier(ridersAccess, planRiders);
+        reportsAccess = minTier(reportsAccess, planReports);
+        documentsAccess = minTier(documentsAccess, planDocuments);
+        lettersAccess = minTier(lettersAccess, planLetters);
+      } else if (!isSuperAdmin) {
+        overviewAccess = planOverview;
+        ridersAccess = planRiders;
+        reportsAccess = planReports;
+        documentsAccess = planDocuments;
+        lettersAccess = planLetters;
+      }
     }
+    // Deleting/blocking a rider outright is never something the company plan
+    // restricts on its own — each is a per-staff-member permission,
+    // meaningful only once ridersAccess (after the plan ceiling above) is
+    // 'full'. A real admin (or the super admin) always has both.
+    const canDeleteRiders =
+      isSuperAdmin || (!isStaff && !!companyId) || (ridersAccess === "full" && ridersDeleteAccess);
+    const canBlockRiders =
+      isSuperAdmin || (!isStaff && !!companyId) || (ridersAccess === "full" && ridersBlockAccess);
     return {
       isAdmin: isSuperAdmin || !!companyId,
       isSuperAdmin,
+      isStaff,
+      displayName,
+      overviewAccess,
+      ridersAccess,
+      canDeleteRiders,
+      canBlockRiders,
+      reportsAccess,
+      documentsAccess,
+      lettersAccess,
+      allowedAreas,
       companyId,
       rosterFileName,
       rosterUploadedAt,
