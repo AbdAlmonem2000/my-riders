@@ -35,6 +35,7 @@ const PermissionsSchema = z.object({
   reportsAccess: TieredAccessSchema,
   documentsAccess: DocumentsAccessSchema,
   lettersAccess: TieredAccessSchema,
+  notificationsAccess: z.boolean(),
 });
 
 export const listCompanyStaff = createServerFn({ method: "GET" })
@@ -60,6 +61,7 @@ export const listCompanyStaff = createServerFn({ method: "GET" })
         reportsAccess: r.reports_access as "none" | "view" | "full",
         documentsAccess: r.documents_access as "none" | "view_only" | "full",
         lettersAccess: r.letters_access as "none" | "view" | "full",
+        notificationsAccess: !!r.notifications_access,
         createdAt: r.created_at as string,
       }),
     );
@@ -112,6 +114,7 @@ export const createCompanyStaff = createServerFn({ method: "POST" })
       reports_access: data.reportsAccess,
       documents_access: data.documentsAccess,
       letters_access: data.lettersAccess,
+      notifications_access: data.notificationsAccess,
     });
     if (roleErr) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -140,6 +143,7 @@ export const updateCompanyStaffPermissions = createServerFn({ method: "POST" })
         reports_access: data.reportsAccess,
         documents_access: data.documentsAccess,
         letters_access: data.lettersAccess,
+        notifications_access: data.notificationsAccess,
       })
       .eq("user_id", data.userId)
       .eq("role", "user")

@@ -200,6 +200,13 @@ function StatusSummaryChart({
   );
 }
 
+// A plain horizontal bar list instead of recharts' BarChart: recharts lays
+// its vertical-bar category axis out for LTR (ticks anchored to the left
+// edge), so in this RTL app the rider-name labels ended up squeezed behind
+// the bars instead of beside them. Full control over the row markup here
+// keeps the name readable regardless of text direction, and — since there
+// are only 5 rows with one measure each — a direct value label beside every
+// bar reads better than a hover-only tooltip.
 function TopPerformersChart({
   rows,
   metricLabel,
@@ -208,29 +215,28 @@ function TopPerformersChart({
   metricLabel: string | null;
 }) {
   const data = rows.map((r) => ({ name: r.riderName || "—", value: r.current }));
-  const config: ChartConfig = { value: { label: metricLabel ?? "" } };
+  const max = Math.max(1, ...data.map((d) => Math.abs(d.value)));
 
   return (
-    <ChartContainer config={config} className="aspect-auto h-44 w-full">
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
-        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-        <XAxis type="number" hide allowDecimals={false} />
-        <YAxis
-          type="category"
-          dataKey="name"
-          tickLine={false}
-          axisLine={false}
-          width={90}
-          fontSize={11}
-        />
-        <ChartTooltip content={<ChartTooltipContent />} />
-        <Bar dataKey="value" radius={4}>
-          {data.map((_, i) => (
-            <Cell key={i} fill={CHART_PALETTE[i % CHART_PALETTE.length]} />
-          ))}
-        </Bar>
-      </BarChart>
-    </ChartContainer>
+    <div className="space-y-2.5" role="img" aria-label={metricLabel ?? undefined}>
+      {data.map((d, i) => (
+        <div key={i} className="flex items-center gap-3" title={`${d.name}: ${d.value}`}>
+          <div className="w-28 shrink-0 truncate text-xs font-medium sm:w-36">{d.name}</div>
+          <div className="relative h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full transition-[width] duration-500"
+              style={{
+                width: `${(Math.abs(d.value) / max) * 100}%`,
+                backgroundColor: CHART_PALETTE[i % CHART_PALETTE.length],
+              }}
+            />
+          </div>
+          <div className="w-16 shrink-0 text-end font-mono text-xs tabular-nums text-muted-foreground">
+            {d.value}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1062,17 +1068,6 @@ function AdminOverview() {
                     {t("admin.dashboardTopPerformers")}
                   </div>
                   <TopPerformersChart rows={topPerformers} metricLabel={metricLabel} />
-                  <div className="mt-3 space-y-1.5">
-                    {topPerformers.map((r) => (
-                      <div
-                        key={r.riderId}
-                        className="flex items-center justify-between gap-2 text-sm"
-                      >
-                        <span className="truncate">{r.riderName || "—"}</span>
-                        <span className="shrink-0 font-mono font-semibold">{r.current}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
             </div>

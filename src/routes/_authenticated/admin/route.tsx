@@ -176,10 +176,13 @@ const NAV_TABS = [
 // both — an admin whose company plan doesn't include, say, Riders sees
 // exactly what a staff account without riders_access would see.
 //
-// Notifications, Users and Company Profile are different: staff never gets
-// them regardless of plan (no personal permission exists for these), so
-// their gates also require !isStaff — a company's plan can only ever turn
-// them OFF for its own admin, never ON for staff.
+// Users and Company Profile are different: staff never gets them regardless
+// of plan (no personal permission exists for these), so their gates also
+// require !isStaff — a company's plan can only ever turn them OFF for its
+// own admin, never ON for staff. Notifications used to be in that group too,
+// but now has its own personal staff permission (notifications_access),
+// already intersected with the plan in checkIsAdmin, so it's gated the same
+// way as overview/riders/reports/documents/letters above.
 interface PagePermissions {
   isStaff: boolean;
   overviewAccess: boolean;
@@ -197,7 +200,7 @@ const PAGE_ACCESS: Record<string, (d: PagePermissions) => boolean> = {
   "/admin/reports": (d) => d.reportsAccess !== "none",
   "/admin/documents": (d) => d.documentsAccess !== "none",
   "/admin/letters": (d) => d.lettersAccess !== "none",
-  "/admin/notifications": (d) => !d.isStaff && d.notificationsAccess,
+  "/admin/notifications": (d) => d.notificationsAccess,
   "/admin/users": (d) => !d.isStaff && d.usersAccess,
   "/admin/company-profile": (d) => !d.isStaff && d.companyProfileAccess,
 };

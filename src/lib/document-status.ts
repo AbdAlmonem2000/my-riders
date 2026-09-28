@@ -10,9 +10,18 @@ export const DOC_TYPES = [
   "vehicle_registration",
   "health_certificate",
   "personal_photo",
+  "ajeer_contract",
 ] as const;
 
 export type DocType = (typeof DOC_TYPES)[number];
+
+// These two are never time-limited, so unlike every other slot they carry no
+// expiry date at all — no status badge countdown, no "edit date" action.
+export const NO_EXPIRY_DOC_TYPES = new Set<string>(["personal_photo", "vehicle_registration"]);
+
+export function docTypeNeedsExpiry(docType: string): boolean {
+  return !NO_EXPIRY_DOC_TYPES.has(docType);
+}
 
 // Both slots follow the same card-sharing rule (max 3 riders per card
 // number, all in the same area) — each tracked independently, so the same

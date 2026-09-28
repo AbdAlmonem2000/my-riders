@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
+  docTypeNeedsExpiry,
   hasAllowedDocExtension,
   isCustomDocType,
   isKnownDocType,
@@ -11,13 +12,25 @@ import {
   OPERATING_CARD_NUMBER_FORMAT,
 } from "@/lib/document-status";
 
-// Accepts either one of the 7 fixed doc types or a client-generated
+// Accepts either one of the fixed doc types or a client-generated
 // "custom:<uuid>" one — never arbitrary text, since doc_type also becomes a
 // storage path segment.
 const DocTypeSchema = z
   .string()
   .refine((v) => isKnownDocType(v) || isCustomDocType(v), "نوع المستند غير صحيح");
-const ExpiryDateSchema = z.string().refine(isValidExpiryDate, "تاريخ الانتهاء غير صحيح");
+// Most slots require a real expiry date; the couple that never expire
+// (docTypeNeedsExpiry) send null instead — validated per-request in each
+// handler below, since which is which depends on the doc type in the same
+// payload.
+const ExpiryDateSchema = z.string().nullable().optional();
+
+function resolveExpiryDate(docType: string, expiryDate: string | null | undefined): string | null {
+  if (!docTypeNeedsExpiry(docType)) return null;
+  if (!expiryDate || !isValidExpiryDate(expiryDate)) {
+    throw new Error("تاريخ الانتهاء غير صحيح");
+  }
+  return expiryDate;
+}
 
 // Resolves the caller's company for the Documents feature specifically.
 // Unlike resolveActiveCompany (riders.functions.ts, admin-only — guards
@@ -175,7 +188,7 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
         storage_path: data.storagePath,
         file_name: data.fileName,
         card_number: isOperatingCardDocType(data.docType) ? cardNumber : null,
-        expiry_date: data.expiryDate,
+        expiry_date: resolveExpiryDate(data.docType, data.expiryDate),
         label,
         uploaded_at: new Date().toISOString(),
       },
@@ -215,6 +228,9 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
       .eq("company_id", companyId)
       .maybeSingle();
     if (!existing) throw new Error("لازم ترفع الملف أول مرة قبل ما تقدر تعدّل تاريخه");
+    if (!docTypeNeedsExpiry(data.docType)) {
+      throw new Error("هذا النوع من المستندات ليس له تاريخ انتهاء");
+    }
 
     let cardNumber: string | null = existing.card_number;
     if (isOperatingCardDocType(data.docType)) {
@@ -245,7 +261,10 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
 
     const { error } = await supabase
       .from("rider_documents")
-      .update({ expiry_date: data.expiryDate, card_number: cardNumber })
+      .update({
+        expiry_date: resolveExpiryDate(data.docType, data.expiryDate),
+        card_number: cardNumber,
+      })
       .eq("rider_id", data.riderId)
       .eq("doc_type", data.docType)
       .eq("company_id", companyId);

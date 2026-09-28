@@ -347,7 +347,7 @@ export type Database = {
           card_number: string | null
           company_id: string
           doc_type: string
-          expiry_date: string
+          expiry_date: string | null
           file_name: string
           id: string
           label: string | null
@@ -359,7 +359,7 @@ export type Database = {
           card_number?: string | null
           company_id: string
           doc_type: string
-          expiry_date: string
+          expiry_date?: string | null
           file_name: string
           id?: string
           label?: string | null
@@ -371,7 +371,7 @@ export type Database = {
           card_number?: string | null
           company_id?: string
           doc_type?: string
-          expiry_date?: string
+          expiry_date?: string | null
           file_name?: string
           id?: string
           label?: string | null
@@ -632,6 +632,7 @@ export type Database = {
           documents_access: string
           id: string
           letters_access: string
+          notifications_access: boolean
           overview_access: boolean
           reports_access: string
           riders_access: string
@@ -648,6 +649,7 @@ export type Database = {
           documents_access?: string
           id?: string
           letters_access?: string
+          notifications_access?: boolean
           overview_access?: boolean
           reports_access?: string
           riders_access?: string
@@ -664,6 +666,7 @@ export type Database = {
           documents_access?: string
           id?: string
           letters_access?: string
+          notifications_access?: boolean
           overview_access?: boolean
           reports_access?: string
           riders_access?: string
@@ -774,6 +777,7 @@ export type Database = {
           email: string
           last_sign_in_at: string | null
           letters_access: string
+          notifications_access: boolean
           overview_access: boolean
           reports_access: string
           riders_access: string
@@ -803,6 +807,7 @@ export type Database = {
       get_member_reports_access: { Args: { _user_id: string }; Returns: string }
       get_member_documents_access: { Args: { _user_id: string }; Returns: string }
       get_member_letters_access: { Args: { _user_id: string }; Returns: string }
+      get_member_notifications_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_allowed_areas: { Args: { _user_id: string }; Returns: string[] }
       get_company_plan_overview_access: { Args: { _company_id: string }; Returns: boolean }
       get_company_plan_riders_access: { Args: { _company_id: string }; Returns: string }

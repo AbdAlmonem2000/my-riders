@@ -755,6 +755,7 @@ const dict = {
   "documents.type.vehicle_registration": { ar: "استمارة السيارة", en: "Vehicle registration" },
   "documents.type.health_certificate": { ar: "الشهادة الصحية", en: "Health certificate" },
   "documents.type.personal_photo": { ar: "الصورة الشخصية", en: "Personal photo" },
+  "documents.type.ajeer_contract": { ar: "عقد اجير تشارك", en: "Ajeer contract" },
 
   "documents.statusOk": { ar: "سليم", en: "Valid" },
   "documents.statusWarning": { ar: "قرّب ينتهي", en: "Expiring soon" },
@@ -1020,6 +1021,10 @@ const dict = {
   "users.passwordPlaceholder": { ar: "6 أحرف على الأقل", en: "At least 6 characters" },
   "users.grantAllButton": { ar: "منح كل الصلاحيات", en: "Grant all permissions" },
   "users.overviewAccessLabel": { ar: "صفحة النظرة العامة", en: "Overview page" },
+  "users.notificationsAccessLabel": {
+    ar: "صفحة الإشعارات والإنذارات",
+    en: "Notifications & Warnings page",
+  },
   "users.ridersAccessLabel": { ar: "صلاحية صفحة المناديب", en: "Riders page permission" },
   "users.ridersAccessFullLabel": {
     ar: "عرض وتعديل البيانات وكلمة المرور",

@@ -73,6 +73,7 @@ interface Permissions {
   reportsAccess: TieredAccess;
   documentsAccess: DocumentsAccess;
   lettersAccess: TieredAccess;
+  notificationsAccess: boolean;
 }
 
 interface StaffRow extends Permissions {
@@ -214,6 +215,13 @@ function PermissionsFields({
           t={t}
         />
       </div>
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <Checkbox
+          checked={value.notificationsAccess}
+          onCheckedChange={(v) => onChange({ ...value, notificationsAccess: !!v })}
+        />
+        {t("users.notificationsAccessLabel")}
+      </label>
       <div className="space-y-1.5">
         <Label className="text-xs">{t("users.areasLabel")}</Label>
         <AreasPicker
@@ -244,6 +252,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   reportsAccess: "none",
   documentsAccess: "none",
   lettersAccess: "none",
+  notificationsAccess: false,
 };
 
 // Every page, every tier's top level, every area — the "grant all" shortcut
@@ -258,6 +267,7 @@ const ALL_ACCESS_PERMISSIONS: Permissions = {
   reportsAccess: "full",
   documentsAccess: "full",
   lettersAccess: "full",
+  notificationsAccess: true,
 };
 
 function CreateStaffDialog({
@@ -705,6 +715,11 @@ function AdminUsers() {
                                 {t("admin.navOverview")}
                               </Badge>
                             )}
+                            {s.notificationsAccess && (
+                              <Badge variant="secondary" className="text-[10px]">
+                                {t("admin.navNotifications")}
+                              </Badge>
+                            )}
                             {s.ridersAccess !== "none" && (
                               <Badge variant="secondary" className="text-[10px]">
                                 {t("admin.navRiders")}:{" "}
@@ -734,6 +749,7 @@ function AdminUsers() {
                               </Badge>
                             )}
                             {!s.overviewAccess &&
+                              !s.notificationsAccess &&
                               s.ridersAccess === "none" &&
                               s.reportsAccess === "none" &&
                               s.documentsAccess === "none" &&

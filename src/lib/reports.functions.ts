@@ -746,10 +746,10 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let documentsAccess: DocTier = "full";
     let lettersAccess: Tier = "full";
     let allowedAreas: string[] | null = null;
-    // Notifications, Users, and Company Profile are never a staff
-    // permission — a staff account simply never sees them, so these three
-    // only ever matter for a real company admin (gated below by the plan).
     let notificationsAccess = true;
+    // Users and Company Profile are never a staff permission — a staff
+    // account simply never sees them, so these two only ever matter for a
+    // real company admin (gated below by the plan).
     let usersAccess = true;
     let companyProfileAccess = true;
 
@@ -768,6 +768,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           { data: reports },
           { data: documents },
           { data: letters },
+          { data: notifications },
           { data: areas },
         ] = await Promise.all([
           supabase.rpc("get_member_overview_access", { _user_id: userId }),
@@ -777,6 +778,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           supabase.rpc("get_member_reports_access", { _user_id: userId }),
           supabase.rpc("get_member_documents_access", { _user_id: userId }),
           supabase.rpc("get_member_letters_access", { _user_id: userId }),
+          supabase.rpc("get_member_notifications_access", { _user_id: userId }),
           supabase.rpc("get_member_allowed_areas", { _user_id: userId }),
         ]);
         overviewAccess = !!overview;
@@ -786,6 +788,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         reportsAccess = (reports as Tier | null) ?? "none";
         documentsAccess = (documents as DocTier | null) ?? "none";
         lettersAccess = (letters as Tier | null) ?? "none";
+        notificationsAccess = !!notifications;
         allowedAreas = (areas as string[] | null) ?? null;
       }
     }
@@ -829,9 +832,9 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         reportsAccess = minTier(reportsAccess, planReports);
         documentsAccess = minTier(documentsAccess, planDocuments);
         lettersAccess = minTier(lettersAccess, planLetters);
-        // Staff never has these three regardless of plan — nothing to
+        notificationsAccess = notificationsAccess && planNotifications;
+        // Staff never has these two regardless of plan — nothing to
         // intersect, just make sure the returned value reflects reality.
-        notificationsAccess = false;
         usersAccess = false;
         companyProfileAccess = false;
       } else if (!isSuperAdmin) {

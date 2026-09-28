@@ -71,6 +71,7 @@ import { checkIsAdmin } from "@/lib/reports.functions";
 import {
   DOC_TYPES,
   computeDocStatus,
+  docTypeNeedsExpiry,
   hasAllowedDocExtension,
   isKnownDocType,
   isOperatingCardDocType,
@@ -107,7 +108,7 @@ interface DocRow {
   file_name: string;
   card_number: string | null;
   label: string | null;
-  expiry_date: string;
+  expiry_date: string | null;
   uploaded_at: string;
 }
 
@@ -118,7 +119,7 @@ function docTypeKey(dt: DocType): TranslationKey {
 type UploadFn = (
   docType: string,
   file: File,
-  expiryDate: string,
+  expiryDate: string | null,
   cardNumber: string | null,
   label?: string | null,
 ) => Promise<boolean>;
@@ -163,7 +164,10 @@ function DocumentSlot({
   const [cardNumber, setCardNumber] = useState(doc?.card_number ?? "");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const { status, daysLeft } = computeDocStatus(doc?.expiry_date ?? null);
+  const needsExpiry = docTypeNeedsExpiry(docType);
+  const { status, daysLeft } = needsExpiry
+    ? computeDocStatus(doc?.expiry_date ?? null)
+    : { status: (doc ? "ok" : "missing") as DocStatus, daysLeft: null };
 
   const isOperatingCard = isOperatingCardDocType(docType);
 
@@ -195,7 +199,7 @@ function DocumentSlot({
     if (!file) return toast.error(t("documents.toastFileRequired"));
     if (!hasAllowedDocExtension(file.name))
       return toast.error(t("documents.toastInvalidExtension"));
-    if (!expiryDate || !isValidExpiryDate(expiryDate)) {
+    if (needsExpiry && (!expiryDate || !isValidExpiryDate(expiryDate))) {
       return toast.error(t("documents.toastInvalidDate"));
     }
     if (isOperatingCard) {
@@ -206,7 +210,7 @@ function DocumentSlot({
     const ok = await onUpload(
       docType,
       file,
-      expiryDate,
+      needsExpiry ? expiryDate : null,
       isOperatingCard ? cardNumber.trim() : null,
     );
     if (ok) {
@@ -255,9 +259,11 @@ function DocumentSlot({
       {doc ? (
         <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
           <div className="truncate">{doc.file_name}</div>
-          <div>
-            {t("documents.expiryDateLabel")}: {formatDate(doc.expiry_date)}
-          </div>
+          {needsExpiry && (
+            <div>
+              {t("documents.expiryDateLabel")}: {formatDate(doc.expiry_date ?? "")}
+            </div>
+          )}
           <div>
             {t("documents.uploadedAtLabel")}: {formatDate(doc.uploaded_at)}
           </div>
@@ -282,7 +288,7 @@ function DocumentSlot({
           )}
           {doc && (
             <>
-              {canWrite && (
+              {canWrite && needsExpiry && (
                 <Button
                   type="button"
                   size="sm"
@@ -359,15 +365,17 @@ function DocumentSlot({
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
-            <Input
-              type="date"
-              value={expiryDate}
-              onChange={(e) => setExpiryDate(e.target.value)}
-              required
-            />
-          </div>
+          {needsExpiry && (
+            <div className="space-y-1">
+              <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
+              <Input
+                type="date"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+                required
+              />
+            </div>
+          )}
           {isOperatingCard && (
             <div className="space-y-1">
               <Label className="text-xs">{t("documents.cardNumberLabel")}</Label>
@@ -778,7 +786,7 @@ function AdminDocuments() {
     riderId: string,
     docType: string,
     file: File,
-    expiryDate: string,
+    expiryDate: string | null,
     cardNumber: string | null,
     label?: string | null,
   ) => {
