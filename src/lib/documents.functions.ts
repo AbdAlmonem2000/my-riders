@@ -77,16 +77,23 @@ async function resolveDocumentsCompany(
 // a real company admin can hit this exactly like a staff member — and the
 // error names the conflicting riders and their area so whoever hits it can
 // actually resolve it instead of guessing.
+//
+// Deliberately runs on supabaseAdmin (service role), never the caller's own
+// request-scoped client: a staff account restricted to one area only sees
+// rider_documents within its own allowed_areas under RLS, so checking with
+// that client would silently miss a conflicting card already used by a
+// rider in a DIFFERENT area — exactly the gap that let the same card number
+// end up assigned across two areas at once. This check is a company-wide
+// invariant, not something scoped to what the caller personally can see.
 async function assertOperatingCardAssignment(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
   companyId: string,
   riderId: string,
   riderArea: string | null,
   docType: string,
   cardNumber: string,
 ) {
-  const { data: sameCardRaw } = await supabase
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: sameCardRaw } = await supabaseAdmin
     .from("rider_documents")
     .select("rider_id")
     .eq("company_id", companyId)
@@ -98,7 +105,7 @@ async function assertOperatingCardAssignment(
   ];
   if (otherRiderIds.length === 0) return;
 
-  const { data: othersRaw } = await supabase
+  const { data: othersRaw } = await supabaseAdmin
     .from("riders")
     .select("id, rider_name, area")
     .in("id", otherRiderIds);
@@ -170,7 +177,6 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
         throw new Error(`رقم كرت التشغيل لازم يكون بالشكل ${OPERATING_CARD_NUMBER_FORMAT} بالظبط`);
       }
       await assertOperatingCardAssignment(
-        supabase,
         companyId,
         data.riderId,
         rider.area,
@@ -260,7 +266,6 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
           .maybeSingle();
         if (!rider) throw new Error("المندوب غير موجود");
         await assertOperatingCardAssignment(
-          supabase,
           companyId,
           data.riderId,
           rider.area,
