@@ -73,7 +73,10 @@ async function resolveDocumentsCompany(
 // excluded, so re-saving your own card is fine, and the two slots track
 // their card numbers independently). Shared by both the initial upload and
 // a later date/card-only edit, since either one can change which card a
-// rider is assigned to.
+// rider is assigned to. Applies identically regardless of who's uploading —
+// a real company admin can hit this exactly like a staff member — and the
+// error names the conflicting riders and their area so whoever hits it can
+// actually resolve it instead of guessing.
 async function assertOperatingCardAssignment(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
@@ -93,25 +96,34 @@ async function assertOperatingCardAssignment(
   const otherRiderIds = [
     ...new Set((sameCardRaw ?? []).map((r: { rider_id: string }) => r.rider_id)),
   ];
+  if (otherRiderIds.length === 0) return;
+
+  const { data: othersRaw } = await supabase
+    .from("riders")
+    .select("id, rider_name, area")
+    .in("id", otherRiderIds);
+  const others = (othersRaw ?? []) as {
+    id: string;
+    rider_name: string | null;
+    area: string | null;
+  }[];
+  const namesOf = (list: typeof others) =>
+    list.map((o) => o.rider_name?.trim() || "مندوب بدون اسم").join("، ");
 
   if (otherRiderIds.length >= 3) {
-    throw new Error(`كرت التشغيل رقم ${cardNumber} وصل للحد الأقصى (3 مناديب)`);
+    const area = others[0]?.area?.trim() || "بدون منطقة";
+    throw new Error(
+      `كرت التشغيل رقم ${cardNumber} وصل للحد الأقصى (3 مناديب) — مستخدم حاليًا مع: ${namesOf(others)} (منطقة ${area})`,
+    );
   }
 
-  if (otherRiderIds.length > 0) {
-    const { data: othersRaw } = await supabase
-      .from("riders")
-      .select("id, area")
-      .in("id", otherRiderIds);
-    const myArea = riderArea?.trim() || null;
-    const mismatched = (othersRaw ?? []).find(
-      (o: { area: string | null }) => (o.area?.trim() || null) !== myArea,
+  const myArea = riderArea?.trim() || null;
+  const mismatched = others.filter((o) => (o.area?.trim() || null) !== myArea);
+  if (mismatched.length > 0) {
+    const otherArea = mismatched[0].area?.trim() || "بدون منطقة";
+    throw new Error(
+      `كرت التشغيل رقم ${cardNumber} مستخدم بالفعل في منطقة "${otherArea}" مع: ${namesOf(mismatched)} — لازم يكونوا في نفس المنطقة`,
     );
-    if (mismatched) {
-      throw new Error(
-        "رقم كرت التشغيل ده مستخدم بالفعل لمندوب في منطقة مختلفة — لازم يكونوا في نفس المنطقة",
-      );
-    }
   }
 }
 
