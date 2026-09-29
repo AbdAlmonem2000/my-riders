@@ -36,6 +36,9 @@ const PermissionsSchema = z.object({
   documentsAccess: DocumentsAccessSchema,
   lettersAccess: TieredAccessSchema,
   notificationsAccess: z.boolean(),
+  // Only meaningful when documentsAccess isn't 'none' — same reasoning as
+  // ridersDeleteAccess/ridersBlockAccess above.
+  operatingCardsAccess: z.boolean(),
 });
 
 export const listCompanyStaff = createServerFn({ method: "GET" })
@@ -62,6 +65,7 @@ export const listCompanyStaff = createServerFn({ method: "GET" })
         documentsAccess: r.documents_access as "none" | "view_only" | "full",
         lettersAccess: r.letters_access as "none" | "view" | "full",
         notificationsAccess: !!r.notifications_access,
+        operatingCardsAccess: !!r.operating_cards_access,
         createdAt: r.created_at as string,
       }),
     );
@@ -115,6 +119,7 @@ export const createCompanyStaff = createServerFn({ method: "POST" })
       documents_access: data.documentsAccess,
       letters_access: data.lettersAccess,
       notifications_access: data.notificationsAccess,
+      operating_cards_access: data.operatingCardsAccess,
     });
     if (roleErr) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -144,6 +149,7 @@ export const updateCompanyStaffPermissions = createServerFn({ method: "POST" })
         documents_access: data.documentsAccess,
         letters_access: data.lettersAccess,
         notifications_access: data.notificationsAccess,
+        operating_cards_access: data.operatingCardsAccess,
       })
       .eq("user_id", data.userId)
       .eq("role", "user")

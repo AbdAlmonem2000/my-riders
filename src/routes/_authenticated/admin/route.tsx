@@ -12,9 +12,11 @@ import { useMemo, useState } from "react";
 import {
   Bell,
   Building2,
+  CreditCard,
   FileSignature,
   FileSpreadsheet,
   FileText,
+  FileWarning,
   Home,
   Landmark,
   Loader2,
@@ -35,7 +37,7 @@ import { NAV_LINK_ACTIVE_CLASS, NAV_LINK_CLASS } from "@/components/nav-link-sty
 import { MobileNavDrawer } from "@/components/mobile-nav-drawer";
 import { UserMenu } from "@/components/user-menu";
 import { checkIsAdmin } from "@/lib/reports.functions";
-import { computeDocStatus } from "@/lib/document-status";
+import { computeDocStatus, docTypeNeedsExpiry, isCustomDocType } from "@/lib/document-status";
 import { formatDateTime } from "@/lib/date-format";
 import { listAnnouncements, markAnnouncementsRead } from "@/lib/announcements.functions";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
@@ -121,6 +123,85 @@ function NotificationBell({
   );
 }
 
+interface ExpiryAlertItem {
+  id: string;
+  title: string;
+  status: "expired" | "warning";
+  daysLeft: number;
+}
+
+// A real, in-app alert (as opposed to the fixed 30-day badge already on
+// every document row) driven by each user's own configurable lead time —
+// see expiry_notify_days on companies/user_roles. There's no background job
+// anywhere in this app, so this is computed live from what's already loaded
+// whenever the bell is opened, the same "reaches you when you open it"
+// model every other admin-facing alert here uses.
+function ExpiryAlertsBell({
+  alerts,
+  notifyDays,
+  t,
+}: {
+  alerts: ExpiryAlertItem[];
+  notifyDays: number;
+  t: (key: TranslationKey) => string;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="relative"
+          title={t("admin.expiryAlertsTitle")}
+        >
+          <FileWarning className="h-4 w-4" />
+          {alerts.length > 0 && (
+            <span className="absolute -top-1 -end-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground">
+              {alerts.length > 9 ? "9+" : alerts.length}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-104 max-w-[92vw] p-0" align="end">
+        <div className="border-b px-4 py-3 text-sm font-semibold">
+          {t("admin.expiryAlertsTitle")}
+          <p className="mt-0.5 text-xs font-normal text-muted-foreground">
+            {t("admin.expiryAlertsSubtitle")} ({notifyDays} {t("documents.daysLeftSuffix")})
+          </p>
+        </div>
+        <div className="max-h-96 overflow-y-auto">
+          {alerts.length === 0 && (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+              {t("admin.expiryAlertsEmpty")}
+            </p>
+          )}
+          {alerts.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-start justify-between gap-3 border-b px-4 py-3 last:border-b-0"
+            >
+              <span className="min-w-0 whitespace-normal wrap-break-word text-sm font-medium">
+                {a.title}
+              </span>
+              <span
+                className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  a.status === "expired"
+                    ? "bg-destructive/10 text-destructive"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {a.status === "expired"
+                  ? t("documents.statusExpired")
+                  : `${a.daysLeft} ${t("documents.daysLeftSuffix")}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 const NAV_TABS = [
   { to: "/admin" as const, key: "admin.navOverview" as const, icon: Home, exact: true },
   { to: "/admin/riders" as const, key: "admin.navRiders" as const, icon: Users, exact: false },
@@ -134,6 +215,12 @@ const NAV_TABS = [
     to: "/admin/documents" as const,
     key: "admin.navDocuments" as const,
     icon: FileText,
+    exact: false,
+  },
+  {
+    to: "/admin/operating-cards" as const,
+    key: "admin.navOperatingCards" as const,
+    icon: CreditCard,
     exact: false,
   },
   {
@@ -191,6 +278,7 @@ interface PagePermissions {
   documentsAccess: "none" | "view_only" | "full";
   lettersAccess: "none" | "view" | "full";
   notificationsAccess: boolean;
+  operatingCardsAccess: boolean;
   usersAccess: boolean;
   companyProfileAccess: boolean;
 }
@@ -199,6 +287,7 @@ const PAGE_ACCESS: Record<string, (d: PagePermissions) => boolean> = {
   "/admin/riders": (d) => d.ridersAccess !== "none",
   "/admin/reports": (d) => d.reportsAccess !== "none",
   "/admin/documents": (d) => d.documentsAccess !== "none",
+  "/admin/operating-cards": (d) => d.documentsAccess !== "none" && d.operatingCardsAccess,
   "/admin/letters": (d) => d.lettersAccess !== "none",
   "/admin/notifications": (d) => d.notificationsAccess,
   "/admin/users": (d) => !d.isStaff && d.usersAccess,
@@ -243,11 +332,15 @@ function AdminLayout() {
   });
 
   // Powers the small "expiring soon" badge on the Documents nav item — no
-  // extra click needed to know something needs attention.
+  // extra click needed to know something needs attention. Also feeds the
+  // configurable-lead-time alert bell below (same rows, two different
+  // thresholds: this badge's is a fixed 30 days, the bell's is per-user).
   const expiringDocsQuery = useQuery({
     queryKey: ["rider-documents-expiring"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("rider_documents").select("expiry_date");
+      const { data, error } = await supabase
+        .from("rider_documents")
+        .select("id, rider_id, doc_type, expiry_date, label");
       if (error) throw error;
       return data;
     },
@@ -260,6 +353,44 @@ function AdminLayout() {
         .length,
     [expiringDocsQuery.data],
   );
+
+  const documentsAccess = adminCheck.data?.documentsAccess ?? "none";
+  const expiryAlertRidersQuery = useQuery({
+    queryKey: ["expiry-alerts-riders"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("riders").select("id, rider_name");
+      if (error) throw error;
+      return data;
+    },
+    enabled: documentsAccess !== "none",
+    refetchInterval: 5 * 60_000,
+  });
+  const expiryNotifyDays = adminCheck.data?.expiryNotifyDays ?? 30;
+  const expiryAlerts = useMemo<ExpiryAlertItem[]>(() => {
+    const riderNameById = new Map(
+      (expiryAlertRidersQuery.data ?? []).map((r) => [r.id, r.rider_name]),
+    );
+    return (expiringDocsQuery.data ?? [])
+      .filter((d) => docTypeNeedsExpiry(d.doc_type))
+      .map((d) => ({ ...d, daysLeft: computeDocStatus(d.expiry_date).daysLeft }))
+      .filter(
+        (d): d is typeof d & { daysLeft: number } =>
+          d.daysLeft !== null && d.daysLeft <= expiryNotifyDays,
+      )
+      .sort((a, b) => a.daysLeft - b.daysLeft)
+      .map((d) => {
+        const riderName = riderNameById.get(d.rider_id) || "—";
+        const docLabel = isCustomDocType(d.doc_type)
+          ? (d.label ?? "")
+          : t(`documents.type.${d.doc_type}` as TranslationKey);
+        return {
+          id: d.id,
+          title: `${riderName} — ${docLabel}`,
+          status: d.daysLeft <= 0 ? ("expired" as const) : ("warning" as const),
+          daysLeft: d.daysLeft,
+        };
+      });
+  }, [expiringDocsQuery.data, expiryAlertRidersQuery.data, expiryNotifyDays, t]);
 
   // Same idea, for the company's own official documents (commercial
   // register, tax certificate, ...) — badges the Company Profile nav item.
@@ -467,6 +598,9 @@ function AdminLayout() {
             <h1 className="text-lg font-semibold">{companyName ?? t("admin.headerTitle")}</h1>
           </div>
           <div className="flex items-center gap-2">
+            {documentsAccess !== "none" && (
+              <ExpiryAlertsBell alerts={expiryAlerts} notifyDays={expiryNotifyDays} t={t} />
+            )}
             {!isStaff && (
               <NotificationBell
                 announcements={announcementsQuery.data?.announcements ?? []}

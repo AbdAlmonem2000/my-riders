@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  BellRing,
   Building2,
   Download,
   FileText,
@@ -38,6 +39,7 @@ import {
 import { StatusBadge } from "@/components/doc-status-badge";
 import { checkIsAdmin } from "@/lib/reports.functions";
 import {
+  updateCompanyExpiryNotifyDays,
   updateCompanyLogo,
   updateCompanyName,
   updateCompanyRegistration,
@@ -130,6 +132,141 @@ function NameSection({
         <Button type="submit" size="sm" disabled={saving || !name.trim()}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.save")}
         </Button>
+      </form>
+    </div>
+  );
+}
+
+// The default lead time (in days) for the "document about to expire" in-app
+// alert bell, applied to anyone in the company who hasn't set a personal
+// override of their own (see PersonalExpiryNotifyDaysSection below).
+function CompanyExpiryNotifyDaysSection({
+  companyId,
+  currentDays,
+  t,
+}: {
+  companyId: string;
+  currentDays: number;
+  t: (key: TranslationKey) => string;
+}) {
+  const queryClient = useQueryClient();
+  const updateFn = useServerFn(updateCompanyExpiryNotifyDays);
+  const [days, setDays] = useState(String(currentDays));
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = Number(days);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 365) {
+      return toast.error(t("companyProfile.toastExpiryNotifyDaysInvalid"));
+    }
+    setSaving(true);
+    try {
+      await updateFn({ data: { id: companyId, days: parsed } });
+      toast.success(t("admin.save"));
+      queryClient.invalidateQueries({ queryKey: ["is-admin"] });
+    } catch (err) {
+      toast.error(errText(err, t("companyProfile.toastExpiryNotifyDaysFailed")));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <SectionLabel icon={BellRing}>{t("companyProfile.expiryNotifyDaysTitle")}</SectionLabel>
+      <p className="text-xs text-muted-foreground">{t("companyProfile.expiryNotifyDaysDesc")}</p>
+      <form onSubmit={submit} className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={1}
+          max={365}
+          value={days}
+          onChange={(e) => setDays(e.target.value)}
+          className="w-24"
+        />
+        <Button type="submit" size="sm" disabled={saving || !days}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.save")}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+// The admin's own personal override — same self-service RPC as a staff
+// member's copy of this field on the account page (the row is theirs, so no
+// company/role check is needed). Blank falls back to the company default
+// set just above.
+function PersonalExpiryNotifyDaysSection({
+  personalDays,
+  companyDays,
+  t,
+}: {
+  personalDays: number | null;
+  companyDays: number;
+  t: (key: TranslationKey) => string;
+}) {
+  const queryClient = useQueryClient();
+  const [days, setDays] = useState(personalDays !== null ? String(personalDays) : "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDays(personalDays !== null ? String(personalDays) : "");
+  }, [personalDays]);
+
+  const save = async (value: number | null) => {
+    if (value !== null && (!Number.isInteger(value) || value < 1 || value > 365)) {
+      return toast.error(t("account.toastExpiryNotifyDaysInvalid"));
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc("update_my_expiry_notify_days", { _days: value });
+      if (error) throw new Error(error.message);
+      toast.success(t("admin.save"));
+      queryClient.invalidateQueries({ queryKey: ["is-admin"] });
+    } catch (err) {
+      toast.error(errText(err, t("account.toastExpiryNotifyDaysFailed")));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    save(days.trim() ? Number(days) : null);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <SectionLabel icon={BellRing}>{t("account.expiryNotifyDaysLabel")}</SectionLabel>
+      <p className="text-xs text-muted-foreground">
+        {t("companyProfile.expiryNotifyDaysPersonalDesc")} (
+        {t("account.expiryNotifyDaysCompanyDefault")}: {companyDays})
+      </p>
+      <form onSubmit={submit} className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={1}
+          max={365}
+          value={days}
+          onChange={(e) => setDays(e.target.value)}
+          placeholder={String(companyDays)}
+          className="w-28"
+        />
+        <Button type="submit" size="sm" disabled={saving}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.save")}
+        </Button>
+        {personalDays !== null && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={saving}
+            onClick={() => save(null)}
+          >
+            {t("account.expiryNotifyDaysResetButton")}
+          </Button>
+        )}
       </form>
     </div>
   );
@@ -895,6 +1032,22 @@ function AdminCompanyProfile() {
               />
             </div>
           )}
+          {companyId && (
+            <div className="pt-4">
+              <CompanyExpiryNotifyDaysSection
+                companyId={companyId}
+                currentDays={adminCheck.data?.companyExpiryNotifyDays ?? 30}
+                t={t}
+              />
+            </div>
+          )}
+          <div className="pt-4">
+            <PersonalExpiryNotifyDaysSection
+              personalDays={adminCheck.data?.personalExpiryNotifyDays ?? null}
+              companyDays={adminCheck.data?.companyExpiryNotifyDays ?? 30}
+              t={t}
+            />
+          </div>
         </CardContent>
       </Card>
 

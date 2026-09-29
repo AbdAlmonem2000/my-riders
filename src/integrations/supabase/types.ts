@@ -88,6 +88,7 @@ export type Database = {
         Row: {
           commercial_registration: string | null
           created_at: string
+          expiry_notify_days: number
           id: string
           is_suspended: boolean
           logo_url: string | null
@@ -110,6 +111,7 @@ export type Database = {
         Insert: {
           commercial_registration?: string | null
           created_at?: string
+          expiry_notify_days?: number
           id?: string
           is_suspended?: boolean
           logo_url?: string | null
@@ -132,6 +134,7 @@ export type Database = {
         Update: {
           commercial_registration?: string | null
           created_at?: string
+          expiry_notify_days?: number
           id?: string
           is_suspended?: boolean
           logo_url?: string | null
@@ -630,9 +633,11 @@ export type Database = {
           created_at: string
           display_name: string | null
           documents_access: string
+          expiry_notify_days: number | null
           id: string
           letters_access: string
           notifications_access: boolean
+          operating_cards_access: boolean
           overview_access: boolean
           reports_access: string
           riders_access: string
@@ -647,9 +652,11 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           documents_access?: string
+          expiry_notify_days?: number | null
           id?: string
           letters_access?: string
           notifications_access?: boolean
+          operating_cards_access?: boolean
           overview_access?: boolean
           reports_access?: string
           riders_access?: string
@@ -664,9 +671,11 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           documents_access?: string
+          expiry_notify_days?: number | null
           id?: string
           letters_access?: string
           notifications_access?: boolean
+          operating_cards_access?: boolean
           overview_access?: boolean
           reports_access?: string
           riders_access?: string
@@ -704,6 +713,7 @@ export type Database = {
         Returns: undefined
       }
       update_my_display_name: { Args: { _name: string }; Returns: undefined }
+      update_my_expiry_notify_days: { Args: { _days: number | null }; Returns: undefined }
       register_rider_push: {
         Args: {
           _auth: string
@@ -778,6 +788,7 @@ export type Database = {
           last_sign_in_at: string | null
           letters_access: string
           notifications_access: boolean
+          operating_cards_access: boolean
           overview_access: boolean
           reports_access: string
           riders_access: string
@@ -808,6 +819,7 @@ export type Database = {
       get_member_documents_access: { Args: { _user_id: string }; Returns: string }
       get_member_letters_access: { Args: { _user_id: string }; Returns: string }
       get_member_notifications_access: { Args: { _user_id: string }; Returns: boolean }
+      get_member_operating_cards_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_allowed_areas: { Args: { _user_id: string }; Returns: string[] }
       get_company_plan_overview_access: { Args: { _company_id: string }; Returns: boolean }
       get_company_plan_riders_access: { Args: { _company_id: string }; Returns: string }

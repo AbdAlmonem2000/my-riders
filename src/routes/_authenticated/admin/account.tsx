@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { KeyRound, Loader2, Mail, ShieldCheck, User } from "lucide-react";
+import { BellRing, KeyRound, Loader2, Mail, ShieldCheck, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -75,6 +75,85 @@ function NameSection({
         <Button type="submit" size="sm" disabled={saving || !name.trim()}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.save")}
         </Button>
+      </form>
+    </div>
+  );
+}
+
+// Personal override for the "document about to expire" alert bell's lead
+// time — leaving it blank falls back to the company's own default (set on
+// the company profile page), same self-service RPC pattern as the name
+// above (the row is theirs, so no company/role check is needed).
+function ExpiryNotifyDaysSection({
+  personalDays,
+  companyDays,
+  t,
+}: {
+  personalDays: number | null;
+  companyDays: number;
+  t: (key: TranslationKey) => string;
+}) {
+  const queryClient = useQueryClient();
+  const [days, setDays] = useState(personalDays !== null ? String(personalDays) : "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDays(personalDays !== null ? String(personalDays) : "");
+  }, [personalDays]);
+
+  const save = async (value: number | null) => {
+    if (value !== null && (!Number.isInteger(value) || value < 1 || value > 365)) {
+      return toast.error(t("account.toastExpiryNotifyDaysInvalid"));
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc("update_my_expiry_notify_days", { _days: value });
+      if (error) throw new Error(error.message);
+      toast.success(t("admin.save"));
+      queryClient.invalidateQueries({ queryKey: ["is-admin"] });
+    } catch (err) {
+      toast.error(errText(err, t("account.toastExpiryNotifyDaysFailed")));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    save(days.trim() ? Number(days) : null);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <SectionLabel icon={BellRing}>{t("account.expiryNotifyDaysLabel")}</SectionLabel>
+      <p className="text-xs text-muted-foreground">
+        {t("account.expiryNotifyDaysDesc")} ({t("account.expiryNotifyDaysCompanyDefault")}:{" "}
+        {companyDays})
+      </p>
+      <form onSubmit={submit} className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={1}
+          max={365}
+          value={days}
+          onChange={(e) => setDays(e.target.value)}
+          placeholder={String(companyDays)}
+          className="w-28"
+        />
+        <Button type="submit" size="sm" disabled={saving}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.save")}
+        </Button>
+        {personalDays !== null && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={saving}
+            onClick={() => save(null)}
+          >
+            {t("account.expiryNotifyDaysResetButton")}
+          </Button>
+        )}
       </form>
     </div>
   );
@@ -202,6 +281,16 @@ function AdminAccount() {
           {d?.isStaff && (
             <div className="pt-4">
               <NameSection currentName={d.displayName} t={t} />
+            </div>
+          )}
+
+          {d && d.documentsAccess !== "none" && (
+            <div className="pt-4">
+              <ExpiryNotifyDaysSection
+                personalDays={d.personalExpiryNotifyDays}
+                companyDays={d.companyExpiryNotifyDays}
+                t={t}
+              />
             </div>
           )}
 

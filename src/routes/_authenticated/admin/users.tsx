@@ -74,6 +74,9 @@ interface Permissions {
   documentsAccess: DocumentsAccess;
   lettersAccess: TieredAccess;
   notificationsAccess: boolean;
+  // Only meaningful when documentsAccess isn't 'none' — the Operating Cards
+  // page is just another view of the same document data.
+  operatingCardsAccess: boolean;
 }
 
 interface StaffRow extends Permissions {
@@ -202,9 +205,24 @@ function PermissionsFields({
         <Label className="text-xs">{t("users.documentsAccessLabel")}</Label>
         <DocumentsAccessPicker
           value={value.documentsAccess}
-          onChange={(v) => onChange({ ...value, documentsAccess: v })}
+          onChange={(v) =>
+            onChange({
+              ...value,
+              documentsAccess: v,
+              operatingCardsAccess: v !== "none" && value.operatingCardsAccess,
+            })
+          }
           t={t}
         />
+        {value.documentsAccess !== "none" && (
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={value.operatingCardsAccess}
+              onCheckedChange={(v) => onChange({ ...value, operatingCardsAccess: !!v })}
+            />
+            {t("users.operatingCardsAccessLabel")}
+          </label>
+        )}
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">{t("users.lettersAccessLabel")}</Label>
@@ -253,6 +271,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   documentsAccess: "none",
   lettersAccess: "none",
   notificationsAccess: false,
+  operatingCardsAccess: false,
 };
 
 // Every page, every tier's top level, every area — the "grant all" shortcut
@@ -268,6 +287,7 @@ const ALL_ACCESS_PERMISSIONS: Permissions = {
   documentsAccess: "full",
   lettersAccess: "full",
   notificationsAccess: true,
+  operatingCardsAccess: true,
 };
 
 function CreateStaffDialog({
@@ -740,6 +760,8 @@ function AdminUsers() {
                                 {s.documentsAccess === "full"
                                   ? t("users.documentsAccessFull")
                                   : t("users.documentsAccessViewOnly")}
+                                {s.operatingCardsAccess &&
+                                  ` + ${t("users.operatingCardsAccessLabel")}`}
                               </Badge>
                             )}
                             {s.lettersAccess !== "none" && (

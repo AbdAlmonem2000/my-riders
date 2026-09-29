@@ -24,6 +24,7 @@ import { Route as AuthenticatedSuperAdminAccountsRouteImport } from './routes/_a
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminRidersRouteImport } from './routes/_authenticated/admin/riders'
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin/reports'
+import { Route as AuthenticatedAdminOperatingCardsRouteImport } from './routes/_authenticated/admin/operating-cards'
 import { Route as AuthenticatedAdminNotificationsRouteImport } from './routes/_authenticated/admin/notifications'
 import { Route as AuthenticatedAdminLettersRouteImport } from './routes/_authenticated/admin/letters'
 import { Route as AuthenticatedAdminDocumentsRouteImport } from './routes/_authenticated/admin/documents'
@@ -110,6 +111,12 @@ const AuthenticatedAdminReportsRoute =
     path: '/reports',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminOperatingCardsRoute =
+  AuthenticatedAdminOperatingCardsRouteImport.update({
+    id: '/operating-cards',
+    path: '/operating-cards',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 const AuthenticatedAdminNotificationsRoute =
   AuthenticatedAdminNotificationsRouteImport.update({
     id: '/notifications',
@@ -154,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/admin/documents': typeof AuthenticatedAdminDocumentsRoute
   '/admin/letters': typeof AuthenticatedAdminLettersRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/admin/operating-cards': typeof AuthenticatedAdminOperatingCardsRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/riders': typeof AuthenticatedAdminRidersRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -173,6 +181,7 @@ export interface FileRoutesByTo {
   '/admin/documents': typeof AuthenticatedAdminDocumentsRoute
   '/admin/letters': typeof AuthenticatedAdminLettersRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/admin/operating-cards': typeof AuthenticatedAdminOperatingCardsRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/riders': typeof AuthenticatedAdminRidersRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -196,6 +205,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/documents': typeof AuthenticatedAdminDocumentsRoute
   '/_authenticated/admin/letters': typeof AuthenticatedAdminLettersRoute
   '/_authenticated/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/_authenticated/admin/operating-cards': typeof AuthenticatedAdminOperatingCardsRoute
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/_authenticated/admin/riders': typeof AuthenticatedAdminRidersRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/admin/documents'
     | '/admin/letters'
     | '/admin/notifications'
+    | '/admin/operating-cards'
     | '/admin/reports'
     | '/admin/riders'
     | '/admin/users'
@@ -238,6 +249,7 @@ export interface FileRouteTypes {
     | '/admin/documents'
     | '/admin/letters'
     | '/admin/notifications'
+    | '/admin/operating-cards'
     | '/admin/reports'
     | '/admin/riders'
     | '/admin/users'
@@ -260,6 +272,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/documents'
     | '/_authenticated/admin/letters'
     | '/_authenticated/admin/notifications'
+    | '/_authenticated/admin/operating-cards'
     | '/_authenticated/admin/reports'
     | '/_authenticated/admin/riders'
     | '/_authenticated/admin/users'
@@ -385,6 +398,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminReportsRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/operating-cards': {
+      id: '/_authenticated/admin/operating-cards'
+      path: '/operating-cards'
+      fullPath: '/admin/operating-cards'
+      preLoaderRoute: typeof AuthenticatedAdminOperatingCardsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/_authenticated/admin/notifications': {
       id: '/_authenticated/admin/notifications'
       path: '/notifications'
@@ -429,6 +449,7 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminDocumentsRoute: typeof AuthenticatedAdminDocumentsRoute
   AuthenticatedAdminLettersRoute: typeof AuthenticatedAdminLettersRoute
   AuthenticatedAdminNotificationsRoute: typeof AuthenticatedAdminNotificationsRoute
+  AuthenticatedAdminOperatingCardsRoute: typeof AuthenticatedAdminOperatingCardsRoute
   AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
   AuthenticatedAdminRidersRoute: typeof AuthenticatedAdminRidersRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
@@ -443,6 +464,8 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
     AuthenticatedAdminDocumentsRoute: AuthenticatedAdminDocumentsRoute,
     AuthenticatedAdminLettersRoute: AuthenticatedAdminLettersRoute,
     AuthenticatedAdminNotificationsRoute: AuthenticatedAdminNotificationsRoute,
+    AuthenticatedAdminOperatingCardsRoute:
+      AuthenticatedAdminOperatingCardsRoute,
     AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
     AuthenticatedAdminRidersRoute: AuthenticatedAdminRidersRoute,
     AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,

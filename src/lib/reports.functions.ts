@@ -731,10 +731,11 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     // never set one) simply have no name yet.
     const { data: myRoleRow } = await supabase
       .from("user_roles")
-      .select("display_name")
+      .select("display_name, expiry_notify_days")
       .eq("user_id", userId)
       .maybeSingle();
     const displayName = (myRoleRow?.display_name as string | null) ?? null;
+    const personalExpiryNotifyDays = (myRoleRow?.expiry_notify_days as number | null) ?? null;
 
     let companyId = adminCompanyId;
     let isStaff = false;
@@ -747,6 +748,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let lettersAccess: Tier = "full";
     let allowedAreas: string[] | null = null;
     let notificationsAccess = true;
+    let operatingCardsAccess = true;
     // Users and Company Profile are never a staff permission — a staff
     // account simply never sees them, so these two only ever matter for a
     // real company admin (gated below by the plan).
@@ -769,6 +771,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           { data: documents },
           { data: letters },
           { data: notifications },
+          { data: operatingCards },
           { data: areas },
         ] = await Promise.all([
           supabase.rpc("get_member_overview_access", { _user_id: userId }),
@@ -779,6 +782,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           supabase.rpc("get_member_documents_access", { _user_id: userId }),
           supabase.rpc("get_member_letters_access", { _user_id: userId }),
           supabase.rpc("get_member_notifications_access", { _user_id: userId }),
+          supabase.rpc("get_member_operating_cards_access", { _user_id: userId }),
           supabase.rpc("get_member_allowed_areas", { _user_id: userId }),
         ]);
         overviewAccess = !!overview;
@@ -789,6 +793,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         documentsAccess = (documents as DocTier | null) ?? "none";
         lettersAccess = (letters as Tier | null) ?? "none";
         notificationsAccess = !!notifications;
+        operatingCardsAccess = !!operatingCards;
         allowedAreas = (areas as string[] | null) ?? null;
       }
     }
@@ -798,11 +803,12 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let isSuspended = false;
     let rosterFileName: string | null = null;
     let rosterUploadedAt: string | null = null;
+    let companyExpiryNotifyDays = 30;
     if (companyId) {
       const { data } = await supabase
         .from("companies")
         .select(
-          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access",
+          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access, expiry_notify_days",
         )
         .eq("id", companyId)
         .maybeSingle();
@@ -811,6 +817,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       isSuspended = (data?.is_suspended as boolean | undefined) ?? false;
       rosterFileName = (data?.roster_file_name as string | undefined) ?? null;
       rosterUploadedAt = (data?.roster_uploaded_at as string | undefined) ?? null;
+      companyExpiryNotifyDays = (data?.expiry_notify_days as number | undefined) ?? 30;
 
       // The company's plan is the ceiling on what anyone in it can reach —
       // a real admin's access IS the plan (they carry no personal
@@ -856,6 +863,10 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       isSuperAdmin || (!isStaff && !!companyId) || (ridersAccess === "full" && ridersDeleteAccess);
     const canBlockRiders =
       isSuperAdmin || (!isStaff && !!companyId) || (ridersAccess === "full" && ridersBlockAccess);
+    // A personal override always wins over the company's default — set once
+    // in the company profile, and only ever a fallback for a user who never
+    // set their own.
+    const expiryNotifyDays = personalExpiryNotifyDays ?? companyExpiryNotifyDays;
     return {
       isAdmin: isSuperAdmin || !!companyId,
       isSuperAdmin,
@@ -869,9 +880,13 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       documentsAccess,
       lettersAccess,
       notificationsAccess,
+      operatingCardsAccess,
       usersAccess,
       companyProfileAccess,
       allowedAreas,
+      personalExpiryNotifyDays,
+      companyExpiryNotifyDays,
+      expiryNotifyDays,
       companyId,
       rosterFileName,
       rosterUploadedAt,

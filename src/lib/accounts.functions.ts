@@ -214,6 +214,26 @@ export const updateCompanyName = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// The company-wide default lead time for the "document about to expire"
+// in-app alert — any individual user may still override it for themselves
+// (see update_my_expiry_notify_days), so this only changes the fallback.
+export const updateCompanyExpiryNotifyDays = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ id: z.string().uuid(), days: z.number().int().min(1).max(365) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertCanManageCompany(context.supabase, context.userId, data.id);
+    const { data: updated, error } = await context.supabase
+      .from("companies")
+      .update({ expiry_notify_days: data.days })
+      .eq("id", data.id)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error("لم يتم تحديث مدة التنبيه");
+    return { ok: true };
+  });
+
 // السجل التجاري يبدأ بـ 10 والرقم الموحد يبدأ بـ 7 — كل واحد 10 أرقام. نص
 // فاضي أو null يعني مسح الرقم المسجّل.
 const UnifiedNumberSchema = z

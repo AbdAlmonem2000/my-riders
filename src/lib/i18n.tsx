@@ -191,6 +191,7 @@ const dict = {
   "admin.navRiders": { ar: "بيانات المناديب", en: "Riders" },
   "admin.navReports": { ar: "التقارير", en: "Reports" },
   "admin.navDocuments": { ar: "المستندات", en: "Documents" },
+  "admin.navOperatingCards": { ar: "كروت التشغيل", en: "Operating cards" },
   "admin.navNotifications": { ar: "الإشعارات والإنذارات", en: "Notifications & Warnings" },
   "admin.navCompanyProfile": { ar: "بيانات الشركة", en: "Company profile" },
   "admin.goToPage": { ar: "الذهاب", en: "Go" },
@@ -255,6 +256,18 @@ const dict = {
   "admin.dashboardDownloadPdf": { ar: "تنزيل PDF", en: "Download PDF" },
   "admin.notificationsTitle": { ar: "الإشعارات", en: "Notifications" },
   "admin.notificationsEmpty": { ar: "لا توجد إشعارات حتى الآن", en: "No notifications yet" },
+  "admin.expiryAlertsTitle": {
+    ar: "تنبيهات انتهاء المستندات",
+    en: "Document expiry alerts",
+  },
+  "admin.expiryAlertsSubtitle": {
+    ar: "المستندات اللي هتنتهي خلال",
+    en: "Documents expiring within",
+  },
+  "admin.expiryAlertsEmpty": {
+    ar: "لا توجد مستندات قريبة من الانتهاء",
+    en: "No documents nearing expiry",
+  },
   "admin.statReportsCount": { ar: "عدد التقارير", en: "Number of Reports" },
   "admin.statTotalRiders": { ar: "إجمالي المناديب", en: "Total Riders" },
   "admin.statLastReport": { ar: "آخر تقرير", en: "Last Report" },
@@ -843,6 +856,26 @@ const dict = {
     en: "Documents expiring soon or expired",
   },
 
+  "operatingCards.pageTitle": { ar: "كروت التشغيل", en: "Operating cards" },
+  "operatingCards.pageDesc": {
+    ar: "كل كروت التشغيل المرفوعة، ومين المناديب المرتبطين بكل كرت",
+    en: "Every uploaded operating card, and which riders are linked to it",
+  },
+  "operatingCards.listTitle": { ar: "الكروت", en: "Cards" },
+  "operatingCards.listDesc": { ar: "عدد الكروت", en: "Number of cards" },
+  "operatingCards.searchPlaceholder": {
+    ar: "ابحث برقم كرت التشغيل",
+    en: "Search by operating card number",
+  },
+  "operatingCards.empty": {
+    ar: "لا توجد كروت تشغيل مطابقة",
+    en: "No matching operating cards",
+  },
+  "operatingCards.tableCardNumber": { ar: "رقم الكرت", en: "Card number" },
+  "operatingCards.tableType": { ar: "النوع", en: "Type" },
+  "operatingCards.tableCount": { ar: "عدد المرتبطين", en: "Linked riders" },
+  "operatingCards.tableRiders": { ar: "المناديب المرتبطين", en: "Linked riders" },
+
   "notifications.pageTitle": {
     ar: "إرسال إشعار أو إنذار للمناديب",
     en: "Send rider notifications & warnings",
@@ -901,6 +934,26 @@ const dict = {
   "companyProfile.currentNameLabel": { ar: "الاسم الحالي", en: "Current name" },
   "companyProfile.newNamePlaceholder": { ar: "اسم الشركة الجديد", en: "New company name" },
   "companyProfile.toastNameFailed": { ar: "فشل تغيير الاسم", en: "Failed to change name" },
+  "companyProfile.expiryNotifyDaysTitle": {
+    ar: "مدة تنبيه انتهاء المستندات (افتراضي الشركة)",
+    en: "Document expiry alert lead time (company default)",
+  },
+  "companyProfile.expiryNotifyDaysDesc": {
+    ar: "عدد الأيام قبل انتهاء أي مستند يبدأ فيها تنبيه جرس المستندات — لأي مستخدم في الشركة لم يحدد مدة خاصة بيه",
+    en: "How many days before a document expires the documents alert bell starts warning — for anyone in the company who hasn't set their own",
+  },
+  "companyProfile.expiryNotifyDaysPersonalDesc": {
+    ar: "تقدر تحدد مدة مختلفة لنفسك بس، من غير ما تغيّر افتراضي الشركة",
+    en: "Set a different lead time just for yourself, without changing the company default",
+  },
+  "companyProfile.toastExpiryNotifyDaysInvalid": {
+    ar: "عدد الأيام لازم يكون بين 1 و 365",
+    en: "Days must be between 1 and 365",
+  },
+  "companyProfile.toastExpiryNotifyDaysFailed": {
+    ar: "فشل تحديث مدة التنبيه",
+    en: "Failed to update the alert lead time",
+  },
   "companyProfile.emailTitle": { ar: "البريد الإلكتروني", en: "Email" },
   "companyProfile.currentEmailLabel": { ar: "البريد الحالي", en: "Current email" },
   "companyProfile.newEmailPlaceholder": { ar: "البريد الإلكتروني الجديد", en: "New email" },
@@ -997,6 +1050,27 @@ const dict = {
   "account.namePlaceholder": { ar: "اسمك", en: "Your name" },
   "account.toastNameRequired": { ar: "الاسم مطلوب", en: "Name is required" },
   "account.toastNameSaved": { ar: "تم حفظ الاسم", en: "Name saved" },
+  "account.expiryNotifyDaysLabel": {
+    ar: "مدة تنبيه انتهاء المستندات",
+    en: "Document expiry alert lead time",
+  },
+  "account.expiryNotifyDaysDesc": {
+    ar: "عدد الأيام قبل انتهاء أي مستند تحب يبدأ فيها جرس التنبيهات يعرّفك — سيبها فاضية لاستخدام افتراضي الشركة",
+    en: "How many days before a document expires you want the alert bell to start warning you — leave blank to use the company default",
+  },
+  "account.expiryNotifyDaysCompanyDefault": { ar: "افتراضي الشركة", en: "Company default" },
+  "account.expiryNotifyDaysResetButton": {
+    ar: "استخدام افتراضي الشركة",
+    en: "Use company default",
+  },
+  "account.toastExpiryNotifyDaysInvalid": {
+    ar: "عدد الأيام لازم يكون بين 1 و 365",
+    en: "Days must be between 1 and 365",
+  },
+  "account.toastExpiryNotifyDaysFailed": {
+    ar: "فشل تحديث مدة التنبيه",
+    en: "Failed to update the alert lead time",
+  },
   "account.toastNameFailed": { ar: "فشل حفظ الاسم", en: "Failed to save name" },
   "account.permissionsLabel": { ar: "صلاحياتك", en: "Your permissions" },
   "account.noPermissions": {
@@ -1046,6 +1120,10 @@ const dict = {
   },
   "users.documentsAccessFull": { ar: "رفع وتعديل", en: "Upload & edit" },
   "users.documentsAccessViewOnly": { ar: "عرض وتنزيل فقط", en: "View & download only" },
+  "users.operatingCardsAccessLabel": {
+    ar: "يقدر يفتح صفحة كروت التشغيل",
+    en: "Can open the Operating Cards page",
+  },
   "users.lettersAccessLabel": {
     ar: "صلاحية صفحة الخطابات الرسمية",
     en: "Official letters page permission",
