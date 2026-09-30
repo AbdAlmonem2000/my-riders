@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { RiderPhoto } from "@/components/rider-photo";
+import { DateInputDMY } from "@/components/date-input-dmy";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -613,11 +614,10 @@ function AdminLetters() {
               </div>
               <div className="space-y-1.5">
                 <Label>{t("letters.dateLabel")}</Label>
-                <Input
-                  type="date"
+                <DateInputDMY
                   value={letterDate}
-                  onChange={(e) => {
-                    setLetterDate(e.target.value);
+                  onChange={(v) => {
+                    setLetterDate(v);
                     setSavedLetterId(null);
                   }}
                 />

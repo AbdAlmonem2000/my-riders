@@ -37,6 +37,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { StatusBadge } from "@/components/doc-status-badge";
+import { DateInputDMY } from "@/components/date-input-dmy";
 import { checkIsAdmin } from "@/lib/reports.functions";
 import {
   updateCompanyExpiryNotifyDays,
@@ -663,12 +664,7 @@ function CompanyDocumentRow({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
-            <Input
-              type="date"
-              value={expiryDate}
-              onChange={(e) => setExpiryDate(e.target.value)}
-              required
-            />
+            <DateInputDMY value={expiryDate} onChange={setExpiryDate} />
           </div>
           <div className="flex items-center gap-2 pt-1">
             <Button type="submit" size="sm" disabled={saving}>
@@ -689,12 +685,7 @@ function CompanyDocumentRow({
         <form onSubmit={submitEditDate} className="mt-3 space-y-2 rounded-md bg-muted/40 p-2.5">
           <div className="space-y-1">
             <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
-            <Input
-              type="date"
-              value={expiryDate}
-              onChange={(e) => setExpiryDate(e.target.value)}
-              required
-            />
+            <DateInputDMY value={expiryDate} onChange={setExpiryDate} />
           </div>
           <div className="flex items-center gap-2 pt-1">
             <Button type="submit" size="sm" disabled={saving}>
@@ -780,12 +771,7 @@ function AddCompanyDocument({
       </div>
       <div className="space-y-1">
         <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
-        <Input
-          type="date"
-          value={expiryDate}
-          onChange={(e) => setExpiryDate(e.target.value)}
-          required
-        />
+        <DateInputDMY value={expiryDate} onChange={setExpiryDate} />
       </div>
       <div className="flex items-center gap-2 pt-1">
         <Button type="submit" size="sm" disabled={saving}>

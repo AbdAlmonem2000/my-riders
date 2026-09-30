@@ -23,6 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/doc-status-badge";
+import { DateInputDMY } from "@/components/date-input-dmy";
 import { RiderPhoto } from "@/components/rider-photo";
 import { ViewModeToggle } from "@/components/view-mode-toggle";
 import { Input } from "@/components/ui/input";
@@ -368,12 +369,7 @@ function DocumentSlot({
           {needsExpiry && (
             <div className="space-y-1">
               <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
-              <Input
-                type="date"
-                value={expiryDate}
-                onChange={(e) => setExpiryDate(e.target.value)}
-                required
-              />
+              <DateInputDMY value={expiryDate} onChange={setExpiryDate} />
             </div>
           )}
           {isOperatingCard && (
@@ -414,12 +410,7 @@ function DocumentSlot({
         <form onSubmit={submitEditDate} className="mt-3 space-y-2 rounded-md bg-muted/40 p-2.5">
           <div className="space-y-1">
             <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
-            <Input
-              type="date"
-              value={expiryDate}
-              onChange={(e) => setExpiryDate(e.target.value)}
-              required
-            />
+            <DateInputDMY value={expiryDate} onChange={setExpiryDate} />
           </div>
           {isOperatingCard && (
             <div className="space-y-1">
@@ -522,12 +513,7 @@ function AddCustomDocument({
       </div>
       <div className="space-y-1">
         <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
-        <Input
-          type="date"
-          value={expiryDate}
-          onChange={(e) => setExpiryDate(e.target.value)}
-          required
-        />
+        <DateInputDMY value={expiryDate} onChange={setExpiryDate} />
       </div>
       <div className="flex items-center gap-2 pt-1">
         <Button type="submit" size="sm" disabled={saving}>
