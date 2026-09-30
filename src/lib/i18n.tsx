@@ -288,6 +288,7 @@ const dict = {
     ar: "بحث بالاسم أو رقم الإقامة أو ID",
     en: "Search by name, Iqama or ID",
   },
+  "admin.filterAllAreas": { ar: "كل المناطق", en: "All areas" },
   "admin.riderSearchNoResults": {
     ar: "لا يوجد مندوب مطابق للبحث",
     en: "No rider matches the search",
@@ -908,6 +909,14 @@ const dict = {
   "notifications.toastSendFailed": { ar: "فشل إرسال الإشعار", en: "Failed to send notification" },
   "notifications.sentSectionTitle": { ar: "الإشعارات المرسلة", en: "Sent notifications" },
   "notifications.sentEmpty": { ar: "لسه مفيش إشعارات مرسلة", en: "No notifications sent yet" },
+  "notifications.sentSearchPlaceholder": {
+    ar: "ابحث بالعنوان أو المحتوى أو اسم المندوب",
+    en: "Search by title, content, or rider name",
+  },
+  "notifications.sentSearchNoResults": {
+    ar: "لا توجد إشعارات مطابقة للبحث",
+    en: "No notifications match your search",
+  },
   "notifications.tableTitle": { ar: "العنوان", en: "Title" },
   "notifications.tableTarget": { ar: "المستلم", en: "Recipient" },
   "notifications.tableDate": { ar: "التاريخ", en: "Date" },
@@ -1220,6 +1229,14 @@ const dict = {
   "letters.toastInvalidDate": { ar: "التاريخ غير صحيح", en: "Invalid date" },
   "letters.savedSectionTitle": { ar: "الخطابات المحفوظة", en: "Saved letters" },
   "letters.savedEmpty": { ar: "لسه مفيش خطابات محفوظة", en: "No letters saved yet" },
+  "letters.savedSearchPlaceholder": {
+    ar: "ابحث بالعنوان أو المحتوى أو اسم المندوب",
+    en: "Search by title, content, or rider name",
+  },
+  "letters.savedSearchNoResults": {
+    ar: "لا توجد خطابات مطابقة للبحث",
+    en: "No letters match your search",
+  },
   "letters.tableTitle": { ar: "العنوان", en: "Title" },
   "letters.tableRider": { ar: "المندوب", en: "Rider" },
   "letters.tableDate": { ar: "التاريخ", en: "Date" },

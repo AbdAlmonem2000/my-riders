@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   Printer,
+  Search,
   Send,
   Trash2,
   User,
@@ -387,6 +388,17 @@ function AdminLetters() {
     },
   });
 
+  const [savedSearch, setSavedSearch] = useState("");
+  const filteredLetters = useMemo(() => {
+    const rows = lettersQuery.data ?? [];
+    const q = savedSearch.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((l) => {
+      const rider = l.rider_id ? riderById.get(l.rider_id) : null;
+      return [l.title, l.body, rider?.rider_name].some((v) => (v ?? "").toLowerCase().includes(q));
+    });
+  }, [lettersQuery.data, savedSearch, riderById]);
+
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [selectedRider, setSelectedRider] = useState<RiderRow | null>(null);
   const [title, setTitle] = useState("");
@@ -696,104 +708,128 @@ function AdminLetters() {
             </p>
           )}
           {lettersQuery.data && lettersQuery.data.length > 0 && (
-            <div className="overflow-hidden rounded-xl border">
-              <div className="max-h-[24rem] overflow-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:h-9 [&_th]:text-xs">
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="min-w-[180px]">{t("letters.tableTitle")}</TableHead>
-                      <TableHead className="whitespace-nowrap">{t("letters.tableRider")}</TableHead>
-                      <TableHead className="whitespace-nowrap">{t("letters.tableDate")}</TableHead>
-                      <TableHead className="whitespace-nowrap">
-                        {t("letters.tableStatus")}
-                      </TableHead>
-                      <TableHead className="w-16" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lettersQuery.data.map((l) => {
-                      const rider = l.rider_id ? riderById.get(l.rider_id) : null;
-                      return (
-                        <TableRow key={l.id}>
-                          <TableCell className="font-medium">{l.title}</TableCell>
-                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                            {rider?.rider_name || t("letters.noRiderBadge")}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                            {formatDate(l.letter_date)}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <Badge variant={l.is_sent ? "default" : "outline"} className="text-xs">
-                              {l.is_sent ? t("letters.sentBadge") : t("letters.notSentBadge")}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-end gap-0.5">
-                              {canWrite && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  title={t("letters.editButton")}
-                                  onClick={() => loadForEdit(l)}
+            <>
+              <div className="relative mb-3">
+                <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={savedSearch}
+                  onChange={(e) => setSavedSearch(e.target.value)}
+                  placeholder={t("letters.savedSearchPlaceholder")}
+                  className="pe-9"
+                />
+              </div>
+              {filteredLetters.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  {t("letters.savedSearchNoResults")}
+                </p>
+              ) : (
+                <div className="overflow-hidden rounded-xl border">
+                  <div className="max-h-[24rem] overflow-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:h-9 [&_th]:text-xs">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="min-w-[180px]">{t("letters.tableTitle")}</TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("letters.tableRider")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("letters.tableDate")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("letters.tableStatus")}
+                          </TableHead>
+                          <TableHead className="w-16" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredLetters.map((l) => {
+                          const rider = l.rider_id ? riderById.get(l.rider_id) : null;
+                          return (
+                            <TableRow key={l.id}>
+                              <TableCell className="font-medium">{l.title}</TableCell>
+                              <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                                {rider?.rider_name || t("letters.noRiderBadge")}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                                {formatDate(l.letter_date)}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                <Badge
+                                  variant={l.is_sent ? "default" : "outline"}
+                                  className="text-xs"
                                 >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                              )}
-                              <LetterViewDialog
-                                letter={l}
-                                companyName={companyQuery.data?.name ?? ""}
-                                companyLogoUrl={companyQuery.data?.logo_url ?? null}
-                                companyStampUrl={companyQuery.data?.stamp_url ?? null}
-                                companySignatureUrl={companyQuery.data?.signature_url ?? null}
-                                companyUnifiedNumber={companyQuery.data?.unified_number ?? null}
-                                companyCommercialRegistration={
-                                  companyQuery.data?.commercial_registration ?? null
-                                }
-                                t={t}
-                              />
-                              {canWrite && (
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
+                                  {l.is_sent ? t("letters.sentBadge") : t("letters.notSentBadge")}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center justify-end gap-0.5">
+                                  {canWrite && (
                                     <Button
                                       type="button"
                                       size="sm"
                                       variant="ghost"
-                                      className="text-destructive hover:text-destructive"
+                                      title={t("letters.editButton")}
+                                      onClick={() => loadForEdit(l)}
                                     >
-                                      <Trash2 className="h-3.5 w-3.5" />
+                                      <Pencil className="h-3.5 w-3.5" />
                                     </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>
-                                        {t("letters.deleteConfirmTitle")}
-                                      </AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        {t("letters.deleteConfirmDesc")}
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                                      <AlertDialogAction
-                                        onClick={() => handleDelete(l.id)}
-                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                      >
-                                        {t("admin.delete")}
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
+                                  )}
+                                  <LetterViewDialog
+                                    letter={l}
+                                    companyName={companyQuery.data?.name ?? ""}
+                                    companyLogoUrl={companyQuery.data?.logo_url ?? null}
+                                    companyStampUrl={companyQuery.data?.stamp_url ?? null}
+                                    companySignatureUrl={companyQuery.data?.signature_url ?? null}
+                                    companyUnifiedNumber={companyQuery.data?.unified_number ?? null}
+                                    companyCommercialRegistration={
+                                      companyQuery.data?.commercial_registration ?? null
+                                    }
+                                    t={t}
+                                  />
+                                  {canWrite && (
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="ghost"
+                                          className="text-destructive hover:text-destructive"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>
+                                            {t("letters.deleteConfirmTitle")}
+                                          </AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            {t("letters.deleteConfirmDesc")}
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => handleDelete(l.id)}
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          >
+                                            {t("admin.delete")}
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

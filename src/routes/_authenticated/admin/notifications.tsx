@@ -8,6 +8,7 @@ import {
   Bell,
   Loader2,
   Megaphone,
+  Search,
   Send,
   Trash2,
   User,
@@ -207,6 +208,16 @@ function AdminNotifications() {
     queryFn: () => listSentFn(),
   });
 
+  const [sentSearch, setSentSearch] = useState("");
+  const filteredSent = useMemo(() => {
+    const rows = sentQuery.data ?? [];
+    const q = sentSearch.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((n) =>
+      [n.title, n.body, n.target_rider_name].some((v) => (v ?? "").toLowerCase().includes(q)),
+    );
+  }, [sentQuery.data, sentSearch]);
+
   const [targetMode, setTargetMode] = useState<"all" | "specific">("all");
   const [kind, setKind] = useState<"notification" | "warning">("notification");
   const [selectedRider, setSelectedRider] = useState<RiderRow | null>(null);
@@ -371,104 +382,123 @@ function AdminNotifications() {
             </p>
           )}
           {sentQuery.data && sentQuery.data.length > 0 && (
-            <div className="overflow-hidden rounded-xl border">
-              <div className="max-h-[28rem] overflow-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:h-9 [&_th]:text-xs">
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="min-w-[200px]">
-                        {t("notifications.tableTitle")}
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap">
-                        {t("notifications.tableKind")}
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap">
-                        {t("notifications.tableTarget")}
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap">
-                        {t("notifications.tableDate")}
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap">
-                        {t("notifications.tableRead")}
-                      </TableHead>
-                      <TableHead className="w-10" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sentQuery.data.map((n) => (
-                      <TableRow key={n.notification_id}>
-                        <TableCell>
-                          <div className="font-medium">{n.title}</div>
-                          <div className="line-clamp-1 text-xs text-muted-foreground">{n.body}</div>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {n.kind === "warning" ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
-                              <AlertTriangle className="h-3.5 w-3.5" />
-                              {t("notifications.kindWarningBadge")}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                              <Bell className="h-3.5 w-3.5" />
-                              {t("notifications.kindNotificationBadge")}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-sm">
-                          {n.target_rider_id ? (
-                            (n.target_rider_name ?? "—")
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-muted-foreground">
-                              <Megaphone className="h-3.5 w-3.5" />
-                              {t("notifications.targetAllBadge")}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {formatDate(n.created_at)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {n.read_count}/{n.target_count}
-                        </TableCell>
-                        <TableCell>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  {t("notifications.deleteConfirmTitle")}
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {t("notifications.deleteConfirmDesc")}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleDelete(n.notification_id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  {t("admin.delete")}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+            <>
+              <div className="relative mb-3">
+                <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={sentSearch}
+                  onChange={(e) => setSentSearch(e.target.value)}
+                  placeholder={t("notifications.sentSearchPlaceholder")}
+                  className="pe-9"
+                />
               </div>
-            </div>
+              {filteredSent.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  {t("notifications.sentSearchNoResults")}
+                </p>
+              ) : (
+                <div className="overflow-hidden rounded-xl border">
+                  <div className="max-h-[28rem] overflow-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:h-9 [&_th]:text-xs">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="min-w-[200px]">
+                            {t("notifications.tableTitle")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("notifications.tableKind")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("notifications.tableTarget")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("notifications.tableDate")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("notifications.tableRead")}
+                          </TableHead>
+                          <TableHead className="w-10" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredSent.map((n) => (
+                          <TableRow key={n.notification_id}>
+                            <TableCell>
+                              <div className="font-medium">{n.title}</div>
+                              <div className="line-clamp-1 text-xs text-muted-foreground">
+                                {n.body}
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {n.kind === "warning" ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
+                                  <AlertTriangle className="h-3.5 w-3.5" />
+                                  {t("notifications.kindWarningBadge")}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Bell className="h-3.5 w-3.5" />
+                                  {t("notifications.kindNotificationBadge")}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm">
+                              {n.target_rider_id ? (
+                                (n.target_rider_name ?? "—")
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                  <Megaphone className="h-3.5 w-3.5" />
+                                  {t("notifications.targetAllBadge")}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                              {formatDate(n.created_at)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                              {n.read_count}/{n.target_count}
+                            </TableCell>
+                            <TableCell>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-destructive hover:text-destructive"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                      {t("notifications.deleteConfirmTitle")}
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      {t("notifications.deleteConfirmDesc")}
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleDelete(n.notification_id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      {t("admin.delete")}
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

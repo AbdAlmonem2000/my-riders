@@ -18,6 +18,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getRiderDocumentDownloadUrl } from "@/lib/documents.functions";
 import { OPERATING_CARD_TYPES, computeDocStatus, type DocType } from "@/lib/document-status";
 import { errText } from "@/lib/error-text";
@@ -115,6 +122,17 @@ function AdminOperatingCards() {
 
   const isLoading = ridersQuery.isLoading || cardDocsQuery.isLoading;
 
+  const areas = useMemo(
+    () =>
+      [
+        ...new Set(
+          (ridersQuery.data ?? []).map((r) => r.area?.trim()).filter((a): a is string => !!a),
+        ),
+      ].sort((a, b) => a.localeCompare(b, "ar")),
+    [ridersQuery.data],
+  );
+  const [areaFilter, setAreaFilter] = useState("all");
+
   const groups = useMemo(() => {
     const riderById = new Map((ridersQuery.data ?? []).map((r) => [r.id, r]));
     const byKey = new Map<string, CardGroup>();
@@ -142,10 +160,16 @@ function AdminOperatingCards() {
   }, [cardDocsQuery.data, ridersQuery.data]);
 
   const filteredGroups = useMemo(() => {
+    let result = groups;
     const q = search.trim();
-    if (!q) return groups;
-    return groups.filter((g) => g.cardNumber.includes(q));
-  }, [groups, search]);
+    if (q) {
+      result = result.filter((g) => g.cardNumber.includes(q));
+    }
+    if (areaFilter !== "all") {
+      result = result.filter((g) => g.riders.some((r) => (r.area?.trim() || "") === areaFilter));
+    }
+    return result;
+  }, [groups, search, areaFilter]);
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 space-y-5 duration-500">
@@ -163,15 +187,32 @@ function AdminOperatingCards() {
           <CardDescription>
             {t("operatingCards.listDesc")} ({filteredGroups.length})
           </CardDescription>
-          <div className="relative pt-2">
-            <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t("operatingCards.searchPlaceholder")}
-              dir="ltr"
-              className="ps-9"
-            />
+          <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t("operatingCards.searchPlaceholder")}
+                dir="ltr"
+                className="ps-9"
+              />
+            </div>
+            {areas.length > 0 && (
+              <Select value={areaFilter} onValueChange={setAreaFilter}>
+                <SelectTrigger className="sm:w-52">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("admin.filterAllAreas")}</SelectItem>
+                  {areas.map((a) => (
+                    <SelectItem key={a} value={a}>
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </CardHeader>
         <CardContent>

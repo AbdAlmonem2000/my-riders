@@ -46,6 +46,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -728,10 +735,21 @@ function AdminRiders() {
     return [...keys];
   }, [ridersQuery.data]);
 
+  const areas = useMemo(
+    () =>
+      [
+        ...new Set(
+          (ridersQuery.data ?? []).map((r) => r.area?.trim()).filter((a): a is string => !!a),
+        ),
+      ].sort((a, b) => a.localeCompare(b, "ar")),
+    [ridersQuery.data],
+  );
+
   const [rosterFile, setRosterFile] = useState<File | null>(null);
   const [rosterUploading, setRosterUploading] = useState(false);
   const rosterFileRef = useRef<HTMLInputElement>(null);
   const [riderSearch, setRiderSearch] = useState("");
+  const [areaFilter, setAreaFilter] = useState("all");
   const [blockingRiderId, setBlockingRiderId] = useState<string | null>(null);
   const [pwRiderId, setPwRiderId] = useState<string | null>(null);
   const [rosterDeleting, setRosterDeleting] = useState(false);
@@ -818,18 +836,24 @@ function AdminRiders() {
 
   const filteredRiders = useMemo(() => {
     const rows = ridersQuery.data ?? [];
+    let result = rows;
     const q = riderSearch.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => {
-      const haystack = [
-        r.rider_name,
-        r.iqama_number,
-        r.id_number,
-        ...Object.values(riderExtra(r.extra)).map((v) => (v == null ? "" : String(v))),
-      ];
-      return haystack.some((v) => (v ?? "").toLowerCase().includes(q));
-    });
-  }, [ridersQuery.data, riderSearch]);
+    if (q) {
+      result = result.filter((r) => {
+        const haystack = [
+          r.rider_name,
+          r.iqama_number,
+          r.id_number,
+          ...Object.values(riderExtra(r.extra)).map((v) => (v == null ? "" : String(v))),
+        ];
+        return haystack.some((v) => (v ?? "").toLowerCase().includes(q));
+      });
+    }
+    if (areaFilter !== "all") {
+      result = result.filter((r) => (r.area?.trim() || "") === areaFilter);
+    }
+    return result;
+  }, [ridersQuery.data, riderSearch, areaFilter]);
 
   const allVisibleSelected =
     filteredRiders.length > 0 && filteredRiders.every((r) => selectedIds.has(r.id));
@@ -1223,14 +1247,31 @@ function AdminRiders() {
           )}
           {ridersQuery.data && ridersQuery.data.length > 0 && (
             <>
-              <div className="relative mb-3">
-                <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={riderSearch}
-                  onChange={(e) => setRiderSearch(e.target.value)}
-                  placeholder={t("admin.riderSearchPlaceholder")}
-                  className="pe-9"
-                />
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={riderSearch}
+                    onChange={(e) => setRiderSearch(e.target.value)}
+                    placeholder={t("admin.riderSearchPlaceholder")}
+                    className="pe-9"
+                  />
+                </div>
+                {areas.length > 0 && (
+                  <Select value={areaFilter} onValueChange={setAreaFilter}>
+                    <SelectTrigger className="sm:w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("admin.filterAllAreas")}</SelectItem>
+                      {areas.map((a) => (
+                        <SelectItem key={a} value={a}>
+                          {a}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               {canEditRiders && filteredRiders.length > 0 && (
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">

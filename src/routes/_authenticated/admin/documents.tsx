@@ -754,8 +754,19 @@ function AdminDocuments() {
     return m;
   }, [ridersQuery.data, docsByRider]);
 
+  const areas = useMemo(
+    () =>
+      [
+        ...new Set(
+          (ridersQuery.data ?? []).map((r) => r.area?.trim()).filter((a): a is string => !!a),
+        ),
+      ].sort((a, b) => a.localeCompare(b, "ar")),
+    [ridersQuery.data],
+  );
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | DocStatus>("all");
+  const [areaFilter, setAreaFilter] = useState("all");
   const filteredRiders = useMemo(() => {
     const rows = ridersQuery.data ?? [];
     const q = search.trim().toLowerCase();
@@ -774,8 +785,11 @@ function AdminDocuments() {
     if (statusFilter !== "all") {
       result = result.filter((r) => (riderStatusCounts.get(r.id)?.[statusFilter] ?? 0) > 0);
     }
+    if (areaFilter !== "all") {
+      result = result.filter((r) => (r.area?.trim() || "") === areaFilter);
+    }
     return result;
-  }, [ridersQuery.data, search, statusFilter, riderStatusCounts, cardNumbersByRider]);
+  }, [ridersQuery.data, search, statusFilter, areaFilter, riderStatusCounts, cardNumbersByRider]);
 
   const [savingRiderId, setSavingRiderId] = useState<string | null>(null);
   const [savingDocType, setSavingDocType] = useState<string | null>(null);
@@ -929,6 +943,21 @@ function AdminDocuments() {
                     ))}
                   </SelectContent>
                 </Select>
+                {areas.length > 0 && (
+                  <Select value={areaFilter} onValueChange={setAreaFilter}>
+                    <SelectTrigger className="sm:w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("admin.filterAllAreas")}</SelectItem>
+                      {areas.map((a) => (
+                        <SelectItem key={a} value={a}>
+                          {a}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               {filteredRiders.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
