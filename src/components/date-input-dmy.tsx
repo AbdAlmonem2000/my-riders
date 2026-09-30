@@ -41,8 +41,18 @@ export function DateInputDMY({
   const yearRef = useRef<HTMLInputElement>(null);
   const dayRef = useRef<HTMLInputElement>(null);
 
+  // A single digit already means something ("4" is the 4th month) — padded
+  // to two digits here for the emitted ISO value even before the field is
+  // padded on screen, so leaving it at one digit never wrongly reads as an
+  // incomplete/invalid date.
   const emit = (d: string, m: string, y: string) => {
-    onChange(d.length === 2 && m.length === 2 && y.length === 4 ? `${y}-${m}-${d}` : "");
+    const complete =
+      d.length >= 1 && d.length <= 2 && m.length >= 1 && m.length <= 2 && y.length === 4;
+    onChange(complete ? `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}` : "");
+  };
+
+  const padOnBlur = (v: string, set: (v: string) => void) => {
+    if (v.length === 1) set(v.padStart(2, "0"));
   };
 
   return (
@@ -56,6 +66,7 @@ export function DateInputDMY({
           emit(v, month, year);
           if (v.length === 2) monthRef.current?.focus();
         }}
+        onBlur={() => padOnBlur(day, setDay)}
         inputMode="numeric"
         placeholder="DD"
         maxLength={2}
@@ -74,6 +85,7 @@ export function DateInputDMY({
         onKeyDown={(e) => {
           if (e.key === "Backspace" && month === "") dayRef.current?.focus();
         }}
+        onBlur={() => padOnBlur(month, setMonth)}
         inputMode="numeric"
         placeholder="MM"
         maxLength={2}
