@@ -61,12 +61,9 @@ export function DateInputDMY({
     if (v.length === 1) set(v.padStart(2, "0"));
   };
 
-  // A field that already holds a full value (editing an existing date)
-  // selects itself on focus, so the very next keystroke replaces it
-  // outright instead of inserting into it — typing into an already-"02"
-  // day field without this would jump to the next field after just one new
-  // digit (the field reads as "full" again immediately), never letting a
-  // second digit land.
+  // A field that already holds a value (editing an existing date) selects
+  // itself on focus, so the very next keystroke replaces it outright
+  // instead of inserting into it.
   const selectOnFocus = (e: React.FocusEvent<HTMLInputElement>) => e.target.select();
 
   const selectedDate =
@@ -95,11 +92,11 @@ export function DateInputDMY({
           const v = digitsOnly(e.target.value).slice(0, 2);
           setDay(v);
           emit(v, month, year);
-          if (v.length === 2) monthRef.current?.focus();
         }}
         onFocus={selectOnFocus}
         onBlur={() => padOnBlur(day, setDay)}
         inputMode="numeric"
+        autoComplete="off"
         placeholder="DD"
         maxLength={2}
         className="w-12 text-center"
@@ -112,7 +109,6 @@ export function DateInputDMY({
           const v = digitsOnly(e.target.value).slice(0, 2);
           setMonth(v);
           emit(day, v, year);
-          if (v.length === 2) yearRef.current?.focus();
         }}
         onKeyDown={(e) => {
           if (e.key === "Backspace" && month === "") dayRef.current?.focus();
@@ -120,6 +116,7 @@ export function DateInputDMY({
         onFocus={selectOnFocus}
         onBlur={() => padOnBlur(month, setMonth)}
         inputMode="numeric"
+        autoComplete="off"
         placeholder="MM"
         maxLength={2}
         className="w-12 text-center"
@@ -138,6 +135,7 @@ export function DateInputDMY({
         }}
         onFocus={selectOnFocus}
         inputMode="numeric"
+        autoComplete="off"
         placeholder="YYYY"
         maxLength={4}
         className="w-16 text-center"
