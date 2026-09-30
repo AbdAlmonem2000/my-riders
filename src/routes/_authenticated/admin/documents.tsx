@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/doc-status-badge";
 import { DateInputDMY } from "@/components/date-input-dmy";
+import { AreaFilterPicker } from "@/components/area-filter-picker";
 import { RiderPhoto } from "@/components/rider-photo";
 import { ViewModeToggle } from "@/components/view-mode-toggle";
 import { Input } from "@/components/ui/input";
@@ -752,7 +753,7 @@ function AdminDocuments() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | DocStatus>("all");
-  const [areaFilter, setAreaFilter] = useState("all");
+  const [areaFilter, setAreaFilter] = useState<Set<string>>(new Set());
   const filteredRiders = useMemo(() => {
     const rows = ridersQuery.data ?? [];
     const q = search.trim().toLowerCase();
@@ -771,8 +772,8 @@ function AdminDocuments() {
     if (statusFilter !== "all") {
       result = result.filter((r) => (riderStatusCounts.get(r.id)?.[statusFilter] ?? 0) > 0);
     }
-    if (areaFilter !== "all") {
-      result = result.filter((r) => (r.area?.trim() || "") === areaFilter);
+    if (areaFilter.size > 0) {
+      result = result.filter((r) => areaFilter.has(r.area?.trim() || ""));
     }
     return result;
   }, [ridersQuery.data, search, statusFilter, areaFilter, riderStatusCounts, cardNumbersByRider]);
@@ -930,19 +931,12 @@ function AdminDocuments() {
                   </SelectContent>
                 </Select>
                 {areas.length > 0 && (
-                  <Select value={areaFilter} onValueChange={setAreaFilter}>
-                    <SelectTrigger className="sm:w-52">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("admin.filterAllAreas")}</SelectItem>
-                      {areas.map((a) => (
-                        <SelectItem key={a} value={a}>
-                          {a}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AreaFilterPicker
+                    areas={areas}
+                    selected={areaFilter}
+                    onChange={setAreaFilter}
+                    t={t}
+                  />
                 )}
               </div>
               {filteredRiders.length === 0 ? (

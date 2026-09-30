@@ -18,13 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AreaFilterPicker } from "@/components/area-filter-picker";
 import { getRiderDocumentDownloadUrl } from "@/lib/documents.functions";
 import { OPERATING_CARD_TYPES, computeDocStatus, type DocType } from "@/lib/document-status";
 import { errText } from "@/lib/error-text";
@@ -131,7 +125,7 @@ function AdminOperatingCards() {
       ].sort((a, b) => a.localeCompare(b, "ar")),
     [ridersQuery.data],
   );
-  const [areaFilter, setAreaFilter] = useState("all");
+  const [areaFilter, setAreaFilter] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => {
     const riderById = new Map((ridersQuery.data ?? []).map((r) => [r.id, r]));
@@ -165,8 +159,8 @@ function AdminOperatingCards() {
     if (q) {
       result = result.filter((g) => g.cardNumber.includes(q));
     }
-    if (areaFilter !== "all") {
-      result = result.filter((g) => g.riders.some((r) => (r.area?.trim() || "") === areaFilter));
+    if (areaFilter.size > 0) {
+      result = result.filter((g) => g.riders.some((r) => areaFilter.has(r.area?.trim() || "")));
     }
     return result;
   }, [groups, search, areaFilter]);
@@ -199,19 +193,12 @@ function AdminOperatingCards() {
               />
             </div>
             {areas.length > 0 && (
-              <Select value={areaFilter} onValueChange={setAreaFilter}>
-                <SelectTrigger className="sm:w-52">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("admin.filterAllAreas")}</SelectItem>
-                  {areas.map((a) => (
-                    <SelectItem key={a} value={a}>
-                      {a}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AreaFilterPicker
+                areas={areas}
+                selected={areaFilter}
+                onChange={setAreaFilter}
+                t={t}
+              />
             )}
           </div>
         </CardHeader>

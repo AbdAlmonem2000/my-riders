@@ -45,13 +45,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AreaFilterPicker } from "@/components/area-filter-picker";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -749,7 +743,7 @@ function AdminRiders() {
   const [rosterUploading, setRosterUploading] = useState(false);
   const rosterFileRef = useRef<HTMLInputElement>(null);
   const [riderSearch, setRiderSearch] = useState("");
-  const [areaFilter, setAreaFilter] = useState("all");
+  const [areaFilter, setAreaFilter] = useState<Set<string>>(new Set());
   const [blockingRiderId, setBlockingRiderId] = useState<string | null>(null);
   const [pwRiderId, setPwRiderId] = useState<string | null>(null);
   const [rosterDeleting, setRosterDeleting] = useState(false);
@@ -849,8 +843,8 @@ function AdminRiders() {
         return haystack.some((v) => (v ?? "").toLowerCase().includes(q));
       });
     }
-    if (areaFilter !== "all") {
-      result = result.filter((r) => (r.area?.trim() || "") === areaFilter);
+    if (areaFilter.size > 0) {
+      result = result.filter((r) => areaFilter.has(r.area?.trim() || ""));
     }
     return result;
   }, [ridersQuery.data, riderSearch, areaFilter]);
@@ -1258,19 +1252,12 @@ function AdminRiders() {
                   />
                 </div>
                 {areas.length > 0 && (
-                  <Select value={areaFilter} onValueChange={setAreaFilter}>
-                    <SelectTrigger className="sm:w-52">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("admin.filterAllAreas")}</SelectItem>
-                      {areas.map((a) => (
-                        <SelectItem key={a} value={a}>
-                          {a}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AreaFilterPicker
+                    areas={areas}
+                    selected={areaFilter}
+                    onChange={setAreaFilter}
+                    t={t}
+                  />
                 )}
               </div>
               {canEditRiders && filteredRiders.length > 0 && (

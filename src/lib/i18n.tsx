@@ -289,6 +289,7 @@ const dict = {
     en: "Search by name, Iqama or ID",
   },
   "admin.filterAllAreas": { ar: "كل المناطق", en: "All areas" },
+  "admin.filterAreasCount": { ar: "{count} مناطق محددة", en: "{count} areas selected" },
   "admin.riderSearchNoResults": {
     ar: "لا يوجد مندوب مطابق للبحث",
     en: "No rider matches the search",
