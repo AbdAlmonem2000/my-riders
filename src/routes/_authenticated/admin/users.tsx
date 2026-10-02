@@ -77,6 +77,10 @@ interface Permissions {
   // Only meaningful when documentsAccess isn't 'none' — the Operating Cards
   // page is just another view of the same document data.
   operatingCardsAccess: boolean;
+  // Only meaningful when operatingCardsAccess is true.
+  operatingCardsUploadAccess: boolean;
+  operatingCardsExportAccess: boolean;
+  operatingCardsDeleteAccess: boolean;
 }
 
 interface StaffRow extends Permissions {
@@ -210,18 +214,56 @@ function PermissionsFields({
               ...value,
               documentsAccess: v,
               operatingCardsAccess: v !== "none" && value.operatingCardsAccess,
+              operatingCardsUploadAccess: v !== "none" && value.operatingCardsUploadAccess,
+              operatingCardsExportAccess: v !== "none" && value.operatingCardsExportAccess,
+              operatingCardsDeleteAccess: v !== "none" && value.operatingCardsDeleteAccess,
             })
           }
           t={t}
         />
         {value.documentsAccess !== "none" && (
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <Checkbox
-              checked={value.operatingCardsAccess}
-              onCheckedChange={(v) => onChange({ ...value, operatingCardsAccess: !!v })}
-            />
-            {t("users.operatingCardsAccessLabel")}
-          </label>
+          <>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox
+                checked={value.operatingCardsAccess}
+                onCheckedChange={(v) =>
+                  onChange({
+                    ...value,
+                    operatingCardsAccess: !!v,
+                    operatingCardsUploadAccess: v ? value.operatingCardsUploadAccess : false,
+                    operatingCardsExportAccess: v ? value.operatingCardsExportAccess : false,
+                    operatingCardsDeleteAccess: v ? value.operatingCardsDeleteAccess : false,
+                  })
+                }
+              />
+              {t("users.operatingCardsAccessLabel")}
+            </label>
+            {value.operatingCardsAccess && (
+              <div className="ms-6 space-y-1.5">
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={value.operatingCardsUploadAccess}
+                    onCheckedChange={(v) => onChange({ ...value, operatingCardsUploadAccess: !!v })}
+                  />
+                  {t("users.operatingCardsUploadAccessLabel")}
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={value.operatingCardsExportAccess}
+                    onCheckedChange={(v) => onChange({ ...value, operatingCardsExportAccess: !!v })}
+                  />
+                  {t("users.operatingCardsExportAccessLabel")}
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={value.operatingCardsDeleteAccess}
+                    onCheckedChange={(v) => onChange({ ...value, operatingCardsDeleteAccess: !!v })}
+                  />
+                  {t("users.operatingCardsDeleteAccessLabel")}
+                </label>
+              </div>
+            )}
+          </>
         )}
       </div>
       <div className="space-y-1.5">
@@ -272,6 +314,9 @@ const DEFAULT_PERMISSIONS: Permissions = {
   lettersAccess: "none",
   notificationsAccess: false,
   operatingCardsAccess: false,
+  operatingCardsUploadAccess: false,
+  operatingCardsExportAccess: false,
+  operatingCardsDeleteAccess: false,
 };
 
 // Every page, every tier's top level, every area — the "grant all" shortcut
@@ -288,6 +333,9 @@ const ALL_ACCESS_PERMISSIONS: Permissions = {
   lettersAccess: "full",
   notificationsAccess: true,
   operatingCardsAccess: true,
+  operatingCardsUploadAccess: true,
+  operatingCardsExportAccess: true,
+  operatingCardsDeleteAccess: true,
 };
 
 function CreateStaffDialog({
@@ -760,8 +808,17 @@ function AdminUsers() {
                                 {s.documentsAccess === "full"
                                   ? t("users.documentsAccessFull")
                                   : t("users.documentsAccessViewOnly")}
-                                {s.operatingCardsAccess &&
-                                  ` + ${t("users.operatingCardsAccessLabel")}`}
+                                {s.operatingCardsAccess && (
+                                  <>
+                                    {` + ${t("users.operatingCardsAccessLabel")}`}
+                                    {s.operatingCardsUploadAccess &&
+                                      ` + ${t("users.operatingCardsUploadAccessLabel")}`}
+                                    {s.operatingCardsExportAccess &&
+                                      ` + ${t("users.operatingCardsExportAccessLabel")}`}
+                                    {s.operatingCardsDeleteAccess &&
+                                      ` + ${t("users.operatingCardsDeleteAccessLabel")}`}
+                                  </>
+                                )}
                               </Badge>
                             )}
                             {s.lettersAccess !== "none" && (

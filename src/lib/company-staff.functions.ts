@@ -39,6 +39,10 @@ const PermissionsSchema = z.object({
   // Only meaningful when documentsAccess isn't 'none' — same reasoning as
   // ridersDeleteAccess/ridersBlockAccess above.
   operatingCardsAccess: z.boolean(),
+  // Only meaningful when operatingCardsAccess is true.
+  operatingCardsUploadAccess: z.boolean(),
+  operatingCardsExportAccess: z.boolean(),
+  operatingCardsDeleteAccess: z.boolean(),
 });
 
 export const listCompanyStaff = createServerFn({ method: "GET" })
@@ -66,6 +70,9 @@ export const listCompanyStaff = createServerFn({ method: "GET" })
         lettersAccess: r.letters_access as "none" | "view" | "full",
         notificationsAccess: !!r.notifications_access,
         operatingCardsAccess: !!r.operating_cards_access,
+        operatingCardsUploadAccess: !!r.operating_cards_upload_access,
+        operatingCardsExportAccess: !!r.operating_cards_export_access,
+        operatingCardsDeleteAccess: !!r.operating_cards_delete_access,
         createdAt: r.created_at as string,
       }),
     );
@@ -120,6 +127,9 @@ export const createCompanyStaff = createServerFn({ method: "POST" })
       letters_access: data.lettersAccess,
       notifications_access: data.notificationsAccess,
       operating_cards_access: data.operatingCardsAccess,
+      operating_cards_upload_access: data.operatingCardsUploadAccess,
+      operating_cards_export_access: data.operatingCardsExportAccess,
+      operating_cards_delete_access: data.operatingCardsDeleteAccess,
     });
     if (roleErr) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -150,6 +160,9 @@ export const updateCompanyStaffPermissions = createServerFn({ method: "POST" })
         letters_access: data.lettersAccess,
         notifications_access: data.notificationsAccess,
         operating_cards_access: data.operatingCardsAccess,
+        operating_cards_upload_access: data.operatingCardsUploadAccess,
+        operating_cards_export_access: data.operatingCardsExportAccess,
+        operating_cards_delete_access: data.operatingCardsDeleteAccess,
       })
       .eq("user_id", data.userId)
       .eq("role", "user")

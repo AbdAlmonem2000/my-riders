@@ -749,6 +749,9 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let allowedAreas: string[] | null = null;
     let notificationsAccess = true;
     let operatingCardsAccess = true;
+    let operatingCardsUploadAccess = true;
+    let operatingCardsExportAccess = true;
+    let operatingCardsDeleteAccess = true;
     // Users and Company Profile are never a staff permission — a staff
     // account simply never sees them, so these two only ever matter for a
     // real company admin (gated below by the plan).
@@ -772,6 +775,9 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           { data: letters },
           { data: notifications },
           { data: operatingCards },
+          { data: operatingCardsUpload },
+          { data: operatingCardsExport },
+          { data: operatingCardsDelete },
           { data: areas },
         ] = await Promise.all([
           supabase.rpc("get_member_overview_access", { _user_id: userId }),
@@ -783,6 +789,9 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           supabase.rpc("get_member_letters_access", { _user_id: userId }),
           supabase.rpc("get_member_notifications_access", { _user_id: userId }),
           supabase.rpc("get_member_operating_cards_access", { _user_id: userId }),
+          supabase.rpc("get_member_operating_cards_upload_access", { _user_id: userId }),
+          supabase.rpc("get_member_operating_cards_export_access", { _user_id: userId }),
+          supabase.rpc("get_member_operating_cards_delete_access", { _user_id: userId }),
           supabase.rpc("get_member_allowed_areas", { _user_id: userId }),
         ]);
         overviewAccess = !!overview;
@@ -794,6 +803,9 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         lettersAccess = (letters as Tier | null) ?? "none";
         notificationsAccess = !!notifications;
         operatingCardsAccess = !!operatingCards;
+        operatingCardsUploadAccess = !!operatingCardsUpload;
+        operatingCardsExportAccess = !!operatingCardsExport;
+        operatingCardsDeleteAccess = !!operatingCardsDelete;
         allowedAreas = (areas as string[] | null) ?? null;
       }
     }
@@ -808,7 +820,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       const { data } = await supabase
         .from("companies")
         .select(
-          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access, expiry_notify_days",
+          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access, plan_operating_cards_access, expiry_notify_days",
         )
         .eq("id", companyId)
         .maybeSingle();
@@ -833,6 +845,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       const planNotifications = (data?.plan_notifications_access as boolean | undefined) ?? true;
       const planUsers = (data?.plan_users_access as boolean | undefined) ?? true;
       const planCompanyProfile = (data?.plan_company_profile_access as boolean | undefined) ?? true;
+      const planOperatingCards = (data?.plan_operating_cards_access as boolean | undefined) ?? true;
       if (isStaff) {
         overviewAccess = overviewAccess && planOverview;
         ridersAccess = minTier(ridersAccess, planRiders);
@@ -840,6 +853,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         documentsAccess = minTier(documentsAccess, planDocuments);
         lettersAccess = minTier(lettersAccess, planLetters);
         notificationsAccess = notificationsAccess && planNotifications;
+        operatingCardsAccess = operatingCardsAccess && planOperatingCards;
         // Staff never has these two regardless of plan — nothing to
         // intersect, just make sure the returned value reflects reality.
         usersAccess = false;
@@ -853,6 +867,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         notificationsAccess = planNotifications;
         usersAccess = planUsers;
         companyProfileAccess = planCompanyProfile;
+        operatingCardsAccess = planOperatingCards;
       }
     }
     // Deleting/blocking a rider outright is never something the company plan
@@ -881,6 +896,9 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       lettersAccess,
       notificationsAccess,
       operatingCardsAccess,
+      operatingCardsUploadAccess,
+      operatingCardsExportAccess,
+      operatingCardsDeleteAccess,
       usersAccess,
       companyProfileAccess,
       allowedAreas,

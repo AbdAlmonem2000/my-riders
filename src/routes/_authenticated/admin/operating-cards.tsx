@@ -426,7 +426,6 @@ function AdminOperatingCards() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editingGroupKey, setEditingGroupKey] = useState<string | null>(null);
   const [deletingGroupKey, setDeletingGroupKey] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   const adminCheck = useQuery({
     queryKey: ["is-admin"],
@@ -435,6 +434,9 @@ function AdminOperatingCards() {
   const canWrite = adminCheck.data ? adminCheck.data.documentsAccess === "full" : true;
   const isStaff = !!adminCheck.data?.isStaff;
   const companyId = adminCheck.data?.companyId ?? null;
+  const canUploadSheet = canWrite && (adminCheck.data?.operatingCardsUploadAccess ?? true);
+  const canExport = adminCheck.data ? adminCheck.data.operatingCardsExportAccess : true;
+  const canDeleteCard = canWrite && (adminCheck.data?.operatingCardsDeleteAccess ?? true);
 
   const handleView = async (riderId: string, docType: string) => {
     try {
@@ -645,11 +647,13 @@ function AdminOperatingCards() {
           <p className="text-sm text-muted-foreground">{t("operatingCards.pageDesc")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={handleExportExcel}>
-            <FileSpreadsheet className="ms-1.5 h-3.5 w-3.5" />
-            {t("operatingCards.exportButton")}
-          </Button>
-          {canWrite && (
+          {canExport && (
+            <Button type="button" size="sm" variant="outline" onClick={handleExportExcel}>
+              <FileSpreadsheet className="ms-1.5 h-3.5 w-3.5" />
+              {t("operatingCards.exportButton")}
+            </Button>
+          )}
+          {canUploadSheet && (
             <Button type="button" size="sm" onClick={() => setBulkOpen(true)}>
               <Upload className="ms-1.5 h-3.5 w-3.5" />
               {t("operatingCards.bulkUploadButton")}
@@ -658,7 +662,7 @@ function AdminOperatingCards() {
         </div>
       </div>
 
-      {canWrite && <BulkUploadDialog open={bulkOpen} onOpenChange={setBulkOpen} t={t} />}
+      {canUploadSheet && <BulkUploadDialog open={bulkOpen} onOpenChange={setBulkOpen} t={t} />}
       {editingGroup && companyId && (
         <EditCardGroupDialog
           group={editingGroup}
@@ -855,7 +859,7 @@ function AdminOperatingCards() {
                                   </DropdownMenuItem>
                                 </>
                               )}
-                              {canWrite && (
+                              {canDeleteCard && (
                                 <DropdownMenuItem
                                   onClick={() => setDeletingGroupKey(g.key)}
                                   className="text-destructive focus:text-destructive"

@@ -1192,6 +1192,18 @@ const dict = {
     ar: "يقدر يفتح صفحة كروت التشغيل",
     en: "Can open the Operating Cards page",
   },
+  "users.operatingCardsUploadAccessLabel": {
+    ar: "يقدر يرفع شيت إكسل لكروت التشغيل",
+    en: "Can upload an operating cards Excel sheet",
+  },
+  "users.operatingCardsExportAccessLabel": {
+    ar: "يقدر يصدّر كروت التشغيل إلى إكسل",
+    en: "Can export operating cards to Excel",
+  },
+  "users.operatingCardsDeleteAccessLabel": {
+    ar: "يقدر يحذف كرت التشغيل",
+    en: "Can delete an operating card",
+  },
   "users.lettersAccessLabel": {
     ar: "صلاحية صفحة الخطابات الرسمية",
     en: "Official letters page permission",

@@ -97,6 +97,7 @@ export type Database = {
           plan_documents_access: string
           plan_letters_access: string
           plan_notifications_access: boolean
+          plan_operating_cards_access: boolean
           plan_overview_access: boolean
           plan_reports_access: string
           plan_riders_access: string
@@ -120,6 +121,7 @@ export type Database = {
           plan_documents_access?: string
           plan_letters_access?: string
           plan_notifications_access?: boolean
+          plan_operating_cards_access?: boolean
           plan_overview_access?: boolean
           plan_reports_access?: string
           plan_riders_access?: string
@@ -143,6 +145,7 @@ export type Database = {
           plan_documents_access?: string
           plan_letters_access?: string
           plan_notifications_access?: boolean
+          plan_operating_cards_access?: boolean
           plan_overview_access?: boolean
           plan_reports_access?: string
           plan_riders_access?: string
@@ -641,6 +644,9 @@ export type Database = {
           letters_access: string
           notifications_access: boolean
           operating_cards_access: boolean
+          operating_cards_delete_access: boolean
+          operating_cards_export_access: boolean
+          operating_cards_upload_access: boolean
           overview_access: boolean
           reports_access: string
           riders_access: string
@@ -660,6 +666,9 @@ export type Database = {
           letters_access?: string
           notifications_access?: boolean
           operating_cards_access?: boolean
+          operating_cards_delete_access?: boolean
+          operating_cards_export_access?: boolean
+          operating_cards_upload_access?: boolean
           overview_access?: boolean
           reports_access?: string
           riders_access?: string
@@ -679,6 +688,9 @@ export type Database = {
           letters_access?: string
           notifications_access?: boolean
           operating_cards_access?: boolean
+          operating_cards_delete_access?: boolean
+          operating_cards_export_access?: boolean
+          operating_cards_upload_access?: boolean
           overview_access?: boolean
           reports_access?: string
           riders_access?: string
@@ -792,6 +804,9 @@ export type Database = {
           letters_access: string
           notifications_access: boolean
           operating_cards_access: boolean
+          operating_cards_delete_access: boolean
+          operating_cards_export_access: boolean
+          operating_cards_upload_access: boolean
           overview_access: boolean
           reports_access: string
           riders_access: string
@@ -823,6 +838,9 @@ export type Database = {
       get_member_letters_access: { Args: { _user_id: string }; Returns: string }
       get_member_notifications_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_operating_cards_access: { Args: { _user_id: string }; Returns: boolean }
+      get_member_operating_cards_upload_access: { Args: { _user_id: string }; Returns: boolean }
+      get_member_operating_cards_export_access: { Args: { _user_id: string }; Returns: boolean }
+      get_member_operating_cards_delete_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_allowed_areas: { Args: { _user_id: string }; Returns: string[] }
       get_company_plan_overview_access: { Args: { _company_id: string }; Returns: boolean }
       get_company_plan_riders_access: { Args: { _company_id: string }; Returns: string }

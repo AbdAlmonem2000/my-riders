@@ -85,6 +85,9 @@ interface CompanyPlan {
   notificationsAccess: boolean;
   usersAccess: boolean;
   companyProfileAccess: boolean;
+  // Only meaningful when documentsAccess isn't 'none' — the Operating Cards
+  // page is just another view of the same document data.
+  operatingCardsAccess: boolean;
 }
 
 const ALL_ACCESS_PLAN: CompanyPlan = {
@@ -96,6 +99,7 @@ const ALL_ACCESS_PLAN: CompanyPlan = {
   notificationsAccess: true,
   usersAccess: true,
   companyProfileAccess: true,
+  operatingCardsAccess: true,
 };
 
 function CompanyPlanDialog({
@@ -189,9 +193,24 @@ function CompanyPlanDialog({
             <Label className="text-xs">{t("users.documentsAccessLabel")}</Label>
             <DocumentsAccessPicker
               value={plan.documentsAccess}
-              onChange={(v) => setPlan((p) => ({ ...p, documentsAccess: v }))}
+              onChange={(v) =>
+                setPlan((p) => ({
+                  ...p,
+                  documentsAccess: v,
+                  operatingCardsAccess: v !== "none" && p.operatingCardsAccess,
+                }))
+              }
               t={t}
             />
+            {plan.documentsAccess !== "none" && (
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox
+                  checked={plan.operatingCardsAccess}
+                  onCheckedChange={(v) => setPlan((p) => ({ ...p, operatingCardsAccess: !!v }))}
+                />
+                {t("users.operatingCardsAccessLabel")}
+              </label>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("users.lettersAccessLabel")}</Label>
@@ -471,6 +490,7 @@ function CompaniesPage() {
                           notificationsAccess: c.plan_notifications_access,
                           usersAccess: c.plan_users_access,
                           companyProfileAccess: c.plan_company_profile_access,
+                          operatingCardsAccess: c.plan_operating_cards_access,
                         }}
                         t={t}
                         onSubmit={async (plan) => {
