@@ -78,6 +78,43 @@ const AREA_ALIASES = [
   "zone",
 ];
 
+const CARD_NUMBER_ALIASES = [
+  "رقم كرت التشغيل",
+  "رقم الكرت",
+  "كرت التشغيل",
+  "كرت تشغيل",
+  "الكرت",
+  "كرت",
+  "card number",
+  "card no",
+  "card no.",
+  "operating card",
+  "operating card number",
+];
+
+const PLATE_NUMBER_ALIASES = [
+  "رقم اللوحة",
+  "اللوحة",
+  "لوحة",
+  "لوحة السيارة",
+  "رقم لوحة السيارة",
+  "plate number",
+  "plate no",
+  "plate no.",
+  "license plate",
+];
+
+const EXPIRY_DATE_ALIASES = [
+  "تاريخ الانتهاء",
+  "تاريخ انتهاء",
+  "تاريخ الانتهاء الكرت",
+  "تاريخ انتهاء الكرت",
+  "انتهاء",
+  "expiry date",
+  "expiry",
+  "expiration date",
+];
+
 const norm = (s: string) =>
   String(s ?? "")
     .toLowerCase()
@@ -111,7 +148,11 @@ export interface ParsedExcel {
   areaColumn: string | null;
 }
 
-export async function parseExcelFile(file: File): Promise<ParsedExcel> {
+// Shared by every sheet parser below: reads the first worksheet into plain
+// rows + headers, regardless of .xlsx/.xls/.csv.
+async function readWorkbookRows(
+  file: File,
+): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
   const isCsv = /\.csv$/i.test(file.name) || /csv/i.test(file.type);
   // SheetJS reads CSV as well as .xlsx/.xls, and auto-detects the delimiter
   // (comma / semicolon / tab). Arabic CSV is only reliably decoded when read
@@ -135,6 +176,11 @@ export async function parseExcelFile(file: File): Promise<ParsedExcel> {
     rows.length > 0
       ? Object.keys(rows[0])
       : (XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 })[0] as string[]) || [];
+  return { headers, rows };
+}
+
+export async function parseExcelFile(file: File): Promise<ParsedExcel> {
+  const { headers, rows } = await readWorkbookRows(file);
   const iqamaColumn = findColumn(headers, IQAMA_ALIASES);
   let idColumn = findColumn(headers, ID_ALIASES);
   // Fuzzy matching can land both detectors on the same header (e.g. a
@@ -162,4 +208,32 @@ export async function parseExcelFile(file: File): Promise<ParsedExcel> {
     areaColumn = null;
   }
   return { headers, rows, iqamaColumn, idColumn, nameColumn, photoColumn, areaColumn };
+}
+
+export interface ParsedOperatingCardsExcel {
+  headers: string[];
+  rows: Record<string, unknown>[];
+  iqamaColumn: string | null;
+  cardNumberColumn: string | null;
+  plateNumberColumn: string | null;
+  expiryDateColumn: string | null;
+}
+
+// For the Operating Cards bulk-assignment sheet: card number + the rider's
+// Iqama number, plate number and expiry date — unlike the roster sheet,
+// there's no name/photo/area column to detect here.
+export async function parseOperatingCardsExcel(file: File): Promise<ParsedOperatingCardsExcel> {
+  const { headers, rows } = await readWorkbookRows(file);
+  const iqamaColumn = findColumn(headers, IQAMA_ALIASES);
+  const cardNumberColumn = findColumn(headers, CARD_NUMBER_ALIASES);
+  let plateNumberColumn = findColumn(headers, PLATE_NUMBER_ALIASES);
+  if (plateNumberColumn && plateNumberColumn === cardNumberColumn) plateNumberColumn = null;
+  let expiryDateColumn = findColumn(headers, EXPIRY_DATE_ALIASES);
+  if (
+    expiryDateColumn &&
+    (expiryDateColumn === cardNumberColumn || expiryDateColumn === plateNumberColumn)
+  ) {
+    expiryDateColumn = null;
+  }
+  return { headers, rows, iqamaColumn, cardNumberColumn, plateNumberColumn, expiryDateColumn };
 }

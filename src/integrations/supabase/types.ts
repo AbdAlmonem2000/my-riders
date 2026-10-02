@@ -351,11 +351,12 @@ export type Database = {
           company_id: string
           doc_type: string
           expiry_date: string | null
-          file_name: string
+          file_name: string | null
           id: string
           label: string | null
+          plate_number: string | null
           rider_id: string
-          storage_path: string
+          storage_path: string | null
           uploaded_at: string
         }
         Insert: {
@@ -363,11 +364,12 @@ export type Database = {
           company_id: string
           doc_type: string
           expiry_date?: string | null
-          file_name: string
+          file_name?: string | null
           id?: string
           label?: string | null
+          plate_number?: string | null
           rider_id: string
-          storage_path: string
+          storage_path?: string | null
           uploaded_at?: string
         }
         Update: {
@@ -375,11 +377,12 @@ export type Database = {
           company_id?: string
           doc_type?: string
           expiry_date?: string | null
-          file_name?: string
+          file_name?: string | null
           id?: string
           label?: string | null
+          plate_number?: string | null
           rider_id?: string
-          storage_path?: string
+          storage_path?: string | null
           uploaded_at?: string
         }
         Relationships: [

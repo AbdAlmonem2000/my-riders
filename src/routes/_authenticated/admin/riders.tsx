@@ -46,6 +46,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AreaFilterPicker } from "@/components/area-filter-picker";
+import { UserFilterPicker } from "@/components/user-filter-picker";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1256,6 +1257,12 @@ function AdminRiders() {
                     areas={areas}
                     selected={areaFilter}
                     onChange={setAreaFilter}
+                    t={t}
+                  />
+                )}
+                {!isStaff && (
+                  <UserFilterPicker
+                    onPickAreas={(a) => setAreaFilter(a ? new Set(a) : new Set())}
                     t={t}
                   />
                 )}

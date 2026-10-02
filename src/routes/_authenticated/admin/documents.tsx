@@ -25,6 +25,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { StatusBadge } from "@/components/doc-status-badge";
 import { DateInputDMY } from "@/components/date-input-dmy";
 import { AreaFilterPicker } from "@/components/area-filter-picker";
+import { UserFilterPicker } from "@/components/user-filter-picker";
 import { RiderPhoto } from "@/components/rider-photo";
 import { ViewModeToggle } from "@/components/view-mode-toggle";
 import { Input } from "@/components/ui/input";
@@ -106,9 +107,10 @@ interface DocRow {
   id: string;
   rider_id: string;
   doc_type: string;
-  storage_path: string;
-  file_name: string;
+  storage_path: string | null;
+  file_name: string | null;
   card_number: string | null;
+  plate_number: string | null;
   label: string | null;
   expiry_date: string | null;
   uploaded_at: string;
@@ -172,6 +174,7 @@ function DocumentSlot({
     : { status: (doc ? "ok" : "missing") as DocStatus, daysLeft: null };
 
   const isOperatingCard = isOperatingCardDocType(docType);
+  const hasFile = !!doc?.storage_path;
 
   const cardUsage = useMemo(() => {
     const num = (isOperatingCard ? cardNumber : (doc?.card_number ?? "")).trim();
@@ -260,19 +263,30 @@ function DocumentSlot({
 
       {doc ? (
         <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-          <div className="truncate">{doc.file_name}</div>
-          {needsExpiry && (
+          {hasFile ? (
+            <div className="truncate">{doc.file_name}</div>
+          ) : (
+            <div className="font-medium text-amber-600">{t("documents.cardPendingFile")}</div>
+          )}
+          {needsExpiry && doc.expiry_date && (
             <div>
-              {t("documents.expiryDateLabel")}: {formatDate(doc.expiry_date ?? "")}
+              {t("documents.expiryDateLabel")}: {formatDate(doc.expiry_date)}
             </div>
           )}
-          <div>
-            {t("documents.uploadedAtLabel")}: {formatDate(doc.uploaded_at)}
-          </div>
+          {hasFile && (
+            <div>
+              {t("documents.uploadedAtLabel")}: {formatDate(doc.uploaded_at)}
+            </div>
+          )}
           {isOperatingCard && doc.card_number && (
             <div>
               {t("documents.cardNumberLabel")}: {doc.card_number} — {cardUsage}{" "}
               {t("documents.cardCapacitySuffix")}
+            </div>
+          )}
+          {isOperatingCard && doc.plate_number && (
+            <div>
+              {t("documents.plateNumberLabel")}: {doc.plate_number}
             </div>
           )}
         </div>
@@ -285,7 +299,7 @@ function DocumentSlot({
           {canWrite && (
             <Button type="button" size="sm" variant="outline" onClick={startUpload}>
               <Upload className="ms-1.5 h-3.5 w-3.5" />
-              {doc ? t("documents.replaceButton") : t("documents.uploadButton")}
+              {hasFile ? t("documents.replaceButton") : t("documents.uploadButton")}
             </Button>
           )}
           {doc && (
@@ -301,24 +315,28 @@ function DocumentSlot({
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
               )}
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                title={t("documents.viewButton")}
-                onClick={() => onView(docType)}
-              >
-                <Eye className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                title={t("documents.downloadButton")}
-                onClick={() => onDownload(docType)}
-              >
-                <Download className="h-3.5 w-3.5" />
-              </Button>
+              {hasFile && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  title={t("documents.viewButton")}
+                  onClick={() => onView(docType)}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {hasFile && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  title={t("documents.downloadButton")}
+                  onClick={() => onDownload(docType)}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+              )}
               {canWrite && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -687,7 +705,7 @@ function AdminDocuments() {
       const { data, error } = await supabase
         .from("rider_documents")
         .select(
-          "id, rider_id, doc_type, storage_path, file_name, card_number, label, expiry_date, uploaded_at",
+          "id, rider_id, doc_type, storage_path, file_name, card_number, plate_number, label, expiry_date, uploaded_at",
         )
         .limit(5000);
       if (error) throw error;
@@ -935,6 +953,12 @@ function AdminDocuments() {
                     areas={areas}
                     selected={areaFilter}
                     onChange={setAreaFilter}
+                    t={t}
+                  />
+                )}
+                {!adminCheck.data?.isStaff && (
+                  <UserFilterPicker
+                    onPickAreas={(a) => setAreaFilter(a ? new Set(a) : new Set())}
                     t={t}
                   />
                 )}

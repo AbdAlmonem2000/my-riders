@@ -105,6 +105,30 @@ export function isValidExpiryDate(dateStr: string): boolean {
   return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
 }
 
+// Best-effort normalizer for a date cell coming out of an uploaded sheet —
+// Excel/Sheets can display a date in any of these shapes depending on the
+// file's own formatting, but every date field in this app stores and
+// validates "yyyy-mm-dd" only. Day-first (not month-first) when the slashed
+// form is ambiguous, matching the DMY date inputs used everywhere else in
+// this app. Returns null rather than guessing when the shape isn't
+// recognized, so the caller can reject that row with a clear message
+// instead of silently storing a wrong date.
+export function normalizeSheetDateToIso(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (iso) {
+    const [, y, m, d] = iso;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  const dmy = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(s);
+  if (dmy) {
+    const [, d, m, y] = dmy;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  return null;
+}
+
 export const ALLOWED_DOC_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf"];
 
 export function hasAllowedDocExtension(fileName: string): boolean {

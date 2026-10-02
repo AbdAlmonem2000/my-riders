@@ -39,7 +39,7 @@ function resolveExpiryDate(docType: string, expiryDate: string | null | undefine
 // company. A full write (upload / edit date / delete) additionally requires
 // that staff member's documents_access to be 'full' — a view-only staff
 // account can still read/download, just not write.
-async function resolveDocumentsCompany(
+export async function resolveDocumentsCompany(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   userId: string,
@@ -316,8 +316,10 @@ export const deleteRiderDocument = createServerFn({ method: "POST" })
       .eq("company_id", companyId);
     if (error) throw new Error(error.message);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.storage.from("rider-documents").remove([existing.storage_path]);
+    if (existing.storage_path) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.storage.from("rider-documents").remove([existing.storage_path]);
+    }
 
     return { ok: true };
   });
@@ -342,6 +344,7 @@ export const getRiderDocumentDownloadUrl = createServerFn({ method: "POST" })
       .eq("doc_type", data.docType)
       .maybeSingle();
     if (!doc) throw new Error("المستند غير موجود");
+    if (!doc.storage_path) throw new Error("لم يتم رفع ملف لهذا المستند بعد");
 
     // Preview opens the file inline (a PDF or image tab); otherwise the
     // `download` option forces the browser to save it under its real name.
@@ -350,7 +353,7 @@ export const getRiderDocumentDownloadUrl = createServerFn({ method: "POST" })
       .createSignedUrl(
         doc.storage_path,
         60,
-        data.preview ? undefined : { download: doc.file_name },
+        data.preview ? undefined : { download: doc.file_name ?? undefined },
       );
     if (error || !signed) throw new Error(error?.message ?? "تعذر تجهيز رابط الملف");
     return { url: signed.signedUrl };

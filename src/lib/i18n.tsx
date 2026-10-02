@@ -290,6 +290,8 @@ const dict = {
   },
   "admin.filterAllAreas": { ar: "كل المناطق", en: "All areas" },
   "admin.filterAreasCount": { ar: "{count} مناطق محددة", en: "{count} areas selected" },
+  "admin.filterByUserPlaceholder": { ar: "فلتر بمستخدم", en: "Filter by user" },
+  "admin.filterByUserNone": { ar: "بدون فلتر مستخدم", en: "No user filter" },
   "admin.riderSearchNoResults": {
     ar: "لا يوجد مندوب مطابق للبحث",
     en: "No rider matches the search",
@@ -813,6 +815,11 @@ const dict = {
     ar: "من 3 مناديب على هذا الكرت",
     en: "of 3 riders on this card",
   },
+  "documents.plateNumberLabel": { ar: "رقم اللوحة", en: "Plate number" },
+  "documents.cardPendingFile": {
+    ar: "تم تحديد رقم الكرت — بانتظار رفع الملف",
+    en: "Card number assigned — file not uploaded yet",
+  },
   "documents.fileLabel": { ar: "الملف (JPG أو PNG أو PDF)", en: "File (JPG, PNG, or PDF)" },
   "documents.uploadedAtLabel": { ar: "تاريخ الرفع", en: "Uploaded" },
   "documents.notUploadedYet": { ar: "لم يُرفع بعد", en: "Not uploaded yet" },
@@ -877,6 +884,57 @@ const dict = {
   "operatingCards.tableType": { ar: "النوع", en: "Type" },
   "operatingCards.tableCount": { ar: "عدد المرتبطين", en: "Linked riders" },
   "operatingCards.tableRiders": { ar: "المناديب المرتبطين", en: "Linked riders" },
+  "operatingCards.tableStatus": { ar: "الحالة", en: "Status" },
+  "operatingCards.exportButton": { ar: "تصدير إلى Excel", en: "Export to Excel" },
+  "operatingCards.deleteConfirmTitle": { ar: "حذف كرت التشغيل؟", en: "Delete operating card?" },
+  "operatingCards.deleteConfirmDesc": {
+    ar: "هيتحذف ملف الكرت المرفوع، وهيتشال رقم الكرت من كل المناديب المرتبطين بيه. مينفعش يترجع.",
+    en: "The uploaded card file will be deleted, and the card number removed from every rider linked to it. This cannot be undone.",
+  },
+  "operatingCards.toastDeleteSuccess": { ar: "تم حذف كرت التشغيل", en: "Operating card deleted" },
+  "operatingCards.toastDeleteFailed": {
+    ar: "فشل حذف كرت التشغيل",
+    en: "Failed to delete the operating card",
+  },
+  "operatingCards.bulkUploadButton": {
+    ar: "رفع شيت كروت التشغيل",
+    en: "Upload operating cards sheet",
+  },
+  "operatingCards.bulkUploadTitle": {
+    ar: "رفع شيت كروت التشغيل",
+    en: "Upload operating cards sheet",
+  },
+  "operatingCards.bulkUploadDesc": {
+    ar: "ملف فيه رقم كرت التشغيل ورقم إقامة المندوب، وممكن كمان رقم اللوحة وتاريخ الانتهاء — هيتحط لكل مندوب في صفحة المستندات بتاعته. الملف نفسه (بي دي إف أو صورة) بيترفع بعدين مرة واحدة من هنا لكل كرت.",
+    en: "A file with the operating card number and the rider's Iqama number, plus optionally the plate number and expiry date — assigned to each rider's documents page. The actual file (PDF or photo) is uploaded afterward, once per card, from here.",
+  },
+  "operatingCards.bulkFileLabel": {
+    ar: "الملف (Excel أو CSV)",
+    en: "File (Excel or CSV)",
+  },
+  "operatingCards.toastNoIqamaColumn": {
+    ar: "الملف لازم يحتوي على عمود رقم الإقامة",
+    en: "The file must have an Iqama number column",
+  },
+  "operatingCards.toastNoCardColumn": {
+    ar: "الملف لازم يحتوي على عمود رقم كرت التشغيل",
+    en: "The file must have an operating card number column",
+  },
+  "operatingCards.toastBulkSuccess": {
+    ar: "تم تعيين {count} كرت تشغيل بنجاح",
+    en: "{count} operating cards assigned successfully",
+  },
+  "operatingCards.editGroupButton": { ar: "تعديل الكرت", en: "Edit card" },
+  "operatingCards.editGroupDesc": {
+    ar: "التعديل هنا بيتطبق على كل المناديب المرتبطين بنفس رقم الكرت",
+    en: "Changes here apply to every rider linked to this card number",
+  },
+  "operatingCards.currentFileLabel": { ar: "الملف الحالي", en: "Current file" },
+  "operatingCards.toastGroupSaveSuccess": { ar: "تم حفظ بيانات الكرت", en: "Card details saved" },
+  "operatingCards.toastGroupSaveFailed": {
+    ar: "فشل حفظ بيانات الكرت",
+    en: "Failed to save card details",
+  },
 
   "notifications.pageTitle": {
     ar: "إرسال إشعار أو إنذار للمناديب",
