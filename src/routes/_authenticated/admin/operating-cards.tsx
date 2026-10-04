@@ -14,7 +14,9 @@ import {
   Search,
   Trash2,
   Upload,
+  UserPlus,
   Users,
+  X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -67,8 +69,10 @@ import { AreaFilterPicker } from "@/components/area-filter-picker";
 import { UserFilterPicker } from "@/components/user-filter-picker";
 import { getRiderDocumentDownloadUrl } from "@/lib/documents.functions";
 import {
+  addRiderToOperatingCard,
   bulkAssignOperatingCards,
   deleteOperatingCardGroup,
+  removeRiderFromOperatingCard,
   updateOperatingCardGroup,
   uploadOperatingCardFile,
 } from "@/lib/operating-cards.functions";
@@ -223,6 +227,8 @@ function EditCardGroupDialog({
       queryClient.invalidateQueries({ queryKey: ["operating-cards-docs"] });
       queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
       queryClient.invalidateQueries({ queryKey: ["rider-documents-expiring"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-full-riders"] });
       onOpenChange(false);
     } catch (err) {
       toast.error(errText(err, t("operatingCards.toastGroupSaveFailed")));
@@ -275,6 +281,139 @@ function EditCardGroupDialog({
             </Button>
           </div>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Adds an existing rider onto a card that still has room (<3 riders),
+// restricted to the card's own area — a candidate already holding a card of
+// this same type elsewhere is filtered out client-side too, even though the
+// server rejects it either way, so the list only ever shows riders who can
+// actually be added.
+function AddRiderToCardDialog({
+  group,
+  riders,
+  cardDocs,
+  open,
+  onOpenChange,
+  t,
+}: {
+  group: CardGroup;
+  riders: RiderLite[];
+  cardDocs: CardDocRow[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  t: (key: TranslationKey) => string;
+}) {
+  const queryClient = useQueryClient();
+  const addRiderFn = useServerFn(addRiderToOperatingCard);
+  const [search, setSearch] = useState("");
+  const [addingId, setAddingId] = useState<string | null>(null);
+
+  const groupArea = group.riders[0]?.area?.trim() || null;
+  const candidates = useMemo(() => {
+    const existingIds = new Set(group.riders.map((r) => r.riderId));
+    const alreadyAssigned = new Set(
+      cardDocs.filter((d) => d.doc_type === group.docType && d.card_number).map((d) => d.rider_id),
+    );
+    const q = search.trim().toLowerCase();
+    return riders.filter((r) => {
+      if (existingIds.has(r.id)) return false;
+      if (alreadyAssigned.has(r.id)) return false;
+      if ((r.area?.trim() || null) !== groupArea) return false;
+      if (!q) return true;
+      return (
+        (r.rider_name ?? "").toLowerCase().includes(q) ||
+        (r.iqama_number ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [riders, cardDocs, group, groupArea, search]);
+
+  const handleAdd = async (riderId: string) => {
+    setAddingId(riderId);
+    try {
+      await addRiderFn({
+        data: {
+          docType: group.docType as "operating_card" | "operating_card_extra",
+          cardNumber: group.cardNumber,
+          riderId,
+        },
+      });
+      toast.success(t("operatingCards.toastAddRiderSuccess"));
+      queryClient.invalidateQueries({ queryKey: ["operating-cards-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["rider-documents-expiring"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-full-riders"] });
+      onOpenChange(false);
+      setSearch("");
+    } catch (err) {
+      toast.error(errText(err, t("operatingCards.toastAddRiderFailed")));
+    } finally {
+      setAddingId(null);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        onOpenChange(v);
+        if (!v) setSearch("");
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle dir="ltr">{group.cardNumber}</DialogTitle>
+          <DialogDescription>{t("operatingCards.addRiderDialogDesc")}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("operatingCards.addRiderSearchPlaceholder")}
+              dir="ltr"
+              className="ps-9"
+              autoFocus
+            />
+          </div>
+          <div className="max-h-72 space-y-1 overflow-y-auto">
+            {candidates.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {t("operatingCards.addRiderEmpty")}
+              </p>
+            )}
+            {candidates.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{r.rider_name || "—"}</p>
+                  <p className="font-mono text-xs text-muted-foreground" dir="ltr">
+                    {r.iqama_number || r.id_number || "—"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={addingId === r.id}
+                  onClick={() => handleAdd(r.id)}
+                >
+                  {addingId === r.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    t("operatingCards.addRiderAction")
+                  )}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -336,6 +475,8 @@ function BulkUploadDialog({
       queryClient.invalidateQueries({ queryKey: ["operating-cards-docs"] });
       queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
       queryClient.invalidateQueries({ queryKey: ["rider-documents-expiring"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-full-riders"] });
       onOpenChange(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -422,10 +563,18 @@ function AdminOperatingCards() {
   const isAdminFn = useServerFn(checkIsAdmin);
   const downloadUrlFn = useServerFn(getRiderDocumentDownloadUrl);
   const deleteGroupFn = useServerFn(deleteOperatingCardGroup);
+  const removeRiderFn = useServerFn(removeRiderFromOperatingCard);
   const [search, setSearch] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editingGroupKey, setEditingGroupKey] = useState<string | null>(null);
   const [deletingGroupKey, setDeletingGroupKey] = useState<string | null>(null);
+  const [addingToGroupKey, setAddingToGroupKey] = useState<string | null>(null);
+  const [removingRider, setRemovingRider] = useState<{
+    docType: string;
+    cardNumber: string;
+    riderId: string;
+    riderName: string;
+  } | null>(null);
 
   const adminCheck = useQuery({
     queryKey: ["is-admin"],
@@ -632,12 +781,39 @@ function AdminOperatingCards() {
       queryClient.invalidateQueries({ queryKey: ["operating-cards-docs"] });
       queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
       queryClient.invalidateQueries({ queryKey: ["rider-documents-expiring"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-full-riders"] });
     } catch (err) {
       toast.error(errText(err, t("operatingCards.toastDeleteFailed")));
     } finally {
       setDeletingGroupKey(null);
     }
   };
+
+  const handleRemoveRider = async () => {
+    if (!removingRider) return;
+    try {
+      await removeRiderFn({
+        data: {
+          docType: removingRider.docType as "operating_card" | "operating_card_extra",
+          cardNumber: removingRider.cardNumber,
+          riderId: removingRider.riderId,
+        },
+      });
+      toast.success(t("operatingCards.toastRemoveRiderSuccess"));
+      queryClient.invalidateQueries({ queryKey: ["operating-cards-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["rider-documents-expiring"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-full-riders"] });
+    } catch (err) {
+      toast.error(errText(err, t("operatingCards.toastRemoveRiderFailed")));
+    } finally {
+      setRemovingRider(null);
+    }
+  };
+
+  const addingToGroup = groups.find((g) => g.key === addingToGroupKey) ?? null;
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 space-y-5 duration-500">
@@ -682,6 +858,35 @@ function AdminOperatingCards() {
             <AlertDialogCancel>{t("documents.cancelButton")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteGroup}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t("documents.deleteButton")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {addingToGroup && (
+        <AddRiderToCardDialog
+          group={addingToGroup}
+          riders={ridersQuery.data ?? []}
+          cardDocs={cardDocsQuery.data ?? []}
+          open={!!addingToGroupKey}
+          onOpenChange={(v) => setAddingToGroupKey(v ? addingToGroupKey : null)}
+          t={t}
+        />
+      )}
+      <AlertDialog open={!!removingRider} onOpenChange={(v) => !v && setRemovingRider(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("operatingCards.removeRiderConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removingRider?.riderName} — {t("operatingCards.removeRiderConfirmDesc")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("documents.cancelButton")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRemoveRider}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t("documents.deleteButton")}
@@ -815,18 +1020,51 @@ function AdminOperatingCards() {
                         <TableCell>
                           <div className="space-y-1">
                             {g.riders.map((r) => (
-                              <div key={r.riderId} className="min-w-0">
-                                <span className="text-sm font-medium">{r.riderName}</span>{" "}
-                                <span className="font-mono text-xs text-muted-foreground">
-                                  {r.idText}
-                                </span>
-                                {r.area && (
-                                  <span className="ms-1.5 text-xs text-muted-foreground">
-                                    · {r.area}
+                              <div key={r.riderId} className="flex min-w-0 items-center gap-1">
+                                <div className="min-w-0 flex-1">
+                                  <span className="text-sm font-medium">{r.riderName}</span>{" "}
+                                  <span className="font-mono text-xs text-muted-foreground">
+                                    {r.idText}
                                   </span>
+                                  {r.area && (
+                                    <span className="ms-1.5 text-xs text-muted-foreground">
+                                      · {r.area}
+                                    </span>
+                                  )}
+                                </div>
+                                {canDeleteCard && (
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-5 w-5 shrink-0 text-muted-foreground hover:text-destructive"
+                                    title={t("operatingCards.removeRiderButton")}
+                                    onClick={() =>
+                                      setRemovingRider({
+                                        docType: g.docType,
+                                        cardNumber: g.cardNumber,
+                                        riderId: r.riderId,
+                                        riderName: r.riderName,
+                                      })
+                                    }
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
                                 )}
                               </div>
                             ))}
+                            {canWrite && g.riders.length < 3 && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 gap-1 px-1.5 text-xs text-primary hover:text-primary"
+                                onClick={() => setAddingToGroupKey(g.key)}
+                              >
+                                <UserPlus className="h-3 w-3" />
+                                {t("operatingCards.addRiderButton")}
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="sticky end-0 z-10 bg-background text-end shadow-[-4px_0_6px_-4px_rgb(0_0_0/0.15)]">

@@ -1,7 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { resolveDocumentsCompany } from "@/lib/documents.functions";
+import {
+  assertOperatingCardAssignment,
+  deleteDocumentFileIfOrphaned,
+  resolveDocumentsCompany,
+} from "@/lib/documents.functions";
 import {
   isValidExpiryDate,
   isValidOperatingCardNumber,
@@ -14,6 +18,42 @@ const CardDocTypeSchema = z.enum(["operating_card", "operating_card_extra"]);
 interface RowError {
   rowNumber: number;
   message: string;
+}
+
+// operating_cards_access and its three sub-toggles (upload/export/delete)
+// only ever exist on a staff account's user_roles row — a real company
+// admin or the super admin has no such row and so no way to be personally
+// restricted here (same model checkIsAdmin uses: these only apply when
+// isStaff). Mirrors the "role === 'user'" gate every other feature's
+// resolve*Company helper already uses (see resolveDocumentsCompany,
+// resolveReportsCompany) — without this, a staff member denied operating
+// cards access (or just its delete/upload sub-permission) could still call
+// these functions directly and bypass both the page gate and the UI that
+// hides the corresponding buttons.
+async function assertOperatingCardsAccess(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  extra?: "upload" | "delete",
+) {
+  const { data: role } = await supabase.rpc("get_member_role", { _user_id: userId });
+  if (role !== "user") return;
+  const { data: access } = await supabase.rpc("get_member_operating_cards_access", {
+    _user_id: userId,
+  });
+  if (!access) throw new Error("غير مصرح: ليس لديك صلاحية الوصول لكروت التشغيل");
+  if (extra === "upload") {
+    const { data: uploadAccess } = await supabase.rpc("get_member_operating_cards_upload_access", {
+      _user_id: userId,
+    });
+    if (!uploadAccess) throw new Error("غير مصرح: ليس لديك صلاحية رفع شيت كروت التشغيل");
+  }
+  if (extra === "delete") {
+    const { data: deleteAccess } = await supabase.rpc("get_member_operating_cards_delete_access", {
+      _user_id: userId,
+    });
+    if (!deleteAccess) throw new Error("غير مصرح: ليس لديك صلاحية حذف كرت التشغيل");
+  }
 }
 
 // Bulk-assigns operating cards from a spreadsheet: card number + the
@@ -40,6 +80,7 @@ export const bulkAssignOperatingCards = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const companyId = await resolveDocumentsCompany(supabase, userId, true);
+    await assertOperatingCardsAccess(supabase, userId, "upload");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     // Every rider referenced, resolved by Iqama number against the full
@@ -241,6 +282,7 @@ export const uploadOperatingCardFile = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const companyId = await resolveDocumentsCompany(supabase, userId, true);
+    await assertOperatingCardsAccess(supabase, userId);
 
     if (!isValidExpiryDate(data.expiryDate)) {
       throw new Error("تاريخ الانتهاء غير صحيح");
@@ -292,6 +334,7 @@ export const updateOperatingCardGroup = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const companyId = await resolveDocumentsCompany(supabase, userId, true);
+    await assertOperatingCardsAccess(supabase, userId);
 
     if (data.expiryDate && !isValidExpiryDate(data.expiryDate)) {
       throw new Error("تاريخ الانتهاء غير صحيح");
@@ -328,6 +371,7 @@ export const deleteOperatingCardGroup = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const companyId = await resolveDocumentsCompany(supabase, userId, true);
+    await assertOperatingCardsAccess(supabase, userId, "delete");
 
     const { data: existing } = await supabase
       .from("rider_documents")
@@ -355,4 +399,120 @@ export const deleteOperatingCardGroup = createServerFn({ method: "POST" })
     }
 
     return { ok: true, deleted: deleted.length };
+  });
+
+// Detaches a single rider from a card they share with others, without
+// touching the card for anyone else on it — the inverse of
+// addRiderToOperatingCard below. Their own row is removed entirely (same end
+// state as deleting that document from the Documents page), but the shared
+// file is only removed from storage once no other rider on the card still
+// points at it.
+const RemoveRiderInput = z.object({
+  docType: CardDocTypeSchema,
+  cardNumber: z.string().trim().min(1),
+  riderId: z.string().uuid(),
+});
+
+export const removeRiderFromOperatingCard = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => RemoveRiderInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveDocumentsCompany(supabase, userId, true);
+    await assertOperatingCardsAccess(supabase, userId, "delete");
+
+    const { data: existing } = await supabase
+      .from("rider_documents")
+      .select("id, storage_path, card_number")
+      .eq("rider_id", data.riderId)
+      .eq("doc_type", data.docType)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (!existing || existing.card_number !== data.cardNumber) {
+      throw new Error("المندوب غير مرتبط بهذا الكرت");
+    }
+
+    const { error } = await supabase.from("rider_documents").delete().eq("id", existing.id);
+    if (error) throw new Error(error.message);
+
+    if (existing.storage_path) {
+      await deleteDocumentFileIfOrphaned(supabase, companyId, existing.storage_path, existing.id);
+    }
+
+    return { ok: true };
+  });
+
+// Adds an existing rider onto a card that already has 1-2 riders on it,
+// inheriting whatever file/plate/expiry the card already carries — the same
+// same-area/max-3 rule as every other card assignment path is enforced via
+// assertOperatingCardAssignment (service role, company-wide), and a rider
+// already sitting on a DIFFERENT card of this same doc_type is rejected
+// rather than silently moved (they'd have to be removed from it first).
+const AddRiderInput = z.object({
+  docType: CardDocTypeSchema,
+  cardNumber: z.string().trim().min(1),
+  riderId: z.string().uuid(),
+});
+
+export const addRiderToOperatingCard = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => AddRiderInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveDocumentsCompany(supabase, userId, true);
+    await assertOperatingCardsAccess(supabase, userId);
+
+    const { data: rider } = await supabase
+      .from("riders")
+      .select("id, area")
+      .eq("id", data.riderId)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (!rider) throw new Error("المندوب غير موجود");
+
+    const { data: existingRow } = await supabase
+      .from("rider_documents")
+      .select("card_number")
+      .eq("rider_id", data.riderId)
+      .eq("doc_type", data.docType)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (existingRow?.card_number && existingRow.card_number !== data.cardNumber) {
+      throw new Error("المندوب مرتبط بالفعل بكرت تشغيل تاني من نفس النوع — لازم يتشال منه الأول");
+    }
+
+    await assertOperatingCardAssignment(
+      companyId,
+      data.riderId,
+      rider.area,
+      data.docType,
+      data.cardNumber,
+    );
+
+    const { data: groupRow } = await supabase
+      .from("rider_documents")
+      .select("storage_path, file_name, expiry_date, plate_number, uploaded_at")
+      .eq("company_id", companyId)
+      .eq("doc_type", data.docType)
+      .eq("card_number", data.cardNumber)
+      .limit(1)
+      .maybeSingle();
+
+    const { error } = await supabase.from("rider_documents").upsert(
+      {
+        company_id: companyId,
+        rider_id: data.riderId,
+        doc_type: data.docType,
+        card_number: data.cardNumber,
+        storage_path: groupRow?.storage_path ?? null,
+        file_name: groupRow?.file_name ?? null,
+        expiry_date: groupRow?.expiry_date ?? null,
+        plate_number: groupRow?.plate_number ?? null,
+        uploaded_at: groupRow?.uploaded_at ?? new Date().toISOString(),
+      },
+      { onConflict: "rider_id,doc_type" },
+    );
+    if (error) throw new Error(error.message);
+
+    return { ok: true };
   });

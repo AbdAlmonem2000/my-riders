@@ -156,8 +156,8 @@ function ExpiryAlertsBell({
         >
           <FileWarning className="h-4 w-4" />
           {alerts.length > 0 && (
-            <span className="absolute -top-1 -end-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground">
-              {alerts.length > 9 ? "9+" : alerts.length}
+            <span className="absolute -top-1 -end-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+              {alerts.length}
             </span>
           )}
         </Button>
@@ -197,6 +197,14 @@ function ExpiryAlertsBell({
             </div>
           ))}
         </div>
+        <div className="border-t p-1.5">
+          <Link
+            to="/admin/expiry-alerts"
+            className="block rounded-md px-2 py-1.5 text-center text-xs font-medium text-primary hover:bg-accent"
+          >
+            {t("admin.expiryAlertsViewAll")}
+          </Link>
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -221,6 +229,12 @@ const NAV_TABS = [
     to: "/admin/operating-cards" as const,
     key: "admin.navOperatingCards" as const,
     icon: CreditCard,
+    exact: false,
+  },
+  {
+    to: "/admin/expiry-alerts" as const,
+    key: "admin.navExpiryAlerts" as const,
+    icon: FileWarning,
     exact: false,
   },
   {
@@ -279,6 +293,7 @@ interface PagePermissions {
   lettersAccess: "none" | "view" | "full";
   notificationsAccess: boolean;
   operatingCardsAccess: boolean;
+  expiryAlertsAccess: boolean;
   usersAccess: boolean;
   companyProfileAccess: boolean;
 }
@@ -288,6 +303,7 @@ const PAGE_ACCESS: Record<string, (d: PagePermissions) => boolean> = {
   "/admin/reports": (d) => d.reportsAccess !== "none",
   "/admin/documents": (d) => d.documentsAccess !== "none",
   "/admin/operating-cards": (d) => d.documentsAccess !== "none" && d.operatingCardsAccess,
+  "/admin/expiry-alerts": (d) => d.documentsAccess !== "none" && d.expiryAlertsAccess,
   "/admin/letters": (d) => d.lettersAccess !== "none",
   "/admin/notifications": (d) => d.notificationsAccess,
   "/admin/users": (d) => !d.isStaff && d.usersAccess,

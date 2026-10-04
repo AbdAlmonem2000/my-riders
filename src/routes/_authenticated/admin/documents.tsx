@@ -834,6 +834,9 @@ function AdminDocuments() {
       });
       toast.success(t("documents.toastUploadSuccess"));
       queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["rider-documents-expiring"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-full-riders"] });
       return true;
     } catch (err) {
       console.error("uploadRiderDocument failed", err);
@@ -857,6 +860,9 @@ function AdminDocuments() {
       await updateExpiryFn({ data: { riderId, docType, expiryDate, cardNumber } });
       toast.success(t("documents.toastExpiryUpdateSuccess"));
       queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["rider-documents-expiring"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-full-riders"] });
       return true;
     } catch (err) {
       toast.error(errText(err, t("documents.toastExpiryUpdateFailed")));
@@ -872,6 +878,9 @@ function AdminDocuments() {
       await deleteDocFn({ data: { riderId, docType } });
       toast.success(t("documents.toastDeleteSuccess"));
       queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["rider-documents-expiring"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-full-riders"] });
     } catch (err) {
       toast.error(errText(err, t("documents.toastDeleteFailed")));
     }

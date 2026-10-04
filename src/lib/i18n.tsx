@@ -192,6 +192,7 @@ const dict = {
   "admin.navReports": { ar: "التقارير", en: "Reports" },
   "admin.navDocuments": { ar: "المستندات", en: "Documents" },
   "admin.navOperatingCards": { ar: "كروت التشغيل", en: "Operating cards" },
+  "admin.navExpiryAlerts": { ar: "تنبيهات انتهاء المستندات", en: "Expiry alerts" },
   "admin.navNotifications": { ar: "الإشعارات والإنذارات", en: "Notifications & Warnings" },
   "admin.navCompanyProfile": { ar: "بيانات الشركة", en: "Company profile" },
   "admin.goToPage": { ar: "الذهاب", en: "Go" },
@@ -268,6 +269,7 @@ const dict = {
     ar: "لا توجد مستندات قريبة من الانتهاء",
     en: "No documents nearing expiry",
   },
+  "admin.expiryAlertsViewAll": { ar: "عرض كل التنبيهات", en: "View all alerts" },
   "admin.statReportsCount": { ar: "عدد التقارير", en: "Number of Reports" },
   "admin.statTotalRiders": { ar: "إجمالي المناديب", en: "Total Riders" },
   "admin.statLastReport": { ar: "آخر تقرير", en: "Last Report" },
@@ -769,6 +771,10 @@ const dict = {
     ar: "كرت تشغيل إضافي",
     en: "Additional operating card",
   },
+  "documents.type.operating_card_extra_form": {
+    ar: "استمارة كرت التشغيل الإضافي",
+    en: "Additional operating card form",
+  },
   "documents.type.vehicle_registration": { ar: "استمارة السيارة", en: "Vehicle registration" },
   "documents.type.health_certificate": { ar: "الشهادة الصحية", en: "Health certificate" },
   "documents.type.personal_photo": { ar: "الصورة الشخصية", en: "Personal photo" },
@@ -873,8 +879,8 @@ const dict = {
   "operatingCards.listTitle": { ar: "الكروت", en: "Cards" },
   "operatingCards.listDesc": { ar: "عدد الكروت", en: "Number of cards" },
   "operatingCards.searchPlaceholder": {
-    ar: "ابحث برقم كرت التشغيل",
-    en: "Search by operating card number",
+    ar: "ابحث برقم كرت التشغيل أو رقم الإقامة أو رقم اللوحة",
+    en: "Search by card number, Iqama number, or plate number",
   },
   "operatingCards.empty": {
     ar: "لا توجد كروت تشغيل مطابقة",
@@ -931,9 +937,76 @@ const dict = {
   },
   "operatingCards.currentFileLabel": { ar: "الملف الحالي", en: "Current file" },
   "operatingCards.toastGroupSaveSuccess": { ar: "تم حفظ بيانات الكرت", en: "Card details saved" },
+  "expiryAlerts.pageTitle": { ar: "تنبيهات انتهاء المستندات", en: "Document expiry alerts" },
+  "expiryAlerts.pageDesc": {
+    ar: "كل المستندات اللي ليها تاريخ انتهاء في مكان واحد — قدر تشوف اللي انتهى أو قرب ينتهي وبتاع مين بالظبط",
+    en: "Every document that carries an expiry date, in one place — see what's expired or expiring soon and exactly whose it is",
+  },
+  "expiryAlerts.listTitle": { ar: "المستندات", en: "Documents" },
+  "expiryAlerts.listDesc": { ar: "عدد المستندات", en: "Number of documents" },
+  "expiryAlerts.searchPlaceholder": {
+    ar: "دوّر بالاسم أو رقم الإقامة أو الـ ID",
+    en: "Search by name, Iqama, or ID number",
+  },
+  "expiryAlerts.tableDocType": { ar: "نوع المستند", en: "Document type" },
+  "expiryAlerts.empty": { ar: "لا توجد نتائج مطابقة", en: "No matching results" },
+  "expiryAlerts.filterAllTypes": { ar: "كل الأنواع", en: "All types" },
+  "expiryAlerts.filterTypesCount": { ar: "{count} أنواع", en: "{count} types" },
+  "expiryAlerts.renewButton": { ar: "تجديد", en: "Renew" },
+  "expiryAlerts.renewDocDesc": {
+    ar: "ارفع الملف الجديد (اختياري) واكتب تاريخ الانتهاء الجديد — هيتحدّث عند المندوب في صفحة المستندات فورًا",
+    en: "Upload the new file (optional) and set the new expiry date — it updates for this rider on the Documents page immediately",
+  },
+  "expiryAlerts.renewCardDesc": {
+    ar: "ده كرت تشغيل مشترك — التجديد هنا هيتحدّث لكل المناديب المرتبطين بنفس رقم الكرت، مش بس المندوب ده",
+    en: "This is a shared operating card — renewing it here updates every rider linked to the same card number, not just this one",
+  },
+  "expiryAlerts.toastRenewSuccess": { ar: "تم تجديد المستند", en: "Document renewed" },
+  "expiryAlerts.toastRenewFailed": { ar: "فشل تجديد المستند", en: "Failed to renew document" },
+
   "operatingCards.toastGroupSaveFailed": {
     ar: "فشل حفظ بيانات الكرت",
     en: "Failed to save card details",
+  },
+  "operatingCards.removeRiderButton": { ar: "شيل المندوب من الكرت", en: "Remove rider from card" },
+  "operatingCards.removeRiderConfirmTitle": {
+    ar: "شيل المندوب من الكرت؟",
+    en: "Remove rider from this card?",
+  },
+  "operatingCards.removeRiderConfirmDesc": {
+    ar: "هيترفع ربط المندوب ده بالكرت وهيرجع المستند عنده فاضي — من غير ما يتأثر باقي المناديب على نفس الكرت",
+    en: "This rider will be unlinked from the card and their document will go back to missing — the rest of the riders on this card are unaffected",
+  },
+  "operatingCards.toastRemoveRiderSuccess": {
+    ar: "تم شيل المندوب من الكرت",
+    en: "Rider removed from card",
+  },
+  "operatingCards.toastRemoveRiderFailed": {
+    ar: "فشل شيل المندوب من الكرت",
+    en: "Failed to remove rider from card",
+  },
+  "operatingCards.addRiderButton": { ar: "إضافة مندوب", en: "Add rider" },
+  "operatingCards.addRiderDialogTitle": { ar: "إضافة مندوب للكرت", en: "Add rider to card" },
+  "operatingCards.addRiderDialogDesc": {
+    ar: "اختر مندوب من نفس منطقة الكرت وميكنش عنده كرت تشغيل من نفس النوع — هيورث نفس الملف وتاريخ الانتهاء ورقم اللوحة الموجودين على الكرت",
+    en: "Pick a rider from the card's own area who doesn't already have a card of this type — they'll inherit the card's existing file, expiry date, and plate number",
+  },
+  "operatingCards.addRiderSearchPlaceholder": {
+    ar: "دوّر بالاسم أو رقم الإقامة",
+    en: "Search by name or Iqama number",
+  },
+  "operatingCards.addRiderEmpty": {
+    ar: "مفيش مناديب متاحين في نفس المنطقة",
+    en: "No available riders in this area",
+  },
+  "operatingCards.addRiderAction": { ar: "إضافة", en: "Add" },
+  "operatingCards.toastAddRiderSuccess": {
+    ar: "تم إضافة المندوب للكرت",
+    en: "Rider added to card",
+  },
+  "operatingCards.toastAddRiderFailed": {
+    ar: "فشل إضافة المندوب للكرت",
+    en: "Failed to add rider to card",
   },
 
   "notifications.pageTitle": {
@@ -1203,6 +1276,10 @@ const dict = {
   "users.operatingCardsDeleteAccessLabel": {
     ar: "يقدر يحذف كرت التشغيل",
     en: "Can delete an operating card",
+  },
+  "users.expiryAlertsAccessLabel": {
+    ar: "يقدر يفتح صفحة تنبيهات انتهاء المستندات",
+    en: "Can open the Expiry Alerts page",
   },
   "users.lettersAccessLabel": {
     ar: "صلاحية صفحة الخطابات الرسمية",

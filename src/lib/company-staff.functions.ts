@@ -43,6 +43,9 @@ const PermissionsSchema = z.object({
   operatingCardsUploadAccess: z.boolean(),
   operatingCardsExportAccess: z.boolean(),
   operatingCardsDeleteAccess: z.boolean(),
+  // Only meaningful when documentsAccess isn't 'none' — same reasoning as
+  // operatingCardsAccess above.
+  expiryAlertsAccess: z.boolean(),
 });
 
 export const listCompanyStaff = createServerFn({ method: "GET" })
@@ -73,6 +76,7 @@ export const listCompanyStaff = createServerFn({ method: "GET" })
         operatingCardsUploadAccess: !!r.operating_cards_upload_access,
         operatingCardsExportAccess: !!r.operating_cards_export_access,
         operatingCardsDeleteAccess: !!r.operating_cards_delete_access,
+        expiryAlertsAccess: !!r.expiry_alerts_access,
         createdAt: r.created_at as string,
       }),
     );
@@ -130,6 +134,7 @@ export const createCompanyStaff = createServerFn({ method: "POST" })
       operating_cards_upload_access: data.operatingCardsUploadAccess,
       operating_cards_export_access: data.operatingCardsExportAccess,
       operating_cards_delete_access: data.operatingCardsDeleteAccess,
+      expiry_alerts_access: data.expiryAlertsAccess,
     });
     if (roleErr) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -163,6 +168,7 @@ export const updateCompanyStaffPermissions = createServerFn({ method: "POST" })
         operating_cards_upload_access: data.operatingCardsUploadAccess,
         operating_cards_export_access: data.operatingCardsExportAccess,
         operating_cards_delete_access: data.operatingCardsDeleteAccess,
+        expiry_alerts_access: data.expiryAlertsAccess,
       })
       .eq("user_id", data.userId)
       .eq("role", "user")

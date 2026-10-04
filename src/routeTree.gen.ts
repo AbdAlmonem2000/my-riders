@@ -27,6 +27,7 @@ import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminOperatingCardsRouteImport } from './routes/_authenticated/admin/operating-cards'
 import { Route as AuthenticatedAdminNotificationsRouteImport } from './routes/_authenticated/admin/notifications'
 import { Route as AuthenticatedAdminLettersRouteImport } from './routes/_authenticated/admin/letters'
+import { Route as AuthenticatedAdminExpiryAlertsRouteImport } from './routes/_authenticated/admin/expiry-alerts'
 import { Route as AuthenticatedAdminDocumentsRouteImport } from './routes/_authenticated/admin/documents'
 import { Route as AuthenticatedAdminCompanyProfileRouteImport } from './routes/_authenticated/admin/company-profile'
 import { Route as AuthenticatedAdminAccountRouteImport } from './routes/_authenticated/admin/account'
@@ -129,6 +130,12 @@ const AuthenticatedAdminLettersRoute =
     path: '/letters',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminExpiryAlertsRoute =
+  AuthenticatedAdminExpiryAlertsRouteImport.update({
+    id: '/expiry-alerts',
+    path: '/expiry-alerts',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 const AuthenticatedAdminDocumentsRoute =
   AuthenticatedAdminDocumentsRouteImport.update({
     id: '/documents',
@@ -159,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/admin/account': typeof AuthenticatedAdminAccountRoute
   '/admin/company-profile': typeof AuthenticatedAdminCompanyProfileRoute
   '/admin/documents': typeof AuthenticatedAdminDocumentsRoute
+  '/admin/expiry-alerts': typeof AuthenticatedAdminExpiryAlertsRoute
   '/admin/letters': typeof AuthenticatedAdminLettersRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
   '/admin/operating-cards': typeof AuthenticatedAdminOperatingCardsRoute
@@ -179,6 +187,7 @@ export interface FileRoutesByTo {
   '/admin/account': typeof AuthenticatedAdminAccountRoute
   '/admin/company-profile': typeof AuthenticatedAdminCompanyProfileRoute
   '/admin/documents': typeof AuthenticatedAdminDocumentsRoute
+  '/admin/expiry-alerts': typeof AuthenticatedAdminExpiryAlertsRoute
   '/admin/letters': typeof AuthenticatedAdminLettersRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
   '/admin/operating-cards': typeof AuthenticatedAdminOperatingCardsRoute
@@ -203,6 +212,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/account': typeof AuthenticatedAdminAccountRoute
   '/_authenticated/admin/company-profile': typeof AuthenticatedAdminCompanyProfileRoute
   '/_authenticated/admin/documents': typeof AuthenticatedAdminDocumentsRoute
+  '/_authenticated/admin/expiry-alerts': typeof AuthenticatedAdminExpiryAlertsRoute
   '/_authenticated/admin/letters': typeof AuthenticatedAdminLettersRoute
   '/_authenticated/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
   '/_authenticated/admin/operating-cards': typeof AuthenticatedAdminOperatingCardsRoute
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/admin/account'
     | '/admin/company-profile'
     | '/admin/documents'
+    | '/admin/expiry-alerts'
     | '/admin/letters'
     | '/admin/notifications'
     | '/admin/operating-cards'
@@ -247,6 +258,7 @@ export interface FileRouteTypes {
     | '/admin/account'
     | '/admin/company-profile'
     | '/admin/documents'
+    | '/admin/expiry-alerts'
     | '/admin/letters'
     | '/admin/notifications'
     | '/admin/operating-cards'
@@ -270,6 +282,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/account'
     | '/_authenticated/admin/company-profile'
     | '/_authenticated/admin/documents'
+    | '/_authenticated/admin/expiry-alerts'
     | '/_authenticated/admin/letters'
     | '/_authenticated/admin/notifications'
     | '/_authenticated/admin/operating-cards'
@@ -419,6 +432,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminLettersRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/expiry-alerts': {
+      id: '/_authenticated/admin/expiry-alerts'
+      path: '/expiry-alerts'
+      fullPath: '/admin/expiry-alerts'
+      preLoaderRoute: typeof AuthenticatedAdminExpiryAlertsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/_authenticated/admin/documents': {
       id: '/_authenticated/admin/documents'
       path: '/documents'
@@ -447,6 +467,7 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminAccountRoute: typeof AuthenticatedAdminAccountRoute
   AuthenticatedAdminCompanyProfileRoute: typeof AuthenticatedAdminCompanyProfileRoute
   AuthenticatedAdminDocumentsRoute: typeof AuthenticatedAdminDocumentsRoute
+  AuthenticatedAdminExpiryAlertsRoute: typeof AuthenticatedAdminExpiryAlertsRoute
   AuthenticatedAdminLettersRoute: typeof AuthenticatedAdminLettersRoute
   AuthenticatedAdminNotificationsRoute: typeof AuthenticatedAdminNotificationsRoute
   AuthenticatedAdminOperatingCardsRoute: typeof AuthenticatedAdminOperatingCardsRoute
@@ -462,6 +483,7 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
     AuthenticatedAdminCompanyProfileRoute:
       AuthenticatedAdminCompanyProfileRoute,
     AuthenticatedAdminDocumentsRoute: AuthenticatedAdminDocumentsRoute,
+    AuthenticatedAdminExpiryAlertsRoute: AuthenticatedAdminExpiryAlertsRoute,
     AuthenticatedAdminLettersRoute: AuthenticatedAdminLettersRoute,
     AuthenticatedAdminNotificationsRoute: AuthenticatedAdminNotificationsRoute,
     AuthenticatedAdminOperatingCardsRoute:

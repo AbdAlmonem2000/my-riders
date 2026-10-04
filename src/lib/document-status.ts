@@ -7,6 +7,7 @@ export const DOC_TYPES = [
   "driver_card",
   "operating_card",
   "operating_card_extra",
+  "operating_card_extra_form",
   "vehicle_registration",
   "health_certificate",
   "personal_photo",
@@ -15,9 +16,13 @@ export const DOC_TYPES = [
 
 export type DocType = (typeof DOC_TYPES)[number];
 
-// These two are never time-limited, so unlike every other slot they carry no
+// These are never time-limited, so unlike every other slot they carry no
 // expiry date at all — no status badge countdown, no "edit date" action.
-export const NO_EXPIRY_DOC_TYPES = new Set<string>(["personal_photo", "vehicle_registration"]);
+export const NO_EXPIRY_DOC_TYPES = new Set<string>([
+  "personal_photo",
+  "vehicle_registration",
+  "operating_card_extra_form",
+]);
 
 export function docTypeNeedsExpiry(docType: string): boolean {
   return !NO_EXPIRY_DOC_TYPES.has(docType);

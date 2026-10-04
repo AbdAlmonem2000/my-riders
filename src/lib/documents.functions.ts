@@ -85,7 +85,7 @@ export async function resolveDocumentsCompany(
 // rider in a DIFFERENT area — exactly the gap that let the same card number
 // end up assigned across two areas at once. This check is a company-wide
 // invariant, not something scoped to what the caller personally can see.
-async function assertOperatingCardAssignment(
+export async function assertOperatingCardAssignment(
   companyId: string,
   riderId: string,
   riderArea: string | null,
@@ -132,6 +132,31 @@ async function assertOperatingCardAssignment(
       `كرت التشغيل رقم ${cardNumber} مستخدم بالفعل في منطقة "${otherArea}" مع: ${namesOf(mismatched)} — لازم يكونوا في نفس المنطقة`,
     );
   }
+}
+
+// An operating card's file is shared across every rider on that card (see
+// uploadOperatingCardFile in operating-cards.functions.ts), so deleting one
+// rider's row must not blindly remove the storage object out from under the
+// others still pointing at it. Scoped to the company (not admin-wide) since
+// every row sharing a path is guaranteed to already be visible to whoever
+// can delete one of them — same area, same company.
+export async function deleteDocumentFileIfOrphaned(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  companyId: string,
+  storagePath: string,
+  excludeRowId: string,
+) {
+  const { data: others } = await supabase
+    .from("rider_documents")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("storage_path", storagePath)
+    .neq("id", excludeRowId)
+    .limit(1);
+  if ((others ?? []).length > 0) return;
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await supabaseAdmin.storage.from("rider-documents").remove([storagePath]);
 }
 
 const UploadInput = z.object({
@@ -301,7 +326,7 @@ export const deleteRiderDocument = createServerFn({ method: "POST" })
 
     const { data: existing } = await supabase
       .from("rider_documents")
-      .select("storage_path")
+      .select("id, storage_path")
       .eq("rider_id", data.riderId)
       .eq("doc_type", data.docType)
       .eq("company_id", companyId)
@@ -317,8 +342,7 @@ export const deleteRiderDocument = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     if (existing.storage_path) {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin.storage.from("rider-documents").remove([existing.storage_path]);
+      await deleteDocumentFileIfOrphaned(supabase, companyId, existing.storage_path, existing.id);
     }
 
     return { ok: true };

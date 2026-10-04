@@ -328,7 +328,7 @@ function AdminReports() {
     return map;
   }, [sheetRows]);
 
-  const now = new Date();
+  const now = useMemo(() => new Date(), []);
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
   const [year, setYear] = useState<number>(now.getFullYear());
   const [file, setFile] = useState<File | null>(null);

@@ -81,6 +81,9 @@ interface Permissions {
   operatingCardsUploadAccess: boolean;
   operatingCardsExportAccess: boolean;
   operatingCardsDeleteAccess: boolean;
+  // Only meaningful when documentsAccess isn't 'none' — same reasoning as
+  // operatingCardsAccess above.
+  expiryAlertsAccess: boolean;
 }
 
 interface StaffRow extends Permissions {
@@ -217,6 +220,7 @@ function PermissionsFields({
               operatingCardsUploadAccess: v !== "none" && value.operatingCardsUploadAccess,
               operatingCardsExportAccess: v !== "none" && value.operatingCardsExportAccess,
               operatingCardsDeleteAccess: v !== "none" && value.operatingCardsDeleteAccess,
+              expiryAlertsAccess: v !== "none" && value.expiryAlertsAccess,
             })
           }
           t={t}
@@ -263,6 +267,13 @@ function PermissionsFields({
                 </label>
               </div>
             )}
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox
+                checked={value.expiryAlertsAccess}
+                onCheckedChange={(v) => onChange({ ...value, expiryAlertsAccess: !!v })}
+              />
+              {t("users.expiryAlertsAccessLabel")}
+            </label>
           </>
         )}
       </div>
@@ -317,6 +328,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   operatingCardsUploadAccess: false,
   operatingCardsExportAccess: false,
   operatingCardsDeleteAccess: false,
+  expiryAlertsAccess: false,
 };
 
 // Every page, every tier's top level, every area — the "grant all" shortcut
@@ -336,6 +348,7 @@ const ALL_ACCESS_PERMISSIONS: Permissions = {
   operatingCardsUploadAccess: true,
   operatingCardsExportAccess: true,
   operatingCardsDeleteAccess: true,
+  expiryAlertsAccess: true,
 };
 
 function CreateStaffDialog({
@@ -819,6 +832,7 @@ function AdminUsers() {
                                       ` + ${t("users.operatingCardsDeleteAccessLabel")}`}
                                   </>
                                 )}
+                                {s.expiryAlertsAccess && ` + ${t("users.expiryAlertsAccessLabel")}`}
                               </Badge>
                             )}
                             {s.lettersAccess !== "none" && (
