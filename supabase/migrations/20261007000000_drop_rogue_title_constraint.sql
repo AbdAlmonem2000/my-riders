@@ -1,0 +1,19 @@
+-- Found by directly inspecting the live schema while debugging why a
+-- second same-month daily report upload kept failing with "already exists"
+-- regardless of which day was picked: the live `reports` table carries a
+-- `title` column (NOT NULL, default 'التقرير الرئيسي') and a unique
+-- constraint `reports_company_month_year_title_uk` on
+-- (company_id, month, year, title) — neither of which exists anywhere in
+-- this migrations folder or is referenced anywhere in the app code. Since
+-- every insert leaves `title` at its default, every report in the same
+-- (company, month, year) ends up with the exact same title, so this
+-- constraint silently behaved like the OLD company+month+year-only
+-- uniqueness rule — blocking every day but the first, no matter what
+-- 20261006000000_reports_daily.sql did. It was never created by any
+-- migration here, so it must have been added directly against the live
+-- database outside of this history (e.g. a Lovable-side schema edit for a
+-- feature that was never wired into the app) — this just removes the
+-- constraint that's actively breaking daily reports. The column itself is
+-- left in place (unused but harmless) rather than dropped, since nothing
+-- here can be fully sure nothing else depends on it existing.
+ALTER TABLE public.reports DROP CONSTRAINT IF EXISTS reports_company_month_year_title_uk;

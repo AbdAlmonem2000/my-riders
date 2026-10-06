@@ -8,6 +8,7 @@ import {
   Download,
   Eye,
   FileSpreadsheet,
+  FileText,
   Loader2,
   MoreVertical,
   Pencil,
@@ -74,12 +75,14 @@ import {
   deleteOperatingCardGroup,
   removeRiderFromOperatingCard,
   updateOperatingCardGroup,
+  uploadOperatingCardExtraForm,
   uploadOperatingCardFile,
 } from "@/lib/operating-cards.functions";
 import { checkIsAdmin } from "@/lib/reports.functions";
 import {
   hasAllowedDocExtension,
   isValidExpiryDate,
+  isValidOperatingCardNumber,
   OPERATING_CARD_TYPES,
   computeDocStatus,
   type DocStatus,
@@ -177,6 +180,7 @@ function EditCardGroupDialog({
   const queryClient = useQueryClient();
   const updateMetaFn = useServerFn(updateOperatingCardGroup);
   const uploadFileFn = useServerFn(uploadOperatingCardFile);
+  const [cardNumber, setCardNumber] = useState(group.cardNumber);
   const [plateNumber, setPlateNumber] = useState(group.plateNumber ?? "");
   const [expiryDate, setExpiryDate] = useState(group.expiryDate ?? "");
   const [file, setFile] = useState<File | null>(null);
@@ -185,6 +189,10 @@ function EditCardGroupDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!cardNumber.trim()) return toast.error(t("documents.toastCardNumberRequired"));
+    if (!isValidOperatingCardNumber(cardNumber)) {
+      return toast.error(t("documents.toastCardNumberInvalid"));
+    }
     if (file && !hasAllowedDocExtension(file.name)) {
       return toast.error(t("documents.toastInvalidExtension"));
     }
@@ -200,14 +208,20 @@ function EditCardGroupDialog({
         data: {
           docType: group.docType as "operating_card" | "operating_card_extra",
           cardNumber: group.cardNumber,
+          newCardNumber: cardNumber.trim() !== group.cardNumber ? cardNumber.trim() : null,
           plateNumber: plateNumber.trim() || null,
           expiryDate: expiryDate || null,
         },
       });
       if (file) {
+        // The rename above (if any) already moved every row to the new card
+        // number, so the file upload — which matches rows by card_number —
+        // has to target that same new number, not the one the dialog opened
+        // with.
+        const savedCardNumber = cardNumber.trim();
         const extMatch = /\.[a-zA-Z0-9]+$/.exec(file.name);
         const safeExt = extMatch ? extMatch[0].toLowerCase() : "";
-        const safeCard = group.cardNumber.replace(/[^0-9A-Za-z-]/g, "");
+        const safeCard = savedCardNumber.replace(/[^0-9A-Za-z-]/g, "");
         const path = `${companyId}/cards/${group.docType}-${safeCard}-${Date.now()}${safeExt}`;
         const { error: upErr } = await supabase.storage
           .from("rider-documents")
@@ -216,7 +230,7 @@ function EditCardGroupDialog({
         await uploadFileFn({
           data: {
             docType: group.docType as "operating_card" | "operating_card_extra",
-            cardNumber: group.cardNumber,
+            cardNumber: savedCardNumber,
             storagePath: path,
             fileName: file.name,
             expiryDate,
@@ -246,6 +260,16 @@ function EditCardGroupDialog({
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           <div className="space-y-1.5">
+            <Label className="text-xs">{t("documents.cardNumberLabel")}</Label>
+            <Input
+              value={cardNumber}
+              onChange={(e) => setCardNumber(e.target.value)}
+              dir="ltr"
+              maxLength={11}
+              placeholder={t("documents.cardNumberPlaceholder")}
+            />
+          </div>
+          <div className="space-y-1.5">
             <Label className="text-xs">{t("documents.plateNumberLabel")}</Label>
             <Input
               value={plateNumber}
@@ -271,6 +295,94 @@ function EditCardGroupDialog({
                 {t("operatingCards.currentFileLabel")}: {group.groupFile.fileName}
               </p>
             )}
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Button type="submit" size="sm" disabled={saving}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t("admin.save")}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
+              {t("documents.cancelButton")}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Uploads the "استمارة كرت التشغيل الإضافي" once for every rider sharing
+// this card — a plain no-expiry document, same convenience as uploading the
+// card's own file/expiry once instead of per rider.
+function EditCardFormDialog({
+  group,
+  companyId,
+  open,
+  onOpenChange,
+  t,
+}: {
+  group: CardGroup;
+  companyId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  t: (key: TranslationKey) => string;
+}) {
+  const queryClient = useQueryClient();
+  const uploadFormFn = useServerFn(uploadOperatingCardExtraForm);
+  const [file, setFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return toast.error(t("documents.toastFileRequired"));
+    if (!hasAllowedDocExtension(file.name)) {
+      return toast.error(t("documents.toastInvalidExtension"));
+    }
+    setSaving(true);
+    try {
+      const extMatch = /\.[a-zA-Z0-9]+$/.exec(file.name);
+      const safeExt = extMatch ? extMatch[0].toLowerCase() : "";
+      const safeCard = group.cardNumber.replace(/[^0-9A-Za-z-]/g, "");
+      const path = `${companyId}/cards/form-${safeCard}-${Date.now()}${safeExt}`;
+      const { error: upErr } = await supabase.storage
+        .from("rider-documents")
+        .upload(path, file, { upsert: true });
+      if (upErr) throw new Error(upErr.message);
+      await uploadFormFn({
+        data: {
+          riderIds: group.riders.map((r) => r.riderId),
+          storagePath: path,
+          fileName: file.name,
+        },
+      });
+      toast.success(t("operatingCards.toastFormSaveSuccess"));
+      queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["expiry-alerts-full-riders"] });
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(errText(err, t("operatingCards.toastFormSaveFailed")));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle dir="ltr">{group.cardNumber}</DialogTitle>
+          <DialogDescription>{t("operatingCards.editFormDesc")}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">{t("documents.fileLabel")}</Label>
+            <Input
+              ref={fileRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
           </div>
           <div className="flex items-center gap-2 pt-1">
             <Button type="submit" size="sm" disabled={saving}>
@@ -325,7 +437,8 @@ function AddRiderToCardDialog({
       if (!q) return true;
       return (
         (r.rider_name ?? "").toLowerCase().includes(q) ||
-        (r.iqama_number ?? "").toLowerCase().includes(q)
+        (r.iqama_number ?? "").toLowerCase().includes(q) ||
+        (r.id_number ?? "").toLowerCase().includes(q)
       );
     });
   }, [riders, cardDocs, group, groupArea, search]);
@@ -375,7 +488,6 @@ function AddRiderToCardDialog({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t("operatingCards.addRiderSearchPlaceholder")}
-              dir="ltr"
               className="ps-9"
               autoFocus
             />
@@ -394,7 +506,7 @@ function AddRiderToCardDialog({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{r.rider_name || "—"}</p>
                   <p className="font-mono text-xs text-muted-foreground" dir="ltr">
-                    {r.iqama_number || r.id_number || "—"}
+                    {r.id_number || r.iqama_number || "—"}
                   </p>
                 </div>
                 <Button
@@ -567,6 +679,7 @@ function AdminOperatingCards() {
   const [search, setSearch] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editingGroupKey, setEditingGroupKey] = useState<string | null>(null);
+  const [editingFormGroupKey, setEditingFormGroupKey] = useState<string | null>(null);
   const [deletingGroupKey, setDeletingGroupKey] = useState<string | null>(null);
   const [addingToGroupKey, setAddingToGroupKey] = useState<string | null>(null);
   const [removingRider, setRemovingRider] = useState<{
@@ -673,7 +786,7 @@ function AdminOperatingCards() {
         riderName: rider?.rider_name || "—",
         iqamaNumber: rider?.iqama_number ?? null,
         idNumber: rider?.id_number ?? null,
-        idText: rider?.iqama_number || rider?.id_number || "—",
+        idText: rider?.id_number || rider?.iqama_number || "—",
         area: rider?.area ?? null,
         hasFile: !!d.storage_path,
       });
@@ -766,6 +879,7 @@ function AdminOperatingCards() {
   };
 
   const editingGroup = groups.find((g) => g.key === editingGroupKey) ?? null;
+  const editingFormGroup = groups.find((g) => g.key === editingFormGroupKey) ?? null;
   const deletingGroup = groups.find((g) => g.key === deletingGroupKey) ?? null;
 
   const handleDeleteGroup = async () => {
@@ -848,6 +962,15 @@ function AdminOperatingCards() {
           t={t}
         />
       )}
+      {editingFormGroup && companyId && (
+        <EditCardFormDialog
+          group={editingFormGroup}
+          companyId={companyId}
+          open={!!editingFormGroupKey}
+          onOpenChange={(v) => setEditingFormGroupKey(v ? editingFormGroupKey : null)}
+          t={t}
+        />
+      )}
       <AlertDialog open={!!deletingGroupKey} onOpenChange={(v) => !v && setDeletingGroupKey(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -911,7 +1034,6 @@ function AdminOperatingCards() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t("operatingCards.searchPlaceholder")}
-                dir="ltr"
                 className="ps-9"
               />
             </div>
@@ -1079,6 +1201,12 @@ function AdminOperatingCards() {
                                 <DropdownMenuItem onClick={() => setEditingGroupKey(g.key)}>
                                   <Pencil className="h-3.5 w-3.5" />
                                   {t("operatingCards.editGroupButton")}
+                                </DropdownMenuItem>
+                              )}
+                              {canWrite && (
+                                <DropdownMenuItem onClick={() => setEditingFormGroupKey(g.key)}>
+                                  <FileText className="h-3.5 w-3.5" />
+                                  {t("operatingCards.editFormButton")}
                                 </DropdownMenuItem>
                               )}
                               {g.fileRiderId && (

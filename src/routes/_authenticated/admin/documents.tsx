@@ -30,6 +30,7 @@ import { RiderPhoto } from "@/components/rider-photo";
 import { ViewModeToggle } from "@/components/view-mode-toggle";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -80,6 +81,7 @@ import {
   isOperatingCardDocType,
   isValidExpiryDate,
   isValidOperatingCardNumber,
+  looksLikeOperatingCardLabel,
   newCustomDocType,
   type DocType,
   type DocStatus,
@@ -114,10 +116,25 @@ interface DocRow {
   label: string | null;
   expiry_date: string | null;
   uploaded_at: string;
+  needs_expiry: boolean;
 }
 
 function docTypeKey(dt: DocType): TranslationKey {
   return `documents.type.${dt}` as TranslationKey;
+}
+
+// Mirrors DocumentSlot's own needsExpiry branch exactly — a no-expiry slot
+// (fixed or a custom one marked that way) counts as "ok" once a doc row
+// exists at all, "missing" only when it genuinely doesn't, rather than
+// unconditionally running computeDocStatus (which treats a null
+// expiry_date as "missing" even when that's just this type's normal,
+// permanent state). Without this, every rider's `missing` count was
+// inflated by every no-expiry type they'd actually already uploaded, which
+// also broke the "لم يُرفع" status filter (it matched almost everyone,
+// since almost everyone had at least one of those "missing").
+function statusOf(doc: DocRow | undefined, docType: string): DocStatus {
+  const needsExpiry = docTypeNeedsExpiry(docType, doc?.needs_expiry);
+  return needsExpiry ? computeDocStatus(doc?.expiry_date ?? null).status : doc ? "ok" : "missing";
 }
 
 type UploadFn = (
@@ -126,11 +143,14 @@ type UploadFn = (
   expiryDate: string | null,
   cardNumber: string | null,
   label?: string | null,
+  plateNumber?: string | null,
+  needsExpiry?: boolean | null,
 ) => Promise<boolean>;
 type UpdateExpiryFn = (
   docType: string,
   expiryDate: string,
   cardNumber: string | null,
+  plateNumber?: string | null,
 ) => Promise<boolean>;
 
 function DocumentSlot({
@@ -166,14 +186,15 @@ function DocumentSlot({
   const [file, setFile] = useState<File | null>(null);
   const [expiryDate, setExpiryDate] = useState(doc?.expiry_date ?? "");
   const [cardNumber, setCardNumber] = useState(doc?.card_number ?? "");
+  const [plateNumber, setPlateNumber] = useState(doc?.plate_number ?? "");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const needsExpiry = docTypeNeedsExpiry(docType);
+  const needsExpiry = docTypeNeedsExpiry(docType, doc?.needs_expiry);
   const { status, daysLeft } = needsExpiry
     ? computeDocStatus(doc?.expiry_date ?? null)
     : { status: (doc ? "ok" : "missing") as DocStatus, daysLeft: null };
 
-  const isOperatingCard = isOperatingCardDocType(docType);
+  const isOperatingCard = isOperatingCardDocType(docType, doc?.label);
   const hasFile = !!doc?.storage_path;
 
   const cardUsage = useMemo(() => {
@@ -189,6 +210,7 @@ function DocumentSlot({
   const startUpload = () => {
     setExpiryDate(doc?.expiry_date ?? "");
     setCardNumber(doc?.card_number ?? "");
+    setPlateNumber(doc?.plate_number ?? "");
     setFile(null);
     setMode("upload");
   };
@@ -196,6 +218,7 @@ function DocumentSlot({
   const startEditDate = () => {
     setExpiryDate(doc?.expiry_date ?? "");
     setCardNumber(doc?.card_number ?? "");
+    setPlateNumber(doc?.plate_number ?? "");
     setMode("editDate");
   };
 
@@ -217,6 +240,8 @@ function DocumentSlot({
       file,
       needsExpiry ? expiryDate : null,
       isOperatingCard ? cardNumber.trim() : null,
+      undefined,
+      isOperatingCard ? plateNumber.trim() || null : null,
     );
     if (ok) {
       setMode("view");
@@ -239,6 +264,7 @@ function DocumentSlot({
       docType,
       expiryDate,
       isOperatingCard ? cardNumber.trim() : null,
+      isOperatingCard ? plateNumber.trim() || null : null,
     );
     if (ok) setMode("view");
   };
@@ -408,6 +434,17 @@ function DocumentSlot({
               )}
             </div>
           )}
+          {isOperatingCard && (
+            <div className="space-y-1">
+              <Label className="text-xs">{t("documents.plateNumberOptionalLabel")}</Label>
+              <Input
+                value={plateNumber}
+                onChange={(e) => setPlateNumber(e.target.value)}
+                dir="ltr"
+                maxLength={20}
+              />
+            </div>
+          )}
           <div className="flex items-center gap-2 pt-1">
             <Button type="submit" size="sm" disabled={saving}>
               {saving ? (
@@ -448,6 +485,17 @@ function DocumentSlot({
               )}
             </div>
           )}
+          {isOperatingCard && (
+            <div className="space-y-1">
+              <Label className="text-xs">{t("documents.plateNumberOptionalLabel")}</Label>
+              <Input
+                value={plateNumber}
+                onChange={(e) => setPlateNumber(e.target.value)}
+                dir="ltr"
+                maxLength={20}
+              />
+            </div>
+          )}
           <div className="flex items-center gap-2 pt-1">
             <Button type="submit" size="sm" disabled={saving}>
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t("admin.save")}
@@ -475,7 +523,11 @@ function AddCustomDocument({
   const [label, setLabel] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [expiryDate, setExpiryDate] = useState("");
+  const [needsExpiry, setNeedsExpiry] = useState(true);
+  const [cardNumber, setCardNumber] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const isOperatingCard = looksLikeOperatingCardLabel(label);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -483,15 +535,30 @@ function AddCustomDocument({
     if (!file) return toast.error(t("documents.toastFileRequired"));
     if (!hasAllowedDocExtension(file.name))
       return toast.error(t("documents.toastInvalidExtension"));
-    if (!expiryDate || !isValidExpiryDate(expiryDate)) {
+    if (needsExpiry && (!expiryDate || !isValidExpiryDate(expiryDate))) {
       return toast.error(t("documents.toastInvalidDate"));
     }
-    const ok = await onUpload(newCustomDocType(), file, expiryDate, null, label.trim());
+    if (isOperatingCard) {
+      if (!cardNumber.trim()) return toast.error(t("documents.toastCardNumberRequired"));
+      if (!isValidOperatingCardNumber(cardNumber))
+        return toast.error(t("documents.toastCardNumberInvalid"));
+    }
+    const ok = await onUpload(
+      newCustomDocType(),
+      file,
+      needsExpiry ? expiryDate : null,
+      isOperatingCard ? cardNumber.trim() : null,
+      label.trim(),
+      null,
+      needsExpiry,
+    );
     if (ok) {
       setOpen(false);
       setLabel("");
       setFile(null);
       setExpiryDate("");
+      setNeedsExpiry(true);
+      setCardNumber("");
       if (fileRef.current) fileRef.current.value = "";
     }
   };
@@ -520,7 +587,20 @@ function AddCustomDocument({
           onChange={(e) => setLabel(e.target.value)}
           placeholder={t("documents.customLabelPlaceholder")}
         />
+        <p className="text-[11px] text-muted-foreground">{t("documents.customCardHint")}</p>
       </div>
+      {isOperatingCard && (
+        <div className="space-y-1">
+          <Label className="text-xs">{t("documents.cardNumberLabel")}</Label>
+          <Input
+            value={cardNumber}
+            onChange={(e) => setCardNumber(e.target.value)}
+            dir="ltr"
+            maxLength={11}
+            placeholder={t("documents.cardNumberPlaceholder")}
+          />
+        </div>
+      )}
       <div className="space-y-1">
         <Label className="text-xs">{t("documents.fileLabel")}</Label>
         <Input
@@ -530,10 +610,16 @@ function AddCustomDocument({
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
       </div>
-      <div className="space-y-1">
-        <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
-        <DateInputDMY value={expiryDate} onChange={setExpiryDate} />
-      </div>
+      <label className="flex cursor-pointer items-center gap-2 text-xs">
+        <Checkbox checked={needsExpiry} onCheckedChange={(v) => setNeedsExpiry(!!v)} />
+        {t("documents.customNeedsExpiryLabel")}
+      </label>
+      {needsExpiry && (
+        <div className="space-y-1">
+          <Label className="text-xs">{t("documents.expiryDateLabel")}</Label>
+          <DateInputDMY value={expiryDate} onChange={setExpiryDate} />
+        </div>
+      )}
       <div className="flex items-center gap-2 pt-1">
         <Button type="submit" size="sm" disabled={saving}>
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t("documents.uploadButton")}
@@ -705,7 +791,7 @@ function AdminDocuments() {
       const { data, error } = await supabase
         .from("rider_documents")
         .select(
-          "id, rider_id, doc_type, storage_path, file_name, card_number, plate_number, label, expiry_date, uploaded_at",
+          "id, rider_id, doc_type, storage_path, file_name, card_number, plate_number, label, expiry_date, uploaded_at, needs_expiry",
         )
         .limit(5000);
       if (error) throw error;
@@ -724,7 +810,7 @@ function AdminDocuments() {
   }, [docsQuery.data]);
 
   const allCardDocs = useMemo(
-    () => (docsQuery.data ?? []).filter((d) => isOperatingCardDocType(d.doc_type)),
+    () => (docsQuery.data ?? []).filter((d) => isOperatingCardDocType(d.doc_type, d.label)),
     [docsQuery.data],
   );
 
@@ -748,11 +834,11 @@ function AdminDocuments() {
       const byType = new Map(riderDocs.map((d) => [d.doc_type, d]));
       const counts: Record<DocStatus, number> = { ok: 0, warning: 0, expired: 0, missing: 0 };
       for (const dt of DOC_TYPES) {
-        counts[computeDocStatus(byType.get(dt)?.expiry_date ?? null).status]++;
+        counts[statusOf(byType.get(dt), dt)]++;
       }
       for (const d of riderDocs) {
         if (isKnownDocType(d.doc_type)) continue;
-        counts[computeDocStatus(d.expiry_date).status]++;
+        counts[statusOf(d, d.doc_type)]++;
       }
       m.set(r.id, counts);
     }
@@ -771,6 +857,10 @@ function AdminDocuments() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | DocStatus>("all");
+  // Only meaningful when statusFilter === "missing" — narrows "has
+  // something missing" down to "is specifically missing THIS type"
+  // (e.g. just the Ajeer contract), instead of any of the 10 slots.
+  const [missingDocTypeFilter, setMissingDocTypeFilter] = useState<"all" | DocType>("all");
   const [areaFilter, setAreaFilter] = useState<Set<string>>(new Set());
   const filteredRiders = useMemo(() => {
     const rows = ridersQuery.data ?? [];
@@ -787,14 +877,28 @@ function AdminDocuments() {
         ].some((v) => (v ?? "").toLowerCase().includes(q)),
       );
     }
-    if (statusFilter !== "all") {
+    if (statusFilter === "missing" && missingDocTypeFilter !== "all") {
+      result = result.filter((r) => {
+        const doc = docsByRider.get(r.id)?.find((d) => d.doc_type === missingDocTypeFilter);
+        return statusOf(doc, missingDocTypeFilter) === "missing";
+      });
+    } else if (statusFilter !== "all") {
       result = result.filter((r) => (riderStatusCounts.get(r.id)?.[statusFilter] ?? 0) > 0);
     }
     if (areaFilter.size > 0) {
       result = result.filter((r) => areaFilter.has(r.area?.trim() || ""));
     }
     return result;
-  }, [ridersQuery.data, search, statusFilter, areaFilter, riderStatusCounts, cardNumbersByRider]);
+  }, [
+    ridersQuery.data,
+    search,
+    statusFilter,
+    missingDocTypeFilter,
+    areaFilter,
+    riderStatusCounts,
+    cardNumbersByRider,
+    docsByRider,
+  ]);
 
   const [savingRiderId, setSavingRiderId] = useState<string | null>(null);
   const [savingDocType, setSavingDocType] = useState<string | null>(null);
@@ -808,6 +912,8 @@ function AdminDocuments() {
     expiryDate: string | null,
     cardNumber: string | null,
     label?: string | null,
+    plateNumber?: string | null,
+    needsExpiry?: boolean | null,
   ) => {
     setSavingRiderId(riderId);
     setSavingDocType(docType.startsWith("custom:") ? "new-custom" : docType);
@@ -830,6 +936,8 @@ function AdminDocuments() {
           expiryDate,
           cardNumber,
           label: label ?? null,
+          plateNumber: plateNumber ?? null,
+          needsExpiry: needsExpiry ?? null,
         },
       });
       toast.success(t("documents.toastUploadSuccess"));
@@ -853,11 +961,14 @@ function AdminDocuments() {
     docType: string,
     expiryDate: string,
     cardNumber: string | null,
+    plateNumber?: string | null,
   ) => {
     setSavingRiderId(riderId);
     setSavingDocType(docType);
     try {
-      await updateExpiryFn({ data: { riderId, docType, expiryDate, cardNumber } });
+      await updateExpiryFn({
+        data: { riderId, docType, expiryDate, cardNumber, plateNumber: plateNumber ?? null },
+      });
       toast.success(t("documents.toastExpiryUpdateSuccess"));
       queryClient.invalidateQueries({ queryKey: ["rider-documents"] });
       queryClient.invalidateQueries({ queryKey: ["rider-documents-expiring"] });
@@ -944,7 +1055,10 @@ function AdminDocuments() {
                 </div>
                 <Select
                   value={statusFilter}
-                  onValueChange={(v) => setStatusFilter(v as "all" | DocStatus)}
+                  onValueChange={(v) => {
+                    setStatusFilter(v as "all" | DocStatus);
+                    if (v !== "missing") setMissingDocTypeFilter("all");
+                  }}
                 >
                   <SelectTrigger className="sm:w-52">
                     <SelectValue />
@@ -957,6 +1071,24 @@ function AdminDocuments() {
                     ))}
                   </SelectContent>
                 </Select>
+                {statusFilter === "missing" && (
+                  <Select
+                    value={missingDocTypeFilter}
+                    onValueChange={(v) => setMissingDocTypeFilter(v as "all" | DocType)}
+                  >
+                    <SelectTrigger className="sm:w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("documents.missingAnyTypeOption")}</SelectItem>
+                      {DOC_TYPES.map((dt) => (
+                        <SelectItem key={dt} value={dt}>
+                          {t(docTypeKey(dt))}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 {areas.length > 0 && (
                   <AreaFilterPicker
                     areas={areas}
@@ -1069,11 +1201,34 @@ function AdminDocuments() {
                                   savingDocType={savingRiderId === r.id ? savingDocType : null}
                                   canWrite={canWrite}
                                   t={t}
-                                  onUpload={(docType, file, expiryDate, cardNumber, label) =>
-                                    handleUpload(r.id, docType, file, expiryDate, cardNumber, label)
+                                  onUpload={(
+                                    docType,
+                                    file,
+                                    expiryDate,
+                                    cardNumber,
+                                    label,
+                                    plateNumber,
+                                    needsExpiry,
+                                  ) =>
+                                    handleUpload(
+                                      r.id,
+                                      docType,
+                                      file,
+                                      expiryDate,
+                                      cardNumber,
+                                      label,
+                                      plateNumber,
+                                      needsExpiry,
+                                    )
                                   }
-                                  onUpdateExpiry={(docType, expiryDate, cardNumber) =>
-                                    handleUpdateExpiry(r.id, docType, expiryDate, cardNumber)
+                                  onUpdateExpiry={(docType, expiryDate, cardNumber, plateNumber) =>
+                                    handleUpdateExpiry(
+                                      r.id,
+                                      docType,
+                                      expiryDate,
+                                      cardNumber,
+                                      plateNumber,
+                                    )
                                   }
                                   onDelete={(docType) => handleDelete(r.id, docType)}
                                   onView={(docType) => handleView(r.id, docType)}
@@ -1176,11 +1331,28 @@ function AdminDocuments() {
                             savingDocType={savingRiderId === r.id ? savingDocType : null}
                             canWrite={canWrite}
                             t={t}
-                            onUpload={(docType, file, expiryDate, cardNumber, label) =>
-                              handleUpload(r.id, docType, file, expiryDate, cardNumber, label)
+                            onUpload={(
+                              docType,
+                              file,
+                              expiryDate,
+                              cardNumber,
+                              label,
+                              plateNumber,
+                              needsExpiry,
+                            ) =>
+                              handleUpload(
+                                r.id,
+                                docType,
+                                file,
+                                expiryDate,
+                                cardNumber,
+                                label,
+                                plateNumber,
+                                needsExpiry,
+                              )
                             }
-                            onUpdateExpiry={(docType, expiryDate, cardNumber) =>
-                              handleUpdateExpiry(r.id, docType, expiryDate, cardNumber)
+                            onUpdateExpiry={(docType, expiryDate, cardNumber, plateNumber) =>
+                              handleUpdateExpiry(r.id, docType, expiryDate, cardNumber, plateNumber)
                             }
                             onDelete={(docType) => handleDelete(r.id, docType)}
                             onView={(docType) => handleView(r.id, docType)}

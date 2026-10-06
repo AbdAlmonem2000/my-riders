@@ -16,7 +16,9 @@ export const listAnnouncements = createServerFn({ method: "GET" })
       .from("announcement_reads")
       .select("announcement_id")
       .eq("user_id", userId);
-    const readIds = new Set((reads ?? []).map((r: { announcement_id: string }) => r.announcement_id));
+    const readIds = new Set(
+      (reads ?? []).map((r: { announcement_id: string }) => r.announcement_id),
+    );
 
     const list = (announcements ?? []).map((a) => ({
       id: a.id,

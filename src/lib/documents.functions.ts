@@ -9,7 +9,9 @@ import {
   isOperatingCardDocType,
   isValidExpiryDate,
   isValidOperatingCardNumber,
+  looksLikeOperatingCardLabel,
   OPERATING_CARD_NUMBER_FORMAT,
+  OPERATING_CARD_TYPES,
 } from "@/lib/document-status";
 
 // Accepts either one of the fixed doc types or a client-generated
@@ -24,8 +26,12 @@ const DocTypeSchema = z
 // payload.
 const ExpiryDateSchema = z.string().nullable().optional();
 
-function resolveExpiryDate(docType: string, expiryDate: string | null | undefined): string | null {
-  if (!docTypeNeedsExpiry(docType)) return null;
+function resolveExpiryDate(
+  docType: string,
+  expiryDate: string | null | undefined,
+  customNeedsExpiry?: boolean | null,
+): string | null {
+  if (!docTypeNeedsExpiry(docType, customNeedsExpiry)) return null;
   if (!expiryDate || !isValidExpiryDate(expiryDate)) {
     throw new Error("تاريخ الانتهاء غير صحيح");
   }
@@ -91,15 +97,24 @@ export async function assertOperatingCardAssignment(
   riderArea: string | null,
   docType: string,
   cardNumber: string,
+  // Present only for a custom "كرت تشغيل..." document — since every
+  // custom doc_type is a one-off UUID, riders sharing this card can only be
+  // found by matching the exact same admin-typed label, not doc_type.
+  label?: string | null,
 ) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: sameCardRaw } = await supabaseAdmin
+  const isCustomCardGroup =
+    !OPERATING_CARD_TYPES.has(docType) && looksLikeOperatingCardLabel(label);
+  let sameCardQuery = supabaseAdmin
     .from("rider_documents")
     .select("rider_id")
     .eq("company_id", companyId)
-    .eq("doc_type", docType)
     .eq("card_number", cardNumber)
     .neq("rider_id", riderId);
+  sameCardQuery = isCustomCardGroup
+    ? sameCardQuery.eq("label", label!.trim())
+    : sameCardQuery.eq("doc_type", docType);
+  const { data: sameCardRaw } = await sameCardQuery;
   const otherRiderIds = [
     ...new Set((sameCardRaw ?? []).map((r: { rider_id: string }) => r.rider_id)),
   ];
@@ -169,6 +184,14 @@ const UploadInput = z.object({
   // Required only the first time a custom (non-fixed) document is created —
   // the 7 fixed slots get their name from the UI translations instead.
   label: z.string().max(100).nullable().optional(),
+  // Only meaningful (and only ever sent) the first time a custom document
+  // is created — whether THIS particular custom type carries an expiry
+  // date at all. Ignored for the 7 fixed slots, which already know this
+  // from their own type key.
+  needsExpiry: z.boolean().nullable().optional(),
+  // Only meaningful for an operating-card-type document (fixed or a custom
+  // one named "كرت تشغيل...").
+  plateNumber: z.string().trim().max(20).nullable().optional(),
 });
 
 // Uploads (or replaces) one rider's document. The file itself is already in
@@ -194,9 +217,27 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!rider) throw new Error("المندوب غير موجود");
 
-    const cardNumber = data.cardNumber?.trim() || null;
+    const { data: prev } = await supabase
+      .from("rider_documents")
+      .select("storage_path, label, needs_expiry")
+      .eq("rider_id", data.riderId)
+      .eq("doc_type", data.docType)
+      .maybeSingle();
 
-    if (isOperatingCardDocType(data.docType)) {
+    let label: string | null = null;
+    if (!isKnownDocType(data.docType)) {
+      label = data.label?.trim() || prev?.label || null;
+      if (!label) throw new Error("لازم تكتب اسم المستند");
+    }
+    // A fixed slot's expiry requirement is baked into its type key; a
+    // custom one is whatever was chosen when it was created (or re-chosen
+    // now, on re-upload), defaulting to "needs an expiry" if never set.
+    const needsExpiry = data.needsExpiry ?? prev?.needs_expiry ?? true;
+
+    const cardNumber = data.cardNumber?.trim() || null;
+    const isCard = isOperatingCardDocType(data.docType, label);
+
+    if (isCard) {
       if (!cardNumber) throw new Error("لازم إدخال رقم كرت التشغيل");
       if (!isValidOperatingCardNumber(cardNumber)) {
         throw new Error(`رقم كرت التشغيل لازم يكون بالشكل ${OPERATING_CARD_NUMBER_FORMAT} بالظبط`);
@@ -207,20 +248,8 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
         rider.area,
         data.docType,
         cardNumber,
+        label,
       );
-    }
-
-    const { data: prev } = await supabase
-      .from("rider_documents")
-      .select("storage_path, label")
-      .eq("rider_id", data.riderId)
-      .eq("doc_type", data.docType)
-      .maybeSingle();
-
-    let label: string | null = null;
-    if (!isKnownDocType(data.docType)) {
-      label = data.label?.trim() || prev?.label || null;
-      if (!label) throw new Error("لازم تكتب اسم المستند");
     }
 
     const { error } = await supabase.from("rider_documents").upsert(
@@ -230,8 +259,10 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
         doc_type: data.docType,
         storage_path: data.storagePath,
         file_name: data.fileName,
-        card_number: isOperatingCardDocType(data.docType) ? cardNumber : null,
-        expiry_date: resolveExpiryDate(data.docType, data.expiryDate),
+        card_number: isCard ? cardNumber : null,
+        plate_number: isCard ? data.plateNumber?.trim() || null : null,
+        expiry_date: resolveExpiryDate(data.docType, data.expiryDate, needsExpiry),
+        needs_expiry: needsExpiry,
         label,
         uploaded_at: new Date().toISOString(),
       },
@@ -252,6 +283,7 @@ const UpdateExpiryInput = z.object({
   docType: DocTypeSchema,
   expiryDate: ExpiryDateSchema,
   cardNumber: z.string().nullable().optional(),
+  plateNumber: z.string().trim().max(20).nullable().optional(),
 });
 
 // Changes just the expiry date (and, for an operating card, the card number)
@@ -265,18 +297,19 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
 
     const { data: existing } = await supabase
       .from("rider_documents")
-      .select("id, card_number")
+      .select("id, card_number, label, needs_expiry")
       .eq("rider_id", data.riderId)
       .eq("doc_type", data.docType)
       .eq("company_id", companyId)
       .maybeSingle();
     if (!existing) throw new Error("لازم ترفع الملف أول مرة قبل ما تقدر تعدّل تاريخه");
-    if (!docTypeNeedsExpiry(data.docType)) {
+    if (!docTypeNeedsExpiry(data.docType, existing.needs_expiry)) {
       throw new Error("هذا النوع من المستندات ليس له تاريخ انتهاء");
     }
 
+    const isCard = isOperatingCardDocType(data.docType, existing.label);
     let cardNumber: string | null = existing.card_number;
-    if (isOperatingCardDocType(data.docType)) {
+    if (isCard) {
       const newCardNumber = data.cardNumber?.trim() || null;
       if (!newCardNumber) throw new Error("لازم إدخال رقم كرت التشغيل");
       if (!isValidOperatingCardNumber(newCardNumber)) {
@@ -296,6 +329,7 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
           rider.area,
           data.docType,
           newCardNumber,
+          existing.label,
         );
       }
       cardNumber = newCardNumber;
@@ -304,8 +338,9 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
     const { error } = await supabase
       .from("rider_documents")
       .update({
-        expiry_date: resolveExpiryDate(data.docType, data.expiryDate),
+        expiry_date: resolveExpiryDate(data.docType, data.expiryDate, existing.needs_expiry),
         card_number: cardNumber,
+        ...(isCard ? { plate_number: data.plateNumber?.trim() || null } : {}),
       })
       .eq("rider_id", data.riderId)
       .eq("doc_type", data.docType)

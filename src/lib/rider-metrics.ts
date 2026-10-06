@@ -11,17 +11,28 @@ export function isNumericLike(v: unknown): v is number {
   return false;
 }
 
+// Specific keywords ("deliveries"/"orders") come before the generic
+// "total"/"إجمالي" ones — a column like "total_verification_requests" also
+// contains "total", so if the generic keyword were checked first it could
+// win over the actual deliveries/orders column it sits next to.
 export const HIGHLIGHT_KEYS = {
-  total: ["total", "orders", "الطلبات", "إجمالي", "اجمالي", "deliveries", "التوصيلات"],
+  total: ["deliveries", "orders", "التوصيلات", "الطلبات", "total", "إجمالي", "اجمالي"],
   hours: ["hour", "ساعات", "ساعة"],
   salary: ["net", "salary", "راتب", "صافي", "المستحق"],
 };
+
+// Never picked as a metric match even when a keyword also matches —
+// "total_verification_requests"/"successful_verification_requests" contain
+// "total" but aren't a deliveries/orders total at all.
+const EXCLUDED_METRIC_SUBSTRINGS = ["verification"];
 
 export function pickMetric(
   data: Record<string, unknown>,
   keys: string[],
 ): { label: string; value: unknown } | null {
-  const lower = Object.keys(data).map((k) => [k, k.toLowerCase()] as const);
+  const lower = Object.keys(data)
+    .map((k) => [k, k.toLowerCase()] as const)
+    .filter(([, l]) => !EXCLUDED_METRIC_SUBSTRINGS.some((x) => l.includes(x)));
   for (const key of keys) {
     const hit = lower.find(([, l]) => l.includes(key.toLowerCase()));
     if (hit && isNumericLike(data[hit[0]])) {

@@ -264,6 +264,7 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string
+          day: number | null
           file_name: string
           id: string
           is_hidden: boolean
@@ -271,12 +272,14 @@ export type Database = {
           note: string | null
           rider_count: number
           storage_path: string | null
+          title: string
           uploaded_by: string | null
           year: number
         }
         Insert: {
           company_id: string
           created_at?: string
+          day?: number | null
           file_name: string
           id?: string
           is_hidden?: boolean
@@ -284,12 +287,14 @@ export type Database = {
           note?: string | null
           rider_count?: number
           storage_path?: string | null
+          title?: string
           uploaded_by?: string | null
           year: number
         }
         Update: {
           company_id?: string
           created_at?: string
+          day?: number | null
           file_name?: string
           id?: string
           is_hidden?: boolean
@@ -297,6 +302,7 @@ export type Database = {
           note?: string | null
           rider_count?: number
           storage_path?: string | null
+          title?: string
           uploaded_by?: string | null
           year?: number
         }
@@ -360,6 +366,7 @@ export type Database = {
           file_name: string | null
           id: string
           label: string | null
+          needs_expiry: boolean
           plate_number: string | null
           rider_id: string
           storage_path: string | null
@@ -373,6 +380,7 @@ export type Database = {
           file_name?: string | null
           id?: string
           label?: string | null
+          needs_expiry?: boolean
           plate_number?: string | null
           rider_id: string
           storage_path?: string | null
@@ -386,6 +394,7 @@ export type Database = {
           file_name?: string | null
           id?: string
           label?: string | null
+          needs_expiry?: boolean
           plate_number?: string | null
           rider_id?: string
           storage_path?: string | null
@@ -860,10 +869,22 @@ export type Database = {
         Returns: {
           columns: Json
           data: Json
+          day: number | null
           file_name: string
           month: number
           note: string | null
           year: number
+        }[]
+      }
+      get_rider_reports_bulk: {
+        Args: { _password?: string; _report_ids: string[]; _rider_id: string }
+        Returns: {
+          columns: Json
+          data: Json
+          day: number | null
+          file_name: string
+          note: string | null
+          report_id: string
         }[]
       }
       get_user_company: { Args: { _user_id: string }; Returns: string }
@@ -913,6 +934,7 @@ export type Database = {
       list_rider_reports: {
         Args: { _password?: string; _rider_id: string }
         Returns: {
+          day: number | null
           file_name: string
           month: number
           report_id: string

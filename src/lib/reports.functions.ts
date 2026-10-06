@@ -91,6 +91,7 @@ const UploadInput = z
   .object({
     month: z.number().int().min(1).max(12),
     year: z.number().int().min(2000).max(2100),
+    day: z.number().int().min(1).max(31),
     fileName: z.string().min(1),
     storagePath: z.string().nullable(),
     headers: z.array(z.string()),
@@ -98,15 +99,26 @@ const UploadInput = z
     idColumn: z.string().nullable(),
     nameColumn: z.string().nullable(),
     rows: z.array(RowSchema),
-    // "new"     -> fail if a report already exists for this month
-    // "replace" -> drop the existing month's report and start fresh
+    // "new"     -> fail if a report already exists for this day
+    // "replace" -> drop the existing day's report and start fresh
     // "merge"   -> keep it, add this sheet's columns onto each rider's row
     mode: z.enum(["new", "replace", "merge"]).optional(),
     note: z.string().trim().max(2000).nullable().optional(),
   })
   .refine((d) => d.iqamaColumn || d.idColumn, {
     message: "لازم عمود رقم إقامة أو ID على الأقل",
-  });
+  })
+  .refine(
+    (d) => {
+      const date = new Date(Date.UTC(d.year, d.month - 1, d.day));
+      return (
+        date.getUTCFullYear() === d.year &&
+        date.getUTCMonth() === d.month - 1 &&
+        date.getUTCDate() === d.day
+      );
+    },
+    { message: "التاريخ غير صحيح" },
+  );
 
 async function getCallerCompany(
   supabase: ReturnType<typeof getSupabaseFromContext>,
@@ -176,20 +188,21 @@ export const uploadReport = createServerFn({ method: "POST" })
     // company, so every riders query below is scoped to it explicitly.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Check for existing report same month/year within this company
+    // Check for an existing report for this exact day within this company
     const { data: existing } = await supabase
       .from("reports")
       .select("id, storage_path")
       .eq("company_id", companyId)
       .eq("month", data.month)
       .eq("year", data.year)
+      .eq("day", data.day)
       .maybeSingle();
 
     const mode = data.mode ?? "new";
     const mergeIntoExisting = !!existing && mode === "merge";
 
     if (existing && mode === "new") {
-      throw new Error("يوجد تقرير لهذا الشهر بالفعل. اختر «استبدال» أو «دمج مع الموجود».");
+      throw new Error("يوجد تقرير لهذا اليوم بالفعل. اختر «استبدال» أو «دمج مع الموجود».");
     }
     if (existing && mode === "replace") {
       // Deleting the report row cascades its sheets and rider rows, but the
@@ -221,321 +234,360 @@ export const uploadReport = createServerFn({ method: "POST" })
           company_id: companyId,
           month: data.month,
           year: data.year,
+          day: data.day,
           file_name: data.fileName,
           storage_path: data.storagePath,
           uploaded_by: userId,
           rider_count: 0,
           note: data.note?.trim() || null,
+          // The live table also carries a legacy `title` column (outside
+          // this app's own schema/migrations) with a NOT NULL unique
+          // constraint on (company_id, month, year, title) — every row
+          // left at its shared default collided the moment a second day
+          // was uploaded in the same month, regardless of `day`. This app
+          // never reads `title` anywhere; giving it a day-specific value
+          // just keeps every row distinct so that legacy constraint never
+          // fires.
+          title: `${data.year}-${String(data.month).padStart(2, "0")}-${String(data.day).padStart(2, "0")}`,
         })
         .select("id")
         .single();
-      if (reportErr || !created) throw new Error(reportErr?.message ?? "فشل إنشاء التقرير");
+      if (reportErr || !created) {
+        // 23505 = unique_violation — the "existing" lookup above missed it
+        // (e.g. a second submission landing moments after the first one
+        // already committed), so this is still genuinely "a report for this
+        // day already exists," just caught at the database instead of
+        // upfront. Surfacing the raw Postgres message here would otherwise
+        // leak straight to the admin instead of the same clear choice the
+        // upfront check already gives them.
+        if (reportErr?.code === "23505") {
+          throw new Error("يوجد تقرير لهذا اليوم بالفعل. اختر «استبدال» أو «دمج مع الموجود».");
+        }
+        throw new Error(reportErr?.message ?? "فشل إنشاء التقرير");
+      }
       report = created;
     }
 
     type Row = Record<string, unknown>;
 
-    // Resolve every report row against riders already on file. A rider is
-    // keyed by an Iqama number and/or a separate ID number — established up
-    // front via the rider-directory sheet, or the first time they appear in
-    // any report. A monthly report row only has to carry ONE of those
-    // numbers: matchRider() finds the existing rider by either, so an
-    // ID-only report still lands on the right person instead of minting a
-    // duplicate. A monthly report is never the authority on identity, so an
-    // existing name/number is left untouched and only blank fields get
-    // backfilled — the directory owns name/photo/extra data.
-    const { data: existingRaw } = await supabaseAdmin
-      .from("riders")
-      .select("id, iqama_number, id_number, rider_name")
-      .eq("company_id", companyId)
-      .is("deleted_at", null);
-    const existingRiders = (existingRaw ?? []) as RiderIdentity[];
-    const riderIndex = indexRiders(existingRiders);
-    const existingById = new Map(existingRiders.map((r) => [r.id, r]));
+    // Everything from here on can fail partway through (a bad sheet, a
+    // write error, a timeout) after the `reports` row above was already
+    // created fresh this call — without this, a failed upload would leave
+    // that empty row behind, permanently blocking any future "new" upload
+    // for the same day with a false "already exists" (the row is real, it
+    // just never finished). The catch below undoes exactly that row (never
+    // one we were only merging into) so a failed attempt can always be
+    // retried cleanly.
+    try {
+      // Resolve every report row against riders already on file. A rider is
+      // keyed by an Iqama number and/or a separate ID number — established up
+      // front via the rider-directory sheet, or the first time they appear in
+      // any report. A monthly report row only has to carry ONE of those
+      // numbers: matchRider() finds the existing rider by either, so an
+      // ID-only report still lands on the right person instead of minting a
+      // duplicate. A monthly report is never the authority on identity, so an
+      // existing name/number is left untouched and only blank fields get
+      // backfilled — the directory owns name/photo/extra data.
+      const { data: existingRaw } = await supabaseAdmin
+        .from("riders")
+        .select("id, iqama_number, id_number, rider_name")
+        .eq("company_id", companyId)
+        .is("deleted_at", null);
+      const existingRiders = (existingRaw ?? []) as RiderIdentity[];
+      const riderIndex = indexRiders(existingRiders);
+      const existingById = new Map(existingRiders.map((r) => [r.id, r]));
 
-    interface Resolved {
-      riderId: string | null;
-      iqama: string | null;
-      idNumber: string | null;
-      name: string | null;
-      row: Row;
-    }
-    // When the same rider shows up on more than one row of the same sheet
-    // (e.g. one line per shift), the rows are merged into a single record:
-    // plain numeric columns are added together, and a blank cell is filled
-    // from a later row that has a value. So orders 5 + orders 6 becomes 11.
-    const resolvedByKey = new Map<string, Resolved>();
-    let malformed = 0;
-    for (const row of data.rows) {
-      const rawIqama0 = cellText(row, data.iqamaColumn);
-      const rawId0 = cellText(row, data.idColumn);
-      const rawIqama = rawIqama0 && looksLikeIdentifier(rawIqama0) ? rawIqama0 : null;
-      const rawId = rawId0 && looksLikeIdentifier(rawId0) ? rawId0 : null;
-      if (!rawIqama && !rawId) {
-        if (rawIqama0 || rawId0) malformed++;
-        continue;
+      interface Resolved {
+        riderId: string | null;
+        iqama: string | null;
+        idNumber: string | null;
+        name: string | null;
+        row: Row;
       }
-      const name = cellText(row, data.nameColumn);
-      const match = matchRider(riderIndex, rawIqama, rawId);
-      const dedupKey = match ? `r:${match.id}` : `n:${rawIqama ?? ""}|${rawId ?? ""}`;
-      const prev = resolvedByKey.get(dedupKey);
-      if (prev) {
-        prev.row = mergeReportRows(prev.row, row, data.headers);
-        prev.name ??= name;
-        prev.iqama ??= rawIqama;
-        prev.idNumber ??= rawId;
-      } else {
-        resolvedByKey.set(dedupKey, {
-          riderId: match?.id ?? null,
-          iqama: rawIqama,
-          idNumber: rawId,
-          name,
-          row: { ...row },
-        });
+      // When the same rider shows up on more than one row of the same sheet
+      // (e.g. one line per shift), the rows are merged into a single record:
+      // plain numeric columns are added together, and a blank cell is filled
+      // from a later row that has a value. So orders 5 + orders 6 becomes 11.
+      const resolvedByKey = new Map<string, Resolved>();
+      let malformed = 0;
+      for (const row of data.rows) {
+        const rawIqama0 = cellText(row, data.iqamaColumn);
+        const rawId0 = cellText(row, data.idColumn);
+        const rawIqama = rawIqama0 && looksLikeIdentifier(rawIqama0) ? rawIqama0 : null;
+        const rawId = rawId0 && looksLikeIdentifier(rawId0) ? rawId0 : null;
+        if (!rawIqama && !rawId) {
+          if (rawIqama0 || rawId0) malformed++;
+          continue;
+        }
+        const name = cellText(row, data.nameColumn);
+        const match = matchRider(riderIndex, rawIqama, rawId);
+        const dedupKey = match ? `r:${match.id}` : `n:${rawIqama ?? ""}|${rawId ?? ""}`;
+        const prev = resolvedByKey.get(dedupKey);
+        if (prev) {
+          prev.row = mergeReportRows(prev.row, row, data.headers);
+          prev.name ??= name;
+          prev.iqama ??= rawIqama;
+          prev.idNumber ??= rawId;
+        } else {
+          resolvedByKey.set(dedupKey, {
+            riderId: match?.id ?? null,
+            iqama: rawIqama,
+            idNumber: rawId,
+            name,
+            row: { ...row },
+          });
+        }
       }
-    }
-    const resolvedRows = [...resolvedByKey.values()];
+      const resolvedRows = [...resolvedByKey.values()];
 
-    if (resolvedRows.length === 0 && malformed > 0) {
-      // Nothing usable in the sheet. If we just created the report row, undo
-      // it so it doesn't linger empty — but never touch an existing report
-      // we were only merging into.
+      if (resolvedRows.length === 0 && malformed > 0) {
+        // Nothing usable in the sheet — the outer catch below undoes the
+        // report row it just created (never one we were only merging into).
+        throw new Error(
+          "الملف مش متقسّم لأعمدة صح — تأكد إن رقم الإقامة/الـ ID كل واحد في عمود مستقل (Excel) أو مفصول بفاصلة (CSV).",
+        );
+      }
+
+      // Backfill blank identity fields on matched riders, batched into one
+      // upsert-by-id instead of one UPDATE per row — a first-time ID backfill
+      // across a large company can touch hundreds of rows, and awaiting them
+      // serially is slow enough to blow the serverless function's time limit.
+      const patchPayload: {
+        id: string;
+        company_id: string;
+        iqama_number: string | null;
+        id_number: string | null;
+        rider_name: string | null;
+      }[] = [];
+      for (const r of resolvedRows) {
+        if (!r.riderId) continue;
+        const ex = existingById.get(r.riderId)!;
+        const nextIqama = ex.iqama_number ?? r.iqama;
+        const nextId = ex.id_number ?? r.idNumber;
+        const nextName = ex.rider_name ?? r.name;
+        if (
+          nextIqama !== ex.iqama_number ||
+          nextId !== ex.id_number ||
+          nextName !== ex.rider_name
+        ) {
+          patchPayload.push({
+            id: r.riderId,
+            company_id: companyId,
+            iqama_number: nextIqama,
+            id_number: nextId,
+            rider_name: nextName,
+          });
+        }
+      }
+      // Rows written to the DB in one call — kept modest so no single request
+      // is large enough to trip a body-size or gateway timeout on a big sheet.
+      const WRITE_CHUNK = 300;
+
+      for (let i = 0; i < patchPayload.length; i += WRITE_CHUNK) {
+        const slice = patchPayload.slice(i, i + WRITE_CHUNK);
+        const { error } = await supabaseAdmin.from("riders").upsert(slice, { onConflict: "id" });
+        if (error) throw new Error(error.message);
+      }
+
+      // Create riders seen for the first time. A row carrying only an ID
+      // becomes an ID-only rider (iqama_number stays null) rather than
+      // stuffing the ID into the Iqama column. `.select()` on the write hands
+      // back the generated ids directly — no separate re-read (a `.in()` over
+      // hundreds of numbers builds a URL long enough to be rejected).
+      const newRows = resolvedRows.filter((r) => !r.riderId);
+      if (newRows.length > 0) {
+        const withIqama = newRows.filter((r) => r.iqama);
+        const idOnly = newRows.filter((r) => !r.iqama);
+        const createdList: RiderIdentity[] = [];
+
+        for (let i = 0; i < withIqama.length; i += WRITE_CHUNK) {
+          const slice = withIqama.slice(i, i + WRITE_CHUNK);
+          const { data: c, error } = await supabaseAdmin
+            .from("riders")
+            .upsert(
+              slice.map((r) => ({
+                company_id: companyId,
+                iqama_number: r.iqama,
+                id_number: r.idNumber,
+                rider_name: r.name,
+              })),
+              { onConflict: "company_id,iqama_number", ignoreDuplicates: false },
+            )
+            .select("id, iqama_number, id_number");
+          if (error) throw new Error(error.message);
+          createdList.push(...((c ?? []) as RiderIdentity[]));
+        }
+
+        for (let i = 0; i < idOnly.length; i += WRITE_CHUNK) {
+          const slice = idOnly.slice(i, i + WRITE_CHUNK);
+          const { data: c, error } = await supabaseAdmin
+            .from("riders")
+            .insert(
+              slice.map((r) => ({
+                company_id: companyId,
+                iqama_number: null,
+                id_number: r.idNumber,
+                rider_name: r.name,
+              })),
+            )
+            .select("id, iqama_number, id_number");
+          if (error) throw new Error(error.message);
+          createdList.push(...((c ?? []) as RiderIdentity[]));
+        }
+
+        const createdIndex = indexRiders(createdList);
+        for (const r of resolvedRows) {
+          if (r.riderId) continue;
+          const m = matchRider(createdIndex, r.iqama, r.idNumber);
+          if (m) r.riderId = m.id;
+        }
+      }
+
+      const withRider = resolvedRows.filter(
+        (r): r is Resolved & { riderId: string } => !!r.riderId,
+      );
+
+      // Record this upload as one sheet of the month's report.
+      const { data: sheet, error: sheetErr } = await supabase
+        .from("report_sheets")
+        .insert({
+          report_id: report.id,
+          company_id: companyId,
+          file_name: data.fileName,
+          storage_path: data.storagePath,
+          headers: data.headers as Json,
+          rider_count: withRider.length,
+        })
+        .select("id")
+        .single();
+      if (sheetErr || !sheet) throw new Error(sheetErr?.message ?? "فشل تسجيل الشيت");
+      const sheetId: string = sheet.id;
+      // Only the cells this sheet actually filled are attributed to it, so
+      // deleting the sheet later strips exactly those columns and no others.
+      const sourcesFor = (row: Row): Record<string, string> => {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(row)) {
+          if (v !== undefined && v !== null && v !== "") out[k] = sheetId;
+        }
+        return out;
+      };
+
+      if (mergeIntoExisting) {
+        // Pull the rows this month already has for the riders in this sheet,
+        // then lay the new columns on top (or insert a fresh row for a rider
+        // who wasn't in the earlier sheet).
+        const riderIds = withRider.map((r) => r.riderId);
+        const existingRR = new Map<
+          string,
+          {
+            id: string;
+            data: Record<string, unknown>;
+            columns: unknown;
+            column_sources: Record<string, string>;
+          }
+        >();
+        for (let i = 0; i < riderIds.length; i += 200) {
+          const slice = riderIds.slice(i, i + 200);
+          const { data: rows, error } = await supabase
+            .from("rider_reports")
+            .select("id, rider_id, data, columns, column_sources")
+            .eq("report_id", report.id)
+            .in("rider_id", slice);
+          if (error) throw new Error(error.message);
+          for (const row of rows ?? []) {
+            existingRR.set(row.rider_id, {
+              id: row.id,
+              data: (row.data ?? {}) as Record<string, unknown>,
+              columns: row.columns,
+              column_sources: (row.column_sources ?? {}) as Record<string, string>,
+            });
+          }
+        }
+
+        type RRRow = {
+          company_id: string;
+          report_id: string;
+          rider_id: string;
+          data: Json;
+          columns: Json;
+          column_sources: Json;
+        };
+        const updates: (RRRow & { id: string })[] = [];
+        const inserts: RRRow[] = [];
+        for (const r of withRider) {
+          const ex = existingRR.get(r.riderId);
+          const base: RRRow = {
+            company_id: companyId,
+            report_id: report.id,
+            rider_id: r.riderId,
+            data: (ex ? overlayReportRows(ex.data, r.row) : r.row) as Json,
+            columns: (ex ? unionColumns(ex.columns, data.headers) : data.headers) as Json,
+            column_sources: (ex
+              ? { ...ex.column_sources, ...sourcesFor(r.row) }
+              : sourcesFor(r.row)) as Json,
+          };
+          if (ex) updates.push({ ...base, id: ex.id });
+          else inserts.push(base);
+        }
+
+        for (let i = 0; i < updates.length; i += WRITE_CHUNK) {
+          const { error } = await supabase
+            .from("rider_reports")
+            .upsert(updates.slice(i, i + WRITE_CHUNK), { onConflict: "id" });
+          if (error) throw new Error(error.message);
+        }
+        for (let i = 0; i < inserts.length; i += WRITE_CHUNK) {
+          const { error } = await supabase
+            .from("rider_reports")
+            .insert(inserts.slice(i, i + WRITE_CHUNK));
+          if (error) throw new Error(error.message);
+        }
+
+        const { count } = await supabase
+          .from("rider_reports")
+          .select("id", { count: "exact", head: true })
+          .eq("report_id", report.id);
+        await supabase
+          .from("reports")
+          .update({ rider_count: count ?? 0 })
+          .eq("id", report.id);
+
+        return { reportId: report.id, count: withRider.length, merged: true, sheetId };
+      }
+
+      const riderReportsPayload = withRider.map((r) => ({
+        company_id: companyId,
+        report_id: report.id,
+        rider_id: r.riderId,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: r.row as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        columns: data.headers as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        column_sources: sourcesFor(r.row) as any,
+      }));
+
+      for (let i = 0; i < riderReportsPayload.length; i += WRITE_CHUNK) {
+        const chunk = riderReportsPayload.slice(i, i + WRITE_CHUNK);
+        const { error } = await supabase.from("rider_reports").insert(chunk);
+        if (error) throw new Error(error.message);
+      }
+
+      await supabase
+        .from("reports")
+        .update({ rider_count: riderReportsPayload.length })
+        .eq("id", report.id);
+
+      return { reportId: report.id, count: riderReportsPayload.length, merged: false, sheetId };
+    } catch (err) {
       if (!mergeIntoExisting) {
         await supabase.from("reports").delete().eq("id", report.id);
         if (data.storagePath) {
           await supabaseAdmin.storage.from("reports").remove([data.storagePath]);
         }
       }
-      throw new Error(
-        "الملف مش متقسّم لأعمدة صح — تأكد إن رقم الإقامة/الـ ID كل واحد في عمود مستقل (Excel) أو مفصول بفاصلة (CSV).",
-      );
+      throw err;
     }
-
-    // Backfill blank identity fields on matched riders, batched into one
-    // upsert-by-id instead of one UPDATE per row — a first-time ID backfill
-    // across a large company can touch hundreds of rows, and awaiting them
-    // serially is slow enough to blow the serverless function's time limit.
-    const patchPayload: {
-      id: string;
-      company_id: string;
-      iqama_number: string | null;
-      id_number: string | null;
-      rider_name: string | null;
-    }[] = [];
-    for (const r of resolvedRows) {
-      if (!r.riderId) continue;
-      const ex = existingById.get(r.riderId)!;
-      const nextIqama = ex.iqama_number ?? r.iqama;
-      const nextId = ex.id_number ?? r.idNumber;
-      const nextName = ex.rider_name ?? r.name;
-      if (nextIqama !== ex.iqama_number || nextId !== ex.id_number || nextName !== ex.rider_name) {
-        patchPayload.push({
-          id: r.riderId,
-          company_id: companyId,
-          iqama_number: nextIqama,
-          id_number: nextId,
-          rider_name: nextName,
-        });
-      }
-    }
-    // Rows written to the DB in one call — kept modest so no single request
-    // is large enough to trip a body-size or gateway timeout on a big sheet.
-    const WRITE_CHUNK = 300;
-
-    for (let i = 0; i < patchPayload.length; i += WRITE_CHUNK) {
-      const slice = patchPayload.slice(i, i + WRITE_CHUNK);
-      const { error } = await supabaseAdmin.from("riders").upsert(slice, { onConflict: "id" });
-      if (error) throw new Error(error.message);
-    }
-
-    // Create riders seen for the first time. A row carrying only an ID
-    // becomes an ID-only rider (iqama_number stays null) rather than
-    // stuffing the ID into the Iqama column. `.select()` on the write hands
-    // back the generated ids directly — no separate re-read (a `.in()` over
-    // hundreds of numbers builds a URL long enough to be rejected).
-    const newRows = resolvedRows.filter((r) => !r.riderId);
-    if (newRows.length > 0) {
-      const withIqama = newRows.filter((r) => r.iqama);
-      const idOnly = newRows.filter((r) => !r.iqama);
-      const createdList: RiderIdentity[] = [];
-
-      for (let i = 0; i < withIqama.length; i += WRITE_CHUNK) {
-        const slice = withIqama.slice(i, i + WRITE_CHUNK);
-        const { data: c, error } = await supabaseAdmin
-          .from("riders")
-          .upsert(
-            slice.map((r) => ({
-              company_id: companyId,
-              iqama_number: r.iqama,
-              id_number: r.idNumber,
-              rider_name: r.name,
-            })),
-            { onConflict: "company_id,iqama_number", ignoreDuplicates: false },
-          )
-          .select("id, iqama_number, id_number");
-        if (error) throw new Error(error.message);
-        createdList.push(...((c ?? []) as RiderIdentity[]));
-      }
-
-      for (let i = 0; i < idOnly.length; i += WRITE_CHUNK) {
-        const slice = idOnly.slice(i, i + WRITE_CHUNK);
-        const { data: c, error } = await supabaseAdmin
-          .from("riders")
-          .insert(
-            slice.map((r) => ({
-              company_id: companyId,
-              iqama_number: null,
-              id_number: r.idNumber,
-              rider_name: r.name,
-            })),
-          )
-          .select("id, iqama_number, id_number");
-        if (error) throw new Error(error.message);
-        createdList.push(...((c ?? []) as RiderIdentity[]));
-      }
-
-      const createdIndex = indexRiders(createdList);
-      for (const r of resolvedRows) {
-        if (r.riderId) continue;
-        const m = matchRider(createdIndex, r.iqama, r.idNumber);
-        if (m) r.riderId = m.id;
-      }
-    }
-
-    const withRider = resolvedRows.filter((r): r is Resolved & { riderId: string } => !!r.riderId);
-
-    // Record this upload as one sheet of the month's report.
-    const { data: sheet, error: sheetErr } = await supabase
-      .from("report_sheets")
-      .insert({
-        report_id: report.id,
-        company_id: companyId,
-        file_name: data.fileName,
-        storage_path: data.storagePath,
-        headers: data.headers as Json,
-        rider_count: withRider.length,
-      })
-      .select("id")
-      .single();
-    if (sheetErr || !sheet) throw new Error(sheetErr?.message ?? "فشل تسجيل الشيت");
-    const sheetId: string = sheet.id;
-    // Only the cells this sheet actually filled are attributed to it, so
-    // deleting the sheet later strips exactly those columns and no others.
-    const sourcesFor = (row: Row): Record<string, string> => {
-      const out: Record<string, string> = {};
-      for (const [k, v] of Object.entries(row)) {
-        if (v !== undefined && v !== null && v !== "") out[k] = sheetId;
-      }
-      return out;
-    };
-
-    if (mergeIntoExisting) {
-      // Pull the rows this month already has for the riders in this sheet,
-      // then lay the new columns on top (or insert a fresh row for a rider
-      // who wasn't in the earlier sheet).
-      const riderIds = withRider.map((r) => r.riderId);
-      const existingRR = new Map<
-        string,
-        {
-          id: string;
-          data: Record<string, unknown>;
-          columns: unknown;
-          column_sources: Record<string, string>;
-        }
-      >();
-      for (let i = 0; i < riderIds.length; i += 200) {
-        const slice = riderIds.slice(i, i + 200);
-        const { data: rows, error } = await supabase
-          .from("rider_reports")
-          .select("id, rider_id, data, columns, column_sources")
-          .eq("report_id", report.id)
-          .in("rider_id", slice);
-        if (error) throw new Error(error.message);
-        for (const row of rows ?? []) {
-          existingRR.set(row.rider_id, {
-            id: row.id,
-            data: (row.data ?? {}) as Record<string, unknown>,
-            columns: row.columns,
-            column_sources: (row.column_sources ?? {}) as Record<string, string>,
-          });
-        }
-      }
-
-      type RRRow = {
-        company_id: string;
-        report_id: string;
-        rider_id: string;
-        data: Json;
-        columns: Json;
-        column_sources: Json;
-      };
-      const updates: (RRRow & { id: string })[] = [];
-      const inserts: RRRow[] = [];
-      for (const r of withRider) {
-        const ex = existingRR.get(r.riderId);
-        const base: RRRow = {
-          company_id: companyId,
-          report_id: report.id,
-          rider_id: r.riderId,
-          data: (ex ? overlayReportRows(ex.data, r.row) : r.row) as Json,
-          columns: (ex ? unionColumns(ex.columns, data.headers) : data.headers) as Json,
-          column_sources: (ex
-            ? { ...ex.column_sources, ...sourcesFor(r.row) }
-            : sourcesFor(r.row)) as Json,
-        };
-        if (ex) updates.push({ ...base, id: ex.id });
-        else inserts.push(base);
-      }
-
-      for (let i = 0; i < updates.length; i += WRITE_CHUNK) {
-        const { error } = await supabase
-          .from("rider_reports")
-          .upsert(updates.slice(i, i + WRITE_CHUNK), { onConflict: "id" });
-        if (error) throw new Error(error.message);
-      }
-      for (let i = 0; i < inserts.length; i += WRITE_CHUNK) {
-        const { error } = await supabase
-          .from("rider_reports")
-          .insert(inserts.slice(i, i + WRITE_CHUNK));
-        if (error) throw new Error(error.message);
-      }
-
-      const { count } = await supabase
-        .from("rider_reports")
-        .select("id", { count: "exact", head: true })
-        .eq("report_id", report.id);
-      await supabase
-        .from("reports")
-        .update({ rider_count: count ?? 0 })
-        .eq("id", report.id);
-
-      return { reportId: report.id, count: withRider.length, merged: true, sheetId };
-    }
-
-    const riderReportsPayload = withRider.map((r) => ({
-      company_id: companyId,
-      report_id: report.id,
-      rider_id: r.riderId,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data: r.row as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      columns: data.headers as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      column_sources: sourcesFor(r.row) as any,
-    }));
-
-    for (let i = 0; i < riderReportsPayload.length; i += WRITE_CHUNK) {
-      const chunk = riderReportsPayload.slice(i, i + WRITE_CHUNK);
-      const { error } = await supabase.from("rider_reports").insert(chunk);
-      if (error) throw new Error(error.message);
-    }
-
-    await supabase
-      .from("reports")
-      .update({ rider_count: riderReportsPayload.length })
-      .eq("id", report.id);
-
-    return { reportId: report.id, count: riderReportsPayload.length, merged: false, sheetId };
   });
 
 export const deleteReport = createServerFn({ method: "POST" })

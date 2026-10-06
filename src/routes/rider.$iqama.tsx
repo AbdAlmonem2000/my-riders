@@ -48,11 +48,12 @@ import { UserMenu } from "@/components/user-menu";
 import { useRiderPush } from "@/lib/push-client";
 import { formatDate, formatDateTime } from "@/lib/date-format";
 import { monthLabel } from "@/lib/month-label";
-import { HIGHLIGHT_KEYS, pickMetric } from "@/lib/rider-metrics";
+import { HIGHLIGHT_KEYS, isNumericLike, metricNumber, pickMetric } from "@/lib/rider-metrics";
 import { useLanguage, type Lang, type TranslationKey } from "@/lib/i18n";
 
 const search = z.object({
-  reportId: z.string().uuid().optional(),
+  month: z.number().int().min(1).max(12).optional(),
+  year: z.number().int().min(2000).max(2100).optional(),
 });
 
 export const Route = createFileRoute("/rider/$iqama")({
@@ -446,7 +447,7 @@ function RiderPasswordDialog({
 
 function RiderPage() {
   const { iqama } = Route.useParams();
-  const { reportId } = Route.useSearch();
+  const { month: selectedMonth, year: selectedYear } = Route.useSearch();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { t, lang } = useLanguage();
@@ -531,6 +532,27 @@ function RiderPage() {
     },
   });
 
+  // Every daily report this rider has, grouped into the calendar month it
+  // falls in — a legacy pre-daily-reports report (no day) is its own
+  // single-report "month" already, so it groups the same way.
+  const months = useMemo(() => {
+    const map = new Map<
+      string,
+      { key: string; month: number; year: number; reportIds: string[] }
+    >();
+    for (const r of reportsQuery.data ?? []) {
+      const key = `${r.year}-${r.month}`;
+      const g = map.get(key);
+      if (g) g.reportIds.push(r.report_id);
+      else map.set(key, { key, month: r.month, year: r.year, reportIds: [r.report_id] });
+    }
+    return [...map.values()].sort((a, b) => b.year - a.year || b.month - a.month);
+  }, [reportsQuery.data]);
+
+  const selectedMonthKey =
+    selectedMonth && selectedYear ? `${selectedYear}-${selectedMonth}` : null;
+  const activeMonthGroup = months.find((m) => m.key === selectedMonthKey) ?? null;
+
   const lettersQuery = useQuery({
     queryKey: ["rider-letters", activeRiderId],
     enabled: !!activeRiderId,
@@ -543,19 +565,82 @@ function RiderPage() {
     },
   });
 
-  const reportData = useQuery({
-    queryKey: ["rider-report", activeRiderId, reportId, locked],
-    enabled: !!reportId && !!activeRiderId && !locked,
+  const monthReportsQuery = useQuery({
+    queryKey: ["rider-report", "month", activeRiderId, activeMonthGroup?.key, locked],
+    enabled: !!activeMonthGroup && !!activeRiderId && !locked,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("get_rider_report", {
+      const { data, error } = await supabase.rpc("get_rider_reports_bulk", {
         _rider_id: activeRiderId!,
-        _report_id: reportId!,
+        _report_ids: activeMonthGroup!.reportIds,
         _password: activePw || undefined,
       });
       if (error) throw error;
-      return data?.[0] ?? null;
+      return data ?? [];
     },
   });
+
+  // Every day's data within the picked month, combined into one view: a
+  // numeric column is summed across the days that have it (same rule the
+  // admin dashboard's own monthly rollup uses), a non-numeric column (a
+  // city/status/rating-style value) shows the distinct values it actually
+  // had instead of a meaningless sum.
+  const reportData = useMemo(() => {
+    const rows = monthReportsQuery.data ?? [];
+    if (!activeMonthGroup || rows.length === 0) return null;
+    const columnOrder: string[] = [];
+    const seenCols = new Set<string>();
+    for (const r of rows) {
+      const cols = Array.isArray(r.columns)
+        ? (r.columns as unknown[]).map(String)
+        : Object.keys((r.data ?? {}) as object);
+      for (const c of cols) {
+        if (!seenCols.has(c)) {
+          seenCols.add(c);
+          columnOrder.push(c);
+        }
+      }
+    }
+    const data: Record<string, unknown> = {};
+    for (const col of columnOrder) {
+      let sum = 0;
+      let allNumeric = true;
+      let sawAny = false;
+      const seenValues: string[] = [];
+      for (const r of rows) {
+        const raw = (r.data as Record<string, unknown> | null)?.[col];
+        if (raw === undefined || raw === null || raw === "") continue;
+        sawAny = true;
+        if (isNumericLike(raw)) {
+          const n = metricNumber(raw);
+          if (n !== null) sum += n;
+        } else {
+          allNumeric = false;
+        }
+        seenValues.push(String(raw).trim());
+      }
+      if (!sawAny) continue;
+      if (allNumeric) {
+        data[col] = Number.isInteger(sum) ? sum : Number(sum.toFixed(4));
+      } else {
+        const distinct = [...new Set(seenValues)];
+        data[col] =
+          distinct.length > 3 ? `${distinct.slice(0, 3).join("، ")}…` : distinct.join("، ");
+      }
+    }
+    const latestNote = [...rows].reverse().find((r) => r.note)?.note ?? null;
+    return {
+      data,
+      columns: columnOrder,
+      month: activeMonthGroup.month,
+      year: activeMonthGroup.year,
+      day: null,
+      file_name:
+        rows.length === 1
+          ? rows[0].file_name
+          : t("rider.combinedFileLabel").replace("{count}", String(rows.length)),
+      note: latestNote,
+    };
+  }, [monthReportsQuery.data, activeMonthGroup, t]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -864,14 +949,14 @@ function RiderPage() {
                   {reportsQuery.data && reportsQuery.data.length === 0 && (
                     <div className="text-sm text-muted-foreground">{t("rider.noReports")}</div>
                   )}
-                  {reportsQuery.data?.map((r, i) => {
-                    const active = reportId === r.report_id;
+                  {months.map((m, i) => {
+                    const active = selectedMonthKey === m.key;
                     return (
                       <Link
-                        key={r.report_id}
+                        key={m.key}
                         to="/rider/$iqama"
                         params={{ iqama }}
-                        search={{ reportId: r.report_id }}
+                        search={{ month: m.month, year: m.year }}
                         className={`animate-in fade-in slide-in-from-bottom-1 flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-all duration-300 fill-mode-[backwards] ${
                           active
                             ? "border-primary bg-primary/10 text-foreground"
@@ -881,7 +966,7 @@ function RiderPage() {
                       >
                         <span className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
-                          {monthLabel(r.month, r.year, lang)}
+                          {monthLabel(m.month, m.year, lang)}
                         </span>
                         {active && <Badge variant="secondary">{t("rider.openBadge")}</Badge>}
                       </Link>
@@ -905,7 +990,7 @@ function RiderPage() {
             </aside>
 
             <section>
-              {!reportId && (
+              {!activeMonthGroup && (
                 <Card>
                   <CardContent className="py-20 text-center">
                     <Calendar className="mx-auto mb-4 h-10 w-10 text-muted-foreground" />
@@ -916,18 +1001,12 @@ function RiderPage() {
                   </CardContent>
                 </Card>
               )}
-              {reportId && reportData.isLoading && (
+              {activeMonthGroup && monthReportsQuery.isLoading && (
                 <div className="flex justify-center py-20">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               )}
-              {reportId && reportData.data && (
-                <ReportView
-                  data={reportData.data as unknown as RiderReportView}
-                  lang={lang}
-                  t={t}
-                />
-              )}
+              {activeMonthGroup && reportData && <ReportView data={reportData} lang={lang} t={t} />}
             </section>
           </div>
         )}
@@ -941,6 +1020,7 @@ interface RiderReportView {
   columns: string[];
   month: number;
   year: number;
+  day: number | null;
   file_name: string;
   note: string | null;
 }

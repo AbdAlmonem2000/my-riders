@@ -10,6 +10,7 @@ import {
   isValidExpiryDate,
   isValidOperatingCardNumber,
   normalizeSheetDateToIso,
+  OPERATING_CARD_NUMBER_FORMAT,
 } from "@/lib/document-status";
 import { cellText, looksLikeIdentifier } from "@/lib/rider-identity";
 
@@ -320,12 +321,16 @@ export const uploadOperatingCardFile = createServerFn({ method: "POST" })
     return { ok: true, updated: updated.length };
   });
 
-// Edits a card's plate number/expiry date without touching its file.
+// Edits a card's plate number/expiry date, and optionally its card number
+// itself, without touching its file.
 const GroupMetaInput = z.object({
   docType: CardDocTypeSchema,
   cardNumber: z.string().trim().min(1),
   plateNumber: z.string().trim().max(20).nullable(),
   expiryDate: z.string().nullable(),
+  // Present only when the admin is renumbering the whole group — every
+  // rider currently on `cardNumber` moves to this new number together.
+  newCardNumber: z.string().trim().nullable().optional(),
 });
 
 export const updateOperatingCardGroup = createServerFn({ method: "POST" })
@@ -340,11 +345,72 @@ export const updateOperatingCardGroup = createServerFn({ method: "POST" })
       throw new Error("تاريخ الانتهاء غير صحيح");
     }
 
+    const newCardNumber = data.newCardNumber?.trim() || null;
+    const isRenumbering = !!newCardNumber && newCardNumber !== data.cardNumber;
+
+    if (isRenumbering) {
+      if (!isValidOperatingCardNumber(newCardNumber!)) {
+        throw new Error(`رقم كرت التشغيل لازم يكون بالشكل ${OPERATING_CARD_NUMBER_FORMAT} بالظبط`);
+      }
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+      const { data: groupRows } = await supabaseAdmin
+        .from("rider_documents")
+        .select("rider_id")
+        .eq("company_id", companyId)
+        .eq("doc_type", data.docType)
+        .eq("card_number", data.cardNumber);
+      const groupRiderIds = [...new Set((groupRows ?? []).map((r) => r.rider_id))];
+      if (groupRiderIds.length === 0) throw new Error("رقم الكرت ده مش مرتبط بأي مندوب");
+
+      const { data: targetRows } = await supabaseAdmin
+        .from("rider_documents")
+        .select("rider_id")
+        .eq("company_id", companyId)
+        .eq("doc_type", data.docType)
+        .eq("card_number", newCardNumber);
+      const targetRiderIds = [...new Set((targetRows ?? []).map((r) => r.rider_id))].filter(
+        (id) => !groupRiderIds.includes(id),
+      );
+
+      const { data: allRidersRaw } = await supabaseAdmin
+        .from("riders")
+        .select("id, rider_name, area")
+        .in("id", [...groupRiderIds, ...targetRiderIds]);
+      const riderById = new Map(
+        (allRidersRaw ?? []).map((r) => [
+          r.id,
+          r as { rider_name: string | null; area: string | null },
+        ]),
+      );
+      const namesOf = (ids: string[]) =>
+        ids.map((id) => riderById.get(id)?.rider_name?.trim() || "مندوب بدون اسم").join("، ");
+
+      if (targetRiderIds.length + groupRiderIds.length > 3) {
+        throw new Error(
+          `كرت التشغيل رقم ${newCardNumber} هيبقى معاه ${targetRiderIds.length + groupRiderIds.length} مناديب (الحد الأقصى 3) — مستخدم حاليًا مع: ${namesOf(targetRiderIds)}`,
+        );
+      }
+      if (targetRiderIds.length > 0) {
+        const groupArea = riderById.get(groupRiderIds[0])?.area?.trim() || "بدون منطقة";
+        const mismatched = targetRiderIds.filter(
+          (id) => (riderById.get(id)?.area?.trim() || "بدون منطقة") !== groupArea,
+        );
+        if (mismatched.length > 0) {
+          const otherArea = riderById.get(mismatched[0])?.area?.trim() || "بدون منطقة";
+          throw new Error(
+            `كرت التشغيل رقم ${newCardNumber} مستخدم بالفعل في منطقة "${otherArea}" مع: ${namesOf(mismatched)} — لازم يكونوا في نفس المنطقة`,
+          );
+        }
+      }
+    }
+
     const { data: updated, error } = await supabase
       .from("rider_documents")
       .update({
         plate_number: data.plateNumber?.trim() || null,
         expiry_date: data.expiryDate,
+        ...(isRenumbering ? { card_number: newCardNumber } : {}),
       })
       .eq("company_id", companyId)
       .eq("doc_type", data.docType)
@@ -515,4 +581,67 @@ export const addRiderToOperatingCard = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     return { ok: true };
+  });
+
+// Uploads the "استمارة كرت التشغيل الإضافي" (operating_card_extra_form) for
+// every rider sharing one card group at once, from the Operating Cards page
+// itself — the same "upload once, apply to the whole group" convenience as
+// the card file/expiry, even though this form has no card number or expiry
+// of its own (it's a plain no-expiry document, just like personal_photo).
+const CardFormInput = z.object({
+  riderIds: z.array(z.string().uuid()).min(1),
+  storagePath: z.string().min(1),
+  fileName: z.string().min(1),
+});
+
+export const uploadOperatingCardExtraForm = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => CardFormInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveDocumentsCompany(supabase, userId, true);
+    await assertOperatingCardsAccess(supabase, userId);
+
+    const { data: riders } = await supabase
+      .from("riders")
+      .select("id")
+      .eq("company_id", companyId)
+      .in("id", data.riderIds);
+    const validRiderIds = new Set((riders ?? []).map((r) => r.id));
+    if (validRiderIds.size === 0) throw new Error("المندوبين غير موجودين");
+
+    const { data: prevRows } = await supabase
+      .from("rider_documents")
+      .select("storage_path")
+      .eq("company_id", companyId)
+      .eq("doc_type", "operating_card_extra_form")
+      .in("rider_id", [...validRiderIds]);
+    const prevPaths = [
+      ...new Set((prevRows ?? []).map((r) => r.storage_path).filter(Boolean)),
+    ] as string[];
+
+    const payload = [...validRiderIds].map((riderId) => ({
+      company_id: companyId,
+      rider_id: riderId,
+      doc_type: "operating_card_extra_form",
+      storage_path: data.storagePath,
+      file_name: data.fileName,
+      expiry_date: null,
+      needs_expiry: false,
+      card_number: null,
+      plate_number: null,
+      uploaded_at: new Date().toISOString(),
+    }));
+    const { error } = await supabase
+      .from("rider_documents")
+      .upsert(payload, { onConflict: "rider_id,doc_type" });
+    if (error) throw new Error(error.message);
+
+    const oldOnly = prevPaths.filter((p) => p !== data.storagePath);
+    if (oldOnly.length > 0) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.storage.from("rider-documents").remove(oldOnly);
+    }
+
+    return { ok: true, updated: validRiderIds.size };
   });

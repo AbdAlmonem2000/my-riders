@@ -522,7 +522,6 @@ function AdminExpiryAlerts() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t("expiryAlerts.searchPlaceholder")}
-                dir="ltr"
                 className="ps-9"
               />
             </div>

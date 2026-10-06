@@ -92,18 +92,22 @@ export const dispatchRiderPush = createServerFn({ method: "POST" })
       const companyId = await resolveReportsCompany(supabase, userId);
       const { data: row } = await supabase
         .from("reports")
-        .select("month, year")
+        .select("month, year, day")
         .eq("id", data.id)
         .eq("company_id", companyId)
         .maybeSingle();
       if (!row) throw new Error("التقرير غير موجود");
+      const monthLabel = `${MONTHS_AR[row.month - 1] ?? row.month} ${row.year}`;
+      const dateLabel = row.day ? `${row.day} ${monthLabel}` : monthLabel;
       content = {
         companyId,
         riderId: null,
         reportId: data.id,
-        search: `?reportId=${data.id}`,
+        // The rider page now groups by month, not by individual day
+        // reports, so the notification opens straight to that month.
+        search: `?month=${row.month}&year=${row.year}`,
         title: data.updated ? "تم تحديث تقريرك" : "تقرير جديد",
-        body: `تقرير ${MONTHS_AR[row.month - 1] ?? row.month} ${row.year} متاح الآن`,
+        body: `تقرير ${dateLabel} متاح الآن`,
         tag: `report-${data.id}`,
       };
     } else {

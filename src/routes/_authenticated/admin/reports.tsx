@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  ChevronDown,
+  ChevronUp,
   Download,
   Eye,
   EyeOff,
@@ -19,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { DateInputDMY } from "@/components/date-input-dmy";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +47,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -61,7 +65,7 @@ import {
   deleteReportSheet,
   uploadReport,
 } from "@/lib/reports.functions";
-import { monthLabel, MONTH_NAMES_AR, MONTH_NAMES_EN } from "@/lib/month-label";
+import { monthLabel, reportDateLabel } from "@/lib/month-label";
 import { errText } from "@/lib/error-text";
 import { formatDate, formatDateTime } from "@/lib/date-format";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
@@ -299,7 +303,8 @@ function AdminReports() {
         .from("reports")
         .select("*")
         .order("year", { ascending: false })
-        .order("month", { ascending: false });
+        .order("month", { ascending: false })
+        .order("day", { ascending: false, nullsFirst: false });
       if (error) throw error;
       return data;
     },
@@ -329,8 +334,13 @@ function AdminReports() {
   }, [sheetRows]);
 
   const now = useMemo(() => new Date(), []);
-  const [month, setMonth] = useState<number>(now.getMonth() + 1);
-  const [year, setYear] = useState<number>(now.getFullYear());
+  const todayIso = useMemo(() => {
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }, [now]);
+  const [uploadDate, setUploadDate] = useState(todayIso);
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState("");
   const [uploadMode, setUploadMode] = useState<"new" | "replace" | "merge">("new");
@@ -338,14 +348,68 @@ function AdminReports() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [deletingSheetId, setDeletingSheetId] = useState<string | null>(null);
 
-  const years = useMemo(() => {
-    const y = now.getFullYear();
-    return [y - 2, y - 1, y, y + 1];
-  }, [now]);
+  // Grouped by calendar month so a month with every one of its 30 days
+  // uploaded separately doesn't just show as 30 flat rows stacked on top of
+  // each other — reportsQuery is already sorted newest-first, so building
+  // this with a Map preserves that order for the groups themselves too.
+  const monthGroups = useMemo(() => {
+    const map = new Map<
+      string,
+      { key: string; month: number; year: number; reports: NonNullable<typeof reportsQuery.data> }
+    >();
+    for (const r of reportsQuery.data ?? []) {
+      const key = `${r.year}-${r.month}`;
+      const g = map.get(key);
+      if (g) g.reports.push(r);
+      else map.set(key, { key, month: r.month, year: r.year, reports: [r] });
+    }
+    return [...map.values()];
+  }, [reportsQuery.data]);
+
+  // Collapsed, not expanded, is what's tracked — so every month starts
+  // expanded (empty set) without needing to wait for the query to resolve
+  // before seeding an initial "expand the first one" state.
+  const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set());
+  const toggleMonthCollapse = (key: string) => {
+    setCollapsedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectMonth = (ids: string[]) => {
+    const allSelected = ids.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (allSelected) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return toast.error(t("admin.toastSelectFile"));
+    const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(uploadDate);
+    if (!dateMatch) return toast.error(t("admin.toastInvalidDate"));
+    const year = Number(dateMatch[1]);
+    const month = Number(dateMatch[2]);
+    const day = Number(dateMatch[3]);
     setUploading(true);
     try {
       // Loaded on demand — the xlsx parser is a ~480KB dependency this page
@@ -364,7 +428,7 @@ function AdminReports() {
       // so it can be downloaded or deleted individually later.
       const extMatch = /\.[a-zA-Z0-9]+$/.exec(file.name);
       const safeExt = extMatch ? extMatch[0] : "";
-      const path = `${year}/${String(month).padStart(2, "0")}-${Date.now()}${safeExt}`;
+      const path = `${year}/${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}-${Date.now()}${safeExt}`;
       const { error: upErr } = await supabase.storage
         .from("reports")
         .upload(path, file, { upsert: true });
@@ -374,6 +438,7 @@ function AdminReports() {
         data: {
           month,
           year,
+          day,
           fileName: file.name,
           storagePath: path,
           headers: parsed.headers,
@@ -389,10 +454,10 @@ function AdminReports() {
       toast.success(
         lang === "ar"
           ? res.merged
-            ? `تم دمج الشيت مع تقرير الشهر (${res.count} مندوب)`
+            ? `تم دمج الشيت مع تقرير اليوم (${res.count} مندوب)`
             : `تم رفع التقرير بنجاح (${res.count} مندوب)`
           : res.merged
-            ? `Sheet merged into the month's report (${res.count} riders)`
+            ? `Sheet merged into the day's report (${res.count} riders)`
             : `Report uploaded successfully (${res.count} riders)`,
       );
       setFile(null);
@@ -451,6 +516,27 @@ function AdminReports() {
     }
   };
 
+  const handleBulkDelete = async (ids: string[]) => {
+    setBulkDeleting(true);
+    try {
+      for (const id of ids) {
+        await deleteFn({ data: { id } });
+      }
+      toast.success(t("admin.toastBulkDeleteSuccess"));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["report-sheets"] });
+    } catch (err) {
+      toast.error(errText(err, t("admin.toastDeleteFailed")));
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const handleDeleteSheet = async (sheetId: string) => {
     setDeletingSheetId(sheetId);
     try {
@@ -480,35 +566,9 @@ function AdminReports() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleUpload} className="grid gap-4 md:grid-cols-4">
-              <div className="space-y-2">
-                <Label>{t("admin.monthLabel")}</Label>
-                <Select value={String(month)} onValueChange={(v) => setMonth(Number(v))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(lang === "ar" ? MONTH_NAMES_AR : MONTH_NAMES_EN).map((n, i) => (
-                      <SelectItem key={i + 1} value={String(i + 1)}>
-                        {n} ({String(i + 1).padStart(2, "0")})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>{t("admin.yearLabel")}</Label>
-                <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {years.map((y) => (
-                      <SelectItem key={y} value={String(y)}>
-                        {y}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2 md:col-span-2">
+                <Label>{t("admin.reportDateLabel")}</Label>
+                <DateInputDMY value={uploadDate} onChange={setUploadDate} />
               </div>
               <div className="space-y-2 md:col-span-2">
                 <Label>{t("admin.excelFileLabel")}</Label>
@@ -594,137 +654,270 @@ function AdminReports() {
             </p>
           )}
           {reportsQuery.data && reportsQuery.data.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("admin.tableMonth")}</TableHead>
-                  <TableHead>{t("admin.tableYear")}</TableHead>
-                  <TableHead>{t("admin.tableFileName")}</TableHead>
-                  <TableHead>{t("admin.tableRiderCount")}</TableHead>
-                  <TableHead>{t("admin.tableUploadDate")}</TableHead>
-                  <TableHead className="text-end">{t("admin.tableActions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reportsQuery.data.map((r, i) => (
-                  <TableRow
-                    key={r.id}
-                    className="animate-in fade-in transition-colors duration-300 fill-mode-[backwards]"
-                    style={{ animationDelay: `${Math.min(i * 40, 400)}ms` }}
-                  >
-                    <TableCell className="font-medium">
-                      {(lang === "ar" ? MONTH_NAMES_AR : MONTH_NAMES_EN)[r.month - 1]}
-                    </TableCell>
-                    <TableCell>{r.year}</TableCell>
-                    <TableCell className="max-w-xs">
-                      <div className="truncate">{r.file_name}</div>
-                      {(sheetsByReport.get(r.id)?.length ?? 0) > 1 && (
-                        <span className="text-[11px] text-muted-foreground">
-                          {(sheetsByReport.get(r.id)?.length ?? 0) + " " + t("admin.sheetsWord")}
-                        </span>
-                      )}
-                      {r.is_hidden && (
-                        <div className="mt-0.5">
-                          <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                            {t("admin.reportHiddenBadge")}
-                          </Badge>
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{r.rider_count}</Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(r.created_at)}
-                    </TableCell>
-                    <TableCell className="text-end">
-                      <ReportSheetsDialog
-                        title={monthLabel(r.month, r.year, lang)}
-                        sheets={sheetsByReport.get(r.id) ?? []}
-                        deletingSheetId={deletingSheetId}
-                        canDelete={canWrite}
-                        t={t}
-                        onDownload={handleDownload}
-                        onDelete={handleDeleteSheet}
-                      />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title={t("admin.downloadTooltip")}
-                        className="transition-transform hover:scale-110"
-                        onClick={() => handleDownload(r.storage_path, r.file_name)}
-                      >
-                        <Download className="h-4 w-4" />
+            <div className="space-y-4">
+              {canWrite && selectedIds.size > 0 && (
+                <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/50 px-4 py-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <span className="text-sm text-muted-foreground">
+                    {selectedIds.size} {t("admin.selectedCountLabel")}
+                  </span>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="sm" variant="destructive">
+                        <Trash2 className="h-4 w-4 ms-2" />
+                        {t("admin.deleteSelectedButton")}
                       </Button>
-                      {canWrite && (
-                        <NoteEditor
-                          reportId={r.id}
-                          initialNote={r.note}
-                          title={monthLabel(r.month, r.year, lang)}
-                          t={t}
-                          onSave={handleSaveNote}
-                        />
-                      )}
-                      {canWrite && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title={
-                            r.is_hidden
-                              ? t("admin.showReportTooltip")
-                              : t("admin.hideReportTooltip")
-                          }
-                          className={
-                            r.is_hidden
-                              ? "text-primary transition-transform hover:scale-110"
-                              : "transition-transform hover:scale-110"
-                          }
-                          onClick={() => handleToggleHidden(r.id, !r.is_hidden)}
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t("admin.deleteSelectedConfirmTitle")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t("admin.deleteSelectedConfirmDesc")}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                        <AlertDialogAction
+                          disabled={bulkDeleting}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => handleBulkDelete([...selectedIds])}
                         >
-                          {r.is_hidden ? (
-                            <Eye className="h-4 w-4" />
+                          {bulkDeleting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            <EyeOff className="h-4 w-4" />
+                            t("admin.delete")
                           )}
-                        </Button>
-                      )}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              )}
+              {monthGroups.map((group, gi) => {
+                const ids = group.reports.map((r) => r.id);
+                const allSelected = ids.every((id) => selectedIds.has(id));
+                const collapsed = collapsedMonths.has(group.key);
+                return (
+                  <div
+                    key={group.key}
+                    className="rounded-lg border overflow-hidden animate-in fade-in slide-in-from-bottom-1 duration-300 fill-mode-[backwards]"
+                    style={{ animationDelay: `${Math.min(gi * 60, 300)}ms` }}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/30 px-3 py-2.5">
+                      <div className="flex flex-wrap items-center gap-3">
+                        {canWrite && (
+                          <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={() => toggleSelectMonth(ids)}
+                            aria-label={t("admin.selectAllInMonth")}
+                          />
+                        )}
+                        <button
+                          type="button"
+                          className="flex items-center gap-2 text-sm font-medium transition-colors hover:text-primary"
+                          onClick={() => toggleMonthCollapse(group.key)}
+                        >
+                          {collapsed ? (
+                            <ChevronDown className="h-4 w-4 transition-transform" />
+                          ) : (
+                            <ChevronUp className="h-4 w-4 transition-transform" />
+                          )}
+                          {monthLabel(group.month, group.year, lang)}
+                        </button>
+                        <Badge variant="secondary">
+                          {group.reports.length} {t("admin.daysCountLabel")}
+                        </Badge>
+                      </div>
                       {canWrite && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="text-destructive transition-transform hover:scale-110"
+                              className="text-destructive transition-transform hover:scale-105"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-4 w-4 ms-2" />
+                              {t("admin.deleteMonthButton")}
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>{t("admin.deleteReportTitle")}</AlertDialogTitle>
+                              <AlertDialogTitle>
+                                {t("admin.deleteMonthConfirmTitle")}
+                              </AlertDialogTitle>
                               <AlertDialogDescription>
-                                {lang === "ar"
-                                  ? `سيتم حذف تقرير ${monthLabel(r.month, r.year, lang)} وجميع بيانات المناديب المرتبطة به. لا يمكن التراجع.`
-                                  : `The ${monthLabel(r.month, r.year, lang)} report and all associated rider data will be deleted. This cannot be undone.`}
+                                {t("admin.deleteMonthConfirmDesc")}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
                               <AlertDialogAction
+                                disabled={bulkDeleting}
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => handleDelete(r.id)}
+                                onClick={() => handleBulkDelete(ids)}
                               >
-                                {t("admin.delete")}
+                                {bulkDeleting ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  t("admin.delete")
+                                )}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
                       )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                    </div>
+                    {!collapsed && (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            {canWrite && <TableHead className="w-10" />}
+                            <TableHead>{t("admin.tableMonth")}</TableHead>
+                            <TableHead>{t("admin.tableFileName")}</TableHead>
+                            <TableHead>{t("admin.tableRiderCount")}</TableHead>
+                            <TableHead>{t("admin.tableUploadDate")}</TableHead>
+                            <TableHead className="text-end">{t("admin.tableActions")}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {group.reports.map((r, i) => (
+                            <TableRow
+                              key={r.id}
+                              className="animate-in fade-in transition-colors duration-300 fill-mode-[backwards]"
+                              style={{ animationDelay: `${Math.min(i * 40, 400)}ms` }}
+                            >
+                              {canWrite && (
+                                <TableCell>
+                                  <Checkbox
+                                    checked={selectedIds.has(r.id)}
+                                    onCheckedChange={() => toggleSelect(r.id)}
+                                    aria-label={reportDateLabel(r.day, r.month, r.year, lang)}
+                                  />
+                                </TableCell>
+                              )}
+                              <TableCell className="whitespace-nowrap font-medium">
+                                {reportDateLabel(r.day, r.month, r.year, lang)}
+                              </TableCell>
+                              <TableCell className="max-w-xs">
+                                <div className="truncate">{r.file_name}</div>
+                                {(sheetsByReport.get(r.id)?.length ?? 0) > 1 && (
+                                  <span className="text-[11px] text-muted-foreground">
+                                    {(sheetsByReport.get(r.id)?.length ?? 0) +
+                                      " " +
+                                      t("admin.sheetsWord")}
+                                  </span>
+                                )}
+                                {r.is_hidden && (
+                                  <div className="mt-0.5">
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] text-muted-foreground"
+                                    >
+                                      {t("admin.reportHiddenBadge")}
+                                    </Badge>
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{r.rider_count}</Badge>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {formatDate(r.created_at)}
+                              </TableCell>
+                              <TableCell className="text-end">
+                                <ReportSheetsDialog
+                                  title={reportDateLabel(r.day, r.month, r.year, lang)}
+                                  sheets={sheetsByReport.get(r.id) ?? []}
+                                  deletingSheetId={deletingSheetId}
+                                  canDelete={canWrite}
+                                  t={t}
+                                  onDownload={handleDownload}
+                                  onDelete={handleDeleteSheet}
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  title={t("admin.downloadTooltip")}
+                                  className="transition-transform hover:scale-110"
+                                  onClick={() => handleDownload(r.storage_path, r.file_name)}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                                {canWrite && (
+                                  <NoteEditor
+                                    reportId={r.id}
+                                    initialNote={r.note}
+                                    title={reportDateLabel(r.day, r.month, r.year, lang)}
+                                    t={t}
+                                    onSave={handleSaveNote}
+                                  />
+                                )}
+                                {canWrite && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    title={
+                                      r.is_hidden
+                                        ? t("admin.showReportTooltip")
+                                        : t("admin.hideReportTooltip")
+                                    }
+                                    className={
+                                      r.is_hidden
+                                        ? "text-primary transition-transform hover:scale-110"
+                                        : "transition-transform hover:scale-110"
+                                    }
+                                    onClick={() => handleToggleHidden(r.id, !r.is_hidden)}
+                                  >
+                                    {r.is_hidden ? (
+                                      <Eye className="h-4 w-4" />
+                                    ) : (
+                                      <EyeOff className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                )}
+                                {canWrite && (
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-destructive transition-transform hover:scale-110"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>
+                                          {t("admin.deleteReportTitle")}
+                                        </AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          {lang === "ar"
+                                            ? `سيتم حذف تقرير ${reportDateLabel(r.day, r.month, r.year, lang)} وجميع بيانات المناديب المرتبطة به. لا يمكن التراجع.`
+                                            : `The ${reportDateLabel(r.day, r.month, r.year, lang)} report and all associated rider data will be deleted. This cannot be undone.`}
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          onClick={() => handleDelete(r.id)}
+                                        >
+                                          {t("admin.delete")}
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>

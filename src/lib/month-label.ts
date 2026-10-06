@@ -36,3 +36,17 @@ export function monthLabel(month: number, year: number, lang: "ar" | "en" = "ar"
   const names = lang === "en" ? MONTH_NAMES_EN : MONTH_NAMES_AR;
   return `${names[month - 1] ?? month} ${year}`;
 }
+
+// A report now belongs to one specific day (e.g. "1 أكتوبر 2026") rather
+// than a whole month — `day` is null only for a report uploaded before this
+// existed, which genuinely represents the whole month, so it keeps showing
+// the plain month label instead of claiming a day it doesn't have.
+export function reportDateLabel(
+  day: number | null | undefined,
+  month: number,
+  year: number,
+  lang: "ar" | "en" = "ar",
+) {
+  const month_ = monthLabel(month, year, lang);
+  return day ? `${day} ${month_}` : month_;
+}
