@@ -1024,6 +1024,7 @@ function AdminRiders() {
         [t("admin.tableIqama")]: r.iqama_number ?? "",
         [t("admin.tableIdNumber")]: r.id_number ?? "",
         [t("admin.riderAreaLabel")]: r.area ?? "",
+        [t("admin.riderPhotoLabel")]: r.photo_url ?? "",
       };
       for (const col of extraColumns) row[col] = extra[col] ?? "";
       row[t("admin.tableStatus")] = r.is_blocked ? t("admin.riderBlockedLabel") : "";
@@ -1598,56 +1599,56 @@ function AdminRiders() {
                             </div>
                           )}
 
-                          <div className="mt-4 flex w-full items-center justify-center">
-                            {canEditRiders ? (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button size="sm" variant="ghost">
-                                    <MoreVertical className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => setEditingRiderId(r.id)}>
-                                    <Pencil className="h-3.5 w-3.5" />
-                                    {t("admin.editRiderTooltip")}
+                          {canEditRiders && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="absolute end-3 top-3 bg-background"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => setEditingRiderId(r.id)}>
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  {t("admin.editRiderTooltip")}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setPasswordRiderId(r.id)}>
+                                  <KeyRound className="h-3.5 w-3.5" />
+                                  {t("admin.riderPasswordTitle")}
+                                </DropdownMenuItem>
+                                {canBlockRiders && (
+                                  <DropdownMenuItem
+                                    disabled={blockingRiderId === r.id}
+                                    onClick={() => toggleRiderBlocked(r.id, !r.is_blocked)}
+                                  >
+                                    {r.is_blocked ? (
+                                      <Eye className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <Ban className="h-3.5 w-3.5" />
+                                    )}
+                                    {r.is_blocked
+                                      ? t("admin.riderUnblockButton")
+                                      : t("admin.riderBlockButton")}
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => setPasswordRiderId(r.id)}>
-                                    <KeyRound className="h-3.5 w-3.5" />
-                                    {t("admin.riderPasswordTitle")}
-                                  </DropdownMenuItem>
-                                  {canBlockRiders && (
+                                )}
+                                {canDeleteRiders && (
+                                  <>
+                                    <DropdownMenuSeparator />
                                     <DropdownMenuItem
-                                      disabled={blockingRiderId === r.id}
-                                      onClick={() => toggleRiderBlocked(r.id, !r.is_blocked)}
+                                      onClick={() => setDeletingRiderId(r.id)}
+                                      className="text-destructive focus:text-destructive"
                                     >
-                                      {r.is_blocked ? (
-                                        <Eye className="h-3.5 w-3.5" />
-                                      ) : (
-                                        <Ban className="h-3.5 w-3.5" />
-                                      )}
-                                      {r.is_blocked
-                                        ? t("admin.riderUnblockButton")
-                                        : t("admin.riderBlockButton")}
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      {t("admin.deleteRiderTooltip")}
                                     </DropdownMenuItem>
-                                  )}
-                                  {canDeleteRiders && (
-                                    <>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem
-                                        onClick={() => setDeletingRiderId(r.id)}
-                                        className="text-destructive focus:text-destructive"
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                        {t("admin.deleteRiderTooltip")}
-                                      </DropdownMenuItem>
-                                    </>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </div>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
                       );
                     })}
