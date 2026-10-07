@@ -84,6 +84,10 @@ interface Permissions {
   // Only meaningful when documentsAccess isn't 'none' — same reasoning as
   // operatingCardsAccess above.
   expiryAlertsAccess: boolean;
+  // Only meaningful when overviewAccess is true — lets this staff member
+  // change the dashboard's shared column filters for everyone in the
+  // company, not just view whatever the admin already picked.
+  dashboardFiltersEditAccess: boolean;
 }
 
 interface StaffRow extends Permissions {
@@ -161,10 +165,25 @@ function PermissionsFields({
       <label className="flex cursor-pointer items-center gap-2 text-sm">
         <Checkbox
           checked={value.overviewAccess}
-          onCheckedChange={(v) => onChange({ ...value, overviewAccess: !!v })}
+          onCheckedChange={(v) =>
+            onChange({
+              ...value,
+              overviewAccess: !!v,
+              dashboardFiltersEditAccess: v ? value.dashboardFiltersEditAccess : false,
+            })
+          }
         />
         {t("users.overviewAccessLabel")}
       </label>
+      {value.overviewAccess && (
+        <label className="flex cursor-pointer items-center gap-2 ps-6 text-sm">
+          <Checkbox
+            checked={value.dashboardFiltersEditAccess}
+            onCheckedChange={(v) => onChange({ ...value, dashboardFiltersEditAccess: !!v })}
+          />
+          {t("users.dashboardFiltersEditAccessLabel")}
+        </label>
+      )}
       <div className="space-y-1.5">
         <Label className="text-xs">{t("users.ridersAccessLabel")}</Label>
         <TierPicker
@@ -329,6 +348,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   operatingCardsExportAccess: false,
   operatingCardsDeleteAccess: false,
   expiryAlertsAccess: false,
+  dashboardFiltersEditAccess: false,
 };
 
 // Every page, every tier's top level, every area — the "grant all" shortcut
@@ -349,6 +369,7 @@ const ALL_ACCESS_PERMISSIONS: Permissions = {
   operatingCardsExportAccess: true,
   operatingCardsDeleteAccess: true,
   expiryAlertsAccess: true,
+  dashboardFiltersEditAccess: true,
 };
 
 function CreateStaffDialog({
@@ -794,6 +815,8 @@ function AdminUsers() {
                             {s.overviewAccess && (
                               <Badge variant="secondary" className="text-[10px]">
                                 {t("admin.navOverview")}
+                                {s.dashboardFiltersEditAccess &&
+                                  ` + ${t("users.dashboardFiltersEditAccessLabel")}`}
                               </Badge>
                             )}
                             {s.notificationsAccess && (

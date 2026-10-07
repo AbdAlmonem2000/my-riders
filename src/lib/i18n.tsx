@@ -249,6 +249,10 @@ const dict = {
     ar: "لا توجد بيانات لتنزيلها في النطاق المحدد",
     en: "No data to download for the selected range",
   },
+  "admin.dashboardFiltersSaveFailed": {
+    ar: "فشل حفظ فلتر لوحة التحكم",
+    en: "Failed to save the dashboard filter",
+  },
   "admin.dashboardRiderSearchPlaceholder": {
     ar: "دوّر باسم المندوب",
     en: "Search by rider name",
@@ -1437,6 +1441,10 @@ const dict = {
   "users.expiryAlertsAccessLabel": {
     ar: "يقدر يفتح صفحة تنبيهات انتهاء المستندات",
     en: "Can open the Expiry Alerts page",
+  },
+  "users.dashboardFiltersEditAccessLabel": {
+    ar: "يقدر يغيّر فلاتر الأعمدة في الداشبورد (للجميع)",
+    en: "Can change the dashboard's column filters (for everyone)",
   },
   "users.lettersAccessLabel": {
     ar: "صلاحية صفحة الخطابات الرسمية",

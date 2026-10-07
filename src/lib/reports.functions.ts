@@ -786,6 +786,39 @@ function minTier<T extends string>(a: T, b: T): T {
   return TIER_RANK[a] <= TIER_RANK[b] ? a : b;
 }
 
+export interface DashboardFiltersScope {
+  metricColumns: string[];
+  donutColumn: string | null;
+  barColumn: string | null;
+}
+export interface DashboardFilters {
+  daily: DashboardFiltersScope;
+  monthly: DashboardFiltersScope;
+}
+const EMPTY_DASHBOARD_FILTERS_SCOPE: DashboardFiltersScope = {
+  metricColumns: [],
+  donutColumn: null,
+  barColumn: null,
+};
+
+// The company's one shared dashboard_filters jsonb blob, tolerant of
+// anything missing/malformed (a brand-new company, or a shape from before
+// this feature existed) by just falling back to "no filter picked" per
+// scope instead of throwing.
+function parseDashboardFilters(raw: unknown): DashboardFilters {
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const parseScope = (v: unknown): DashboardFiltersScope => {
+    if (!v || typeof v !== "object") return { ...EMPTY_DASHBOARD_FILTERS_SCOPE };
+    const s = v as Record<string, unknown>;
+    return {
+      metricColumns: Array.isArray(s.metricColumns) ? s.metricColumns.map(String) : [],
+      donutColumn: typeof s.donutColumn === "string" ? s.donutColumn : null,
+      barColumn: typeof s.barColumn === "string" ? s.barColumn : null,
+    };
+  };
+  return { daily: parseScope(obj.daily), monthly: parseScope(obj.monthly) };
+}
+
 export const checkIsAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -827,6 +860,10 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     // (including the monthly variant).
     let reportsDailyAccess = true;
     let overviewDailyAccess = true;
+    // Who may change the shared dashboard column filters (see
+    // dashboard_filters below) — always true for a real admin/super admin,
+    // never a plan ceiling, only ever narrowed for a staff account below.
+    let canEditDashboardFilters = true;
     let operatingCardsAccess = true;
     let operatingCardsUploadAccess = true;
     let operatingCardsExportAccess = true;
@@ -859,6 +896,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           { data: operatingCardsExport },
           { data: operatingCardsDelete },
           { data: expiryAlerts },
+          { data: dashboardFiltersEdit },
           { data: areas },
         ] = await Promise.all([
           supabase.rpc("get_member_overview_access", { _user_id: userId }),
@@ -874,6 +912,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           supabase.rpc("get_member_operating_cards_export_access", { _user_id: userId }),
           supabase.rpc("get_member_operating_cards_delete_access", { _user_id: userId }),
           supabase.rpc("get_member_expiry_alerts_access", { _user_id: userId }),
+          supabase.rpc("get_member_dashboard_filters_edit_access", { _user_id: userId }),
           supabase.rpc("get_member_allowed_areas", { _user_id: userId }),
         ]);
         overviewAccess = !!overview;
@@ -889,6 +928,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         operatingCardsExportAccess = !!operatingCardsExport;
         operatingCardsDeleteAccess = !!operatingCardsDelete;
         expiryAlertsAccess = !!expiryAlerts;
+        canEditDashboardFilters = !!dashboardFiltersEdit;
         allowedAreas = (areas as string[] | null) ?? null;
       }
     }
@@ -899,11 +939,15 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let rosterFileName: string | null = null;
     let rosterUploadedAt: string | null = null;
     let companyExpiryNotifyDays = 30;
+    let dashboardFilters: DashboardFilters = {
+      daily: { ...EMPTY_DASHBOARD_FILTERS_SCOPE },
+      monthly: { ...EMPTY_DASHBOARD_FILTERS_SCOPE },
+    };
     if (companyId) {
       const { data } = await supabase
         .from("companies")
         .select(
-          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_overview_daily_access, plan_riders_access, plan_reports_access, plan_reports_daily_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access, plan_operating_cards_access, plan_expiry_alerts_access, expiry_notify_days",
+          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_overview_daily_access, plan_riders_access, plan_reports_access, plan_reports_daily_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access, plan_operating_cards_access, plan_expiry_alerts_access, expiry_notify_days, dashboard_filters",
         )
         .eq("id", companyId)
         .maybeSingle();
@@ -913,6 +957,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       rosterFileName = (data?.roster_file_name as string | undefined) ?? null;
       rosterUploadedAt = (data?.roster_uploaded_at as string | undefined) ?? null;
       companyExpiryNotifyDays = (data?.expiry_notify_days as number | undefined) ?? 30;
+      dashboardFilters = parseDashboardFilters(data?.dashboard_filters);
 
       // The company's plan is the ceiling on what anyone in it can reach —
       // a real admin's access IS the plan (they carry no personal
@@ -994,6 +1039,8 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       operatingCardsExportAccess,
       operatingCardsDeleteAccess,
       expiryAlertsAccess,
+      canEditDashboardFilters,
+      dashboardFilters,
       usersAccess,
       companyProfileAccess,
       allowedAreas,

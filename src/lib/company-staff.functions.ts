@@ -46,6 +46,11 @@ const PermissionsSchema = z.object({
   // Only meaningful when documentsAccess isn't 'none' — same reasoning as
   // operatingCardsAccess above.
   expiryAlertsAccess: z.boolean(),
+  // Only meaningful when overviewAccess is true — lets this staff member
+  // change the dashboard's shared column filters (see
+  // dashboard-filters.functions.ts) for everyone in the company, not just
+  // view whatever the admin already picked.
+  dashboardFiltersEditAccess: z.boolean(),
 });
 
 export const listCompanyStaff = createServerFn({ method: "GET" })
@@ -77,6 +82,7 @@ export const listCompanyStaff = createServerFn({ method: "GET" })
         operatingCardsExportAccess: !!r.operating_cards_export_access,
         operatingCardsDeleteAccess: !!r.operating_cards_delete_access,
         expiryAlertsAccess: !!r.expiry_alerts_access,
+        dashboardFiltersEditAccess: !!r.dashboard_filters_edit_access,
         createdAt: r.created_at as string,
       }),
     );
@@ -135,6 +141,7 @@ export const createCompanyStaff = createServerFn({ method: "POST" })
       operating_cards_export_access: data.operatingCardsExportAccess,
       operating_cards_delete_access: data.operatingCardsDeleteAccess,
       expiry_alerts_access: data.expiryAlertsAccess,
+      dashboard_filters_edit_access: data.dashboardFiltersEditAccess,
     });
     if (roleErr) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -169,6 +176,7 @@ export const updateCompanyStaffPermissions = createServerFn({ method: "POST" })
         operating_cards_export_access: data.operatingCardsExportAccess,
         operating_cards_delete_access: data.operatingCardsDeleteAccess,
         expiry_alerts_access: data.expiryAlertsAccess,
+        dashboard_filters_edit_access: data.dashboardFiltersEditAccess,
       })
       .eq("user_id", data.userId)
       .eq("role", "user")

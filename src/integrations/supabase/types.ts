@@ -88,6 +88,7 @@ export type Database = {
         Row: {
           commercial_registration: string | null
           created_at: string
+          dashboard_filters: Json
           expiry_notify_days: number
           id: string
           is_suspended: boolean
@@ -116,6 +117,7 @@ export type Database = {
         Insert: {
           commercial_registration?: string | null
           created_at?: string
+          dashboard_filters?: Json
           expiry_notify_days?: number
           id?: string
           is_suspended?: boolean
@@ -144,6 +146,7 @@ export type Database = {
         Update: {
           commercial_registration?: string | null
           created_at?: string
+          dashboard_filters?: Json
           expiry_notify_days?: number
           id?: string
           is_suspended?: boolean
@@ -658,6 +661,7 @@ export type Database = {
           allowed_areas: string[] | null
           company_id: string | null
           created_at: string
+          dashboard_filters_edit_access: boolean
           display_name: string | null
           documents_access: string
           expiry_alerts_access: boolean
@@ -681,6 +685,7 @@ export type Database = {
           allowed_areas?: string[] | null
           company_id?: string | null
           created_at?: string
+          dashboard_filters_edit_access?: boolean
           display_name?: string | null
           documents_access?: string
           expiry_alerts_access?: boolean
@@ -704,6 +709,7 @@ export type Database = {
           allowed_areas?: string[] | null
           company_id?: string | null
           created_at?: string
+          dashboard_filters_edit_access?: boolean
           display_name?: string | null
           documents_access?: string
           expiry_alerts_access?: boolean
@@ -821,6 +827,7 @@ export type Database = {
         Returns: {
           allowed_areas: string[] | null
           created_at: string
+          dashboard_filters_edit_access: boolean
           display_name: string | null
           documents_access: string
           email: string
@@ -867,6 +874,7 @@ export type Database = {
       get_member_operating_cards_export_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_operating_cards_delete_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_expiry_alerts_access: { Args: { _user_id: string }; Returns: boolean }
+      get_member_dashboard_filters_edit_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_allowed_areas: { Args: { _user_id: string }; Returns: string[] }
       get_company_plan_overview_access: { Args: { _company_id: string }; Returns: boolean }
       get_company_plan_riders_access: { Args: { _company_id: string }; Returns: string }

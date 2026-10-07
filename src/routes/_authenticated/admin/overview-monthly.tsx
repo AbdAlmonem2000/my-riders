@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Bar,
@@ -66,55 +66,20 @@ import { monthLabel, reportDateLabel } from "@/lib/month-label";
 import { HIGHLIGHT_KEYS, isNumericLike, metricNumber, pickMetric } from "@/lib/rider-metrics";
 import { usePrintNode } from "@/lib/print-node";
 import { checkIsAdmin } from "@/lib/reports.functions";
+import { updateDashboardFilters } from "@/lib/dashboard-filters.functions";
+import { errText } from "@/lib/error-text";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/admin/overview-monthly")({
   component: AdminOverviewMonthly,
 });
 
-// Remembered across visits (and page navigations, since it's read once at
-// mount) the same way the admin sidebar's open/closed state is — so picking
-// which columns to compare performance by isn't something the admin has to
-// redo every time they land back on this page.
-// "-monthly" suffixed so this page's picks never collide with the daily
-// dashboard's own (different columns are often available on each).
-const METRIC_COLUMNS_STORAGE_KEY = "admin-dashboard-metric-columns-monthly";
-
-function readStoredMetricColumns(): Set<string> {
-  try {
-    const stored = localStorage.getItem(METRIC_COLUMNS_STORAGE_KEY);
-    if (!stored) return new Set();
-    const parsed = JSON.parse(stored);
-    return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-// Each breakdown chart's own column pick persists under its own key (not
-// shared with the other chart, and not the metricColumns above) — same
-// idea as readStoredMetricColumns: survives navigating away, reloading, or
-// logging out, since it only ever changes when the admin picks a different
-// column themselves.
-const BREAKDOWN_DONUT_COLUMN_KEY = "admin-dashboard-breakdown-donut-column-monthly";
-const BREAKDOWN_BAR_COLUMN_KEY = "admin-dashboard-breakdown-bar-column-monthly";
-
-function readStoredColumn(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredColumn(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Storage can legitimately be unavailable (private browsing, quota) —
-    // the pick still works for this session, just doesn't persist.
-  }
-}
+// Which columns drive the metric comparison and each breakdown chart is a
+// company-wide setting, shared by every user on every device — saved to
+// companies.dashboard_filters (scope "monthly") via updateDashboardFilters,
+// not per-browser localStorage. Only the real admin, or a staff member
+// granted dashboardFiltersEditAccess, may change it; everyone else still
+// sees whatever was last saved, just without the controls to change it.
 
 function StatCard({
   label,
@@ -467,6 +432,10 @@ interface BreakdownChartProps {
   highlightQuery: string;
   canPickColumn: boolean;
   defaultColumn: string | null;
+  // undefined = the shared company value hasn't loaded yet; null = loaded,
+  // nothing saved yet; a string = the saved pick to show on first render.
+  initialColumn: string | null | undefined;
+  onColumnPersist: (column: string) => void;
   t: (key: TranslationKey) => string;
 }
 
@@ -525,15 +494,21 @@ function BreakdownDonutChart({
   highlightQuery,
   canPickColumn,
   defaultColumn,
+  initialColumn,
+  onColumnPersist,
   t,
 }: BreakdownChartProps) {
-  const [pickedColumn, setPickedColumn] = useState<string | null>(() =>
-    readStoredColumn(BREAKDOWN_DONUT_COLUMN_KEY),
-  );
+  const [pickedColumn, setPickedColumn] = useState<string | null>(null);
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (syncedRef.current || initialColumn === undefined) return;
+    syncedRef.current = true;
+    if (initialColumn !== null) setPickedColumn(initialColumn);
+  }, [initialColumn]);
   const activeColumn = pickedColumn ?? defaultColumn ?? availableColumns[0] ?? null;
   const handleColumnChange = (column: string) => {
     setPickedColumn(column);
-    writeStoredColumn(BREAKDOWN_DONUT_COLUMN_KEY, column);
+    onColumnPersist(column);
   };
 
   const donutData = useMemo(() => {
@@ -631,15 +606,21 @@ function BreakdownBarChart({
   highlightQuery,
   canPickColumn,
   defaultColumn,
+  initialColumn,
+  onColumnPersist,
   t,
 }: BreakdownChartProps) {
-  const [pickedColumn, setPickedColumn] = useState<string | null>(() =>
-    readStoredColumn(BREAKDOWN_BAR_COLUMN_KEY),
-  );
+  const [pickedColumn, setPickedColumn] = useState<string | null>(null);
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (syncedRef.current || initialColumn === undefined) return;
+    syncedRef.current = true;
+    if (initialColumn !== null) setPickedColumn(initialColumn);
+  }, [initialColumn]);
   const activeColumn = pickedColumn ?? defaultColumn ?? availableColumns[0] ?? null;
   const handleColumnChange = (column: string) => {
     setPickedColumn(column);
-    writeStoredColumn(BREAKDOWN_BAR_COLUMN_KEY, column);
+    onColumnPersist(column);
   };
 
   const { barData, isNumeric } = useMemo(() => {
@@ -1511,22 +1492,43 @@ function AdminOverviewMonthly() {
     return map;
   }, [ridersQuery.data]);
 
+  // Whether this account may change the shared dashboard column filters at
+  // all (real admin/super admin always can; a staff account only with
+  // dashboardFiltersEditAccess) — true while adminCheck is still loading so
+  // the controls don't flash disabled for the common case.
+  const canPickMetricColumn = adminCheck.data ? adminCheck.data.canEditDashboardFilters : true;
+  const updateDashboardFiltersFn = useServerFn(updateDashboardFilters);
+  const persistDashboardFilters = useCallback(
+    (filters: {
+      metricColumns?: string[];
+      donutColumn?: string | null;
+      barColumn?: string | null;
+    }) => {
+      if (!canPickMetricColumn) return;
+      updateDashboardFiltersFn({ data: { scope: "monthly", filters } }).catch((e) => {
+        toast.error(errText(e, t("admin.dashboardFiltersSaveFailed")));
+      });
+    },
+    [canPickMetricColumn, updateDashboardFiltersFn, t],
+  );
+
   // Lets the admin pin the comparison to one or more specific columns
   // instead of the auto-detected "total" heuristic — populated from
   // whatever columns this period's rows actually carry. The FIRST selected
   // column (if any) drives the whole comparison (delta/improved/declined/
   // chart/table/trend), same as a single pick always did; any additional
-  // ones picked alongside it just get their own summary tile below.
-  const [metricColumns, setMetricColumnsState] = useState<Set<string>>(() =>
-    readStoredMetricColumns(),
-  );
+  // ones picked alongside it just get their own summary tile below. Shared
+  // company-wide (see persistDashboardFilters above), not per-browser.
+  const [metricColumns, setMetricColumnsState] = useState<Set<string>>(new Set());
+  const metricColumnsSyncedRef = useRef(false);
+  useEffect(() => {
+    if (metricColumnsSyncedRef.current || !adminCheck.data) return;
+    metricColumnsSyncedRef.current = true;
+    setMetricColumnsState(new Set(adminCheck.data.dashboardFilters.monthly.metricColumns));
+  }, [adminCheck.data]);
   const setMetricColumns = (next: Set<string>) => {
     setMetricColumnsState(next);
-    try {
-      localStorage.setItem(METRIC_COLUMNS_STORAGE_KEY, JSON.stringify([...next]));
-    } catch {
-      /* private browsing — not persisted, still switches for this visit */
-    }
+    persistDashboardFilters({ metricColumns: [...next] });
   };
   const metricColumnsList = [...metricColumns];
   const primaryMetricColumn = metricColumnsList[0] ?? "auto";
@@ -1664,12 +1666,6 @@ function AdminOverviewMonthly() {
   const isLoadingDashboard =
     currentReportIds.length > 0 &&
     (currentRowsQuery.isLoading || (hasPrevious && previousRowsQuery.isLoading));
-
-  // Which column drives every metric on this page is a configuration choice,
-  // not a view — gated the same way reports.tsx gates uploading/editing: a
-  // 'view'-tier staff member can read the dashboard but not change what it
-  // shows, while a real admin (adminCheck.data is null for one) always can.
-  const canPickMetricColumn = adminCheck.data ? adminCheck.data.reportsAccess === "full" : true;
 
   // One row per rider per uploaded day, exactly as uploaded (every original
   // column, not just the picked metric) — currentRowsQuery.data is already
@@ -1962,6 +1958,12 @@ function AdminOverviewMonthly() {
                       ? primaryMetricColumn
                       : (availableColumns[0] ?? null)
                   }
+                  initialColumn={
+                    adminCheck.data
+                      ? adminCheck.data.dashboardFilters.monthly.donutColumn
+                      : undefined
+                  }
+                  onColumnPersist={(column) => persistDashboardFilters({ donutColumn: column })}
                   t={t}
                 />
                 <BreakdownBarChart
@@ -1975,6 +1977,10 @@ function AdminOverviewMonthly() {
                       ? primaryMetricColumn
                       : (availableColumns[0] ?? null)
                   }
+                  initialColumn={
+                    adminCheck.data ? adminCheck.data.dashboardFilters.monthly.barColumn : undefined
+                  }
+                  onColumnPersist={(column) => persistDashboardFilters({ barColumn: column })}
                   t={t}
                 />
               </div>
