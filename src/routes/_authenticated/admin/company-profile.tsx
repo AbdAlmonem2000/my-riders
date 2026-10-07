@@ -14,6 +14,7 @@ import {
   KeyRound,
   Loader2,
   Mail,
+  MoreVertical,
   PenTool,
   Pencil,
   Plus,
@@ -36,8 +37,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/doc-status-badge";
 import { DateInputDMY } from "@/components/date-input-dmy";
 import { checkIsAdmin } from "@/lib/reports.functions";
@@ -642,6 +649,7 @@ function CompanyDocumentRow({
   const [label, setLabel] = useState(doc.label);
   const [file, setFile] = useState<File | null>(null);
   const [expiryDate, setExpiryDate] = useState(doc.expiry_date);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { status, daysLeft } = computeDocStatus(doc.expiry_date);
@@ -710,54 +718,50 @@ function CompanyDocumentRow({
             <Upload className="ms-1.5 h-3.5 w-3.5" />
             {t("documents.replaceButton")}
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            title={t("documents.editDateTooltip")}
-            onClick={startEditDate}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            title={t("documents.downloadButton")}
-            onClick={() => onDownload(doc.id)}
-          >
-            <Download className="h-3.5 w-3.5" />
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                title={t("documents.deleteButton")}
-                className="text-destructive hover:text-destructive"
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="sm" variant="ghost">
+                <MoreVertical className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={startEditDate}>
+                <Pencil className="h-3.5 w-3.5" />
+                {t("documents.editDateTooltip")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDownload(doc.id)}>
+                <Download className="h-3.5 w-3.5" />
+                {t("documents.downloadButton")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setConfirmDeleteOpen(true)}
+                className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t("documents.deleteConfirmTitle")}</AlertDialogTitle>
-                <AlertDialogDescription>{t("documents.deleteConfirmDesc")}</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => onDelete(doc.id)}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  {t("admin.delete")}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                {t("documents.deleteButton")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("documents.deleteConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("documents.deleteConfirmDesc")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => onDelete(doc.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t("admin.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {mode === "replace" && (
         <form onSubmit={submitReplace} className="mt-3 space-y-2 rounded-md bg-muted/40 p-2.5">

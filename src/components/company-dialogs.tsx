@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Image as ImageIcon, Loader2, Pencil } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,7 +10,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { uploadCompanyLogo } from "@/lib/company-logo";
 import type { TranslationKey } from "@/lib/i18n";
@@ -23,12 +22,16 @@ export function ChangeNameDialog({
   currentName,
   onSubmit,
   t,
+  open,
+  onOpenChange,
 }: {
   currentName: string;
   onSubmit: (name: string) => Promise<void>;
   t: (key: TranslationKey) => string;
+  // Opened from the row's "⋮" menu, not its own trigger button.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState(currentName);
   const [loading, setLoading] = useState(false);
 
@@ -38,7 +41,7 @@ export function ChangeNameDialog({
     setLoading(true);
     try {
       await onSubmit(name.trim());
-      setOpen(false);
+      onOpenChange(false);
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -50,20 +53,10 @@ export function ChangeNameDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        setOpen(v);
+        onOpenChange(v);
         if (v) setName(currentName);
       }}
     >
-      <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          title={t("superAdmin.changeNameTitle")}
-          className="transition-transform hover:scale-110"
-        >
-          <Pencil className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("superAdmin.changeNameTitle")}</DialogTitle>
@@ -97,13 +90,17 @@ export function ChangeLogoDialog({
   currentLogoUrl,
   onSubmit,
   t,
+  open,
+  onOpenChange,
 }: {
   companyName: string;
   currentLogoUrl: string | null;
   onSubmit: (logoUrl: string) => Promise<void>;
   t: (key: TranslationKey) => string;
+  // Opened from the row's "⋮" menu, not its own trigger button.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -114,7 +111,7 @@ export function ChangeLogoDialog({
     try {
       const logoUrl = await uploadCompanyLogo(file);
       await onSubmit(logoUrl);
-      setOpen(false);
+      onOpenChange(false);
       setFile(null);
     } catch (err) {
       toast.error((err as Error).message);
@@ -127,20 +124,10 @@ export function ChangeLogoDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        setOpen(v);
+        onOpenChange(v);
         if (!v) setFile(null);
       }}
     >
-      <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          title={t("superAdmin.changeLogoTitle")}
-          className="transition-transform hover:scale-110"
-        >
-          <ImageIcon className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{companyName}</DialogTitle>

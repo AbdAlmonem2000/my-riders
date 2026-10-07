@@ -3,7 +3,16 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { KeyRound, Loader2, Mail, Plus, Settings2, Trash2, UserCog } from "lucide-react";
+import {
+  KeyRound,
+  Loader2,
+  Mail,
+  MoreVertical,
+  Plus,
+  Settings2,
+  Trash2,
+  UserCog,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,8 +45,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   listCompanyStaff,
   createCompanyStaff,
@@ -485,6 +500,8 @@ function ManageStaffDialog({
   onUpdateName,
   onUpdateEmail,
   onUpdatePassword,
+  open,
+  onOpenChange,
 }: {
   staff: StaffRow;
   availableAreas: string[];
@@ -494,8 +511,12 @@ function ManageStaffDialog({
   onUpdateName: (userId: string, displayName: string) => Promise<boolean>;
   onUpdateEmail: (userId: string, email: string) => Promise<boolean>;
   onUpdatePassword: (userId: string, password: string) => Promise<boolean>;
+  // Opened from the row's "⋮" menu, not its own trigger button — one
+  // instance is shared across every row instead of mounting one per staff
+  // member.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [permissions, setPermissions] = useState<Permissions>(staff);
   const [displayName, setDisplayName] = useState(staff.displayName ?? "");
   const [email, setEmail] = useState(staff.email ?? "");
@@ -533,7 +554,7 @@ function ManageStaffDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        setOpen(v);
+        onOpenChange(v);
         if (v) {
           setPermissions(staff);
           setDisplayName(staff.displayName ?? "");
@@ -542,11 +563,6 @@ function ManageStaffDialog({
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button type="button" size="sm" variant="ghost" title={t("users.editPermissionsTooltip")}>
-          <Settings2 className="h-3.5 w-3.5" />
-        </Button>
-      </DialogTrigger>
       <DialogContent className="max-h-[85vh] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{staff.displayName || staff.email || "—"}</DialogTitle>
@@ -668,6 +684,10 @@ function AdminUsers() {
 
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // Row actions live in a single "⋮" dropdown — tracks which staff member's
+  // dialog is open, so only one shared instance of each needs to exist.
+  const [managingStaffId, setManagingStaffId] = useState<string | null>(null);
+  const [deletingStaffId, setDeletingStaffId] = useState<string | null>(null);
 
   const handleCreate = async (
     displayName: string,
@@ -897,50 +917,27 @@ function AdminUsers() {
                             : t("users.neverSignedIn")}
                         </TableCell>
                         <TableCell className="text-end">
-                          <div className="flex items-center justify-end gap-1">
-                            <ManageStaffDialog
-                              staff={s}
-                              availableAreas={availableAreas}
-                              savingUserId={savingUserId}
-                              t={t}
-                              onUpdatePermissions={handleUpdatePermissions}
-                              onUpdateName={handleUpdateName}
-                              onUpdateEmail={handleUpdateEmail}
-                              onUpdatePassword={handleUpdatePassword}
-                            />
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  title={t("users.deleteTooltip")}
-                                  className="text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>
-                                    {t("users.deleteConfirmTitle")}
-                                  </AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    {t("users.deleteConfirmDesc")}
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => handleDelete(s.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  >
-                                    {t("admin.delete")}
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" size="sm" variant="ghost">
+                                <MoreVertical className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setManagingStaffId(s.id)}>
+                                <Settings2 className="h-3.5 w-3.5" />
+                                {t("users.editPermissionsTooltip")}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => setDeletingStaffId(s.id)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                {t("users.deleteTooltip")}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -951,6 +948,46 @@ function AdminUsers() {
           )}
         </CardContent>
       </Card>
+      {managingStaffId &&
+        (() => {
+          const staff = staffQuery.data?.find((x) => x.id === managingStaffId);
+          return (
+            staff && (
+              <ManageStaffDialog
+                staff={staff}
+                availableAreas={availableAreas}
+                savingUserId={savingUserId}
+                t={t}
+                onUpdatePermissions={handleUpdatePermissions}
+                onUpdateName={handleUpdateName}
+                onUpdateEmail={handleUpdateEmail}
+                onUpdatePassword={handleUpdatePassword}
+                open
+                onOpenChange={(v) => !v && setManagingStaffId(null)}
+              />
+            )
+          );
+        })()}
+      <AlertDialog open={!!deletingStaffId} onOpenChange={(v) => !v && setDeletingStaffId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("users.deleteConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("users.deleteConfirmDesc")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deletingStaffId) handleDelete(deletingStaffId);
+                setDeletingStaffId(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t("admin.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

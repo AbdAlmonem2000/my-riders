@@ -11,6 +11,7 @@ import {
   Eye,
   FileText,
   Loader2,
+  MoreVertical,
   Pencil,
   Plus,
   Search,
@@ -63,8 +64,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   uploadRiderDocument,
   updateRiderDocumentExpiry,
@@ -202,6 +209,7 @@ function DocumentSlot({
   const [expiryDate, setExpiryDate] = useState(doc?.expiry_date ?? "");
   const [cardNumber, setCardNumber] = useState(doc?.card_number ?? "");
   const [plateNumber, setPlateNumber] = useState(doc?.plate_number ?? "");
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const needsExpiry = docTypeNeedsExpiry(docType, doc?.needs_expiry);
@@ -343,77 +351,66 @@ function DocumentSlot({
               {hasFile ? t("documents.replaceButton") : t("documents.uploadButton")}
             </Button>
           )}
-          {doc && (
-            <>
-              {canWrite && needsExpiry && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  title={t("documents.editDateTooltip")}
-                  onClick={startEditDate}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
+          {doc && ((canWrite && needsExpiry) || hasFile || canWrite) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" size="sm" variant="ghost">
+                  <MoreVertical className="h-3.5 w-3.5" />
                 </Button>
-              )}
-              {hasFile && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  title={t("documents.viewButton")}
-                  onClick={() => onView(docType)}
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                </Button>
-              )}
-              {hasFile && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  title={t("documents.downloadButton")}
-                  onClick={() => onDownload(docType)}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </Button>
-              )}
-              {canWrite && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      title={t("documents.deleteButton")}
-                      className="text-destructive hover:text-destructive"
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canWrite && needsExpiry && (
+                  <DropdownMenuItem onClick={startEditDate}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    {t("documents.editDateTooltip")}
+                  </DropdownMenuItem>
+                )}
+                {hasFile && (
+                  <DropdownMenuItem onClick={() => onView(docType)}>
+                    <Eye className="h-3.5 w-3.5" />
+                    {t("documents.viewButton")}
+                  </DropdownMenuItem>
+                )}
+                {hasFile && (
+                  <DropdownMenuItem onClick={() => onDownload(docType)}>
+                    <Download className="h-3.5 w-3.5" />
+                    {t("documents.downloadButton")}
+                  </DropdownMenuItem>
+                )}
+                {canWrite && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setConfirmDeleteOpen(true)}
+                      className="text-destructive focus:text-destructive"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t("documents.deleteConfirmTitle")}</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        {t("documents.deleteConfirmDesc")}
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t("documents.cancelButton")}</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => onDelete(docType)}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        {t("documents.deleteButton")}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-            </>
+                      {t("documents.deleteButton")}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       )}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("documents.deleteConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("documents.deleteConfirmDesc")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("documents.cancelButton")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => onDelete(docType)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t("documents.deleteButton")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {mode === "upload" && (
         <form onSubmit={submitUpload} className="mt-3 space-y-2 rounded-md bg-muted/40 p-2.5">

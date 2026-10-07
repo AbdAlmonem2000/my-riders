@@ -11,6 +11,7 @@ import {
   Users,
   KeyRound,
   Mail,
+  MoreVertical,
   Eye,
   EyeOff,
   ShieldCheck,
@@ -36,7 +37,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -45,8 +45,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   createAccount,
   deleteAccount,
@@ -351,6 +357,10 @@ function AccountRowItem({
   onUpdatePassword: (password: string) => Promise<void>;
   onDelete: () => void;
 }) {
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
       <div className="min-w-0 flex-1">
@@ -371,47 +381,73 @@ function AccountRowItem({
       <div className="shrink-0 text-xs text-muted-foreground">
         {account.lastSignInAt ? formatDate(account.lastSignInAt) : t("superAdmin.neverLoggedIn")}
       </div>
-      <div className="flex shrink-0 gap-1">
-        <ChangeEmailDialog
-          userId={account.id}
-          currentEmail={account.email ?? ""}
-          t={t}
-          onSubmit={onUpdateEmail}
-        />
-        <ChangePasswordDialog userId={account.id} t={t} onSubmit={onUpdatePassword} />
-        {!account.isSuperAdmin && (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-destructive transition-transform hover:scale-110"
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="ghost">
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setEmailOpen(true)}>
+            <Mail className="h-3.5 w-3.5" />
+            {t("superAdmin.changeEmailTitle")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setPasswordOpen(true)}>
+            <KeyRound className="h-3.5 w-3.5" />
+            {t("superAdmin.changePasswordTitle")}
+          </DropdownMenuItem>
+          {!account.isSuperAdmin && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setConfirmDeleteOpen(true)}
+                className="text-destructive focus:text-destructive"
               >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t("superAdmin.deleteAccountTitle")}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {lang === "ar"
-                    ? `سيتم حذف حساب ${account.email}. تقارير الشركة لن تُحذف.`
-                    : `The account ${account.email} will be deleted. Company reports will not be deleted.`}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                <AlertDialogAction
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  onClick={onDelete}
-                >
-                  {t("admin.delete")}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
-      </div>
+                <Trash2 className="h-3.5 w-3.5" />
+                {t("admin.delete")}
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ChangeEmailDialog
+        userId={account.id}
+        currentEmail={account.email ?? ""}
+        t={t}
+        onSubmit={onUpdateEmail}
+        open={emailOpen}
+        onOpenChange={setEmailOpen}
+      />
+      <ChangePasswordDialog
+        userId={account.id}
+        t={t}
+        onSubmit={onUpdatePassword}
+        open={passwordOpen}
+        onOpenChange={setPasswordOpen}
+      />
+      {!account.isSuperAdmin && (
+        <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("superAdmin.deleteAccountTitle")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {lang === "ar"
+                  ? `سيتم حذف حساب ${account.email}. تقارير الشركة لن تُحذف.`
+                  : `The account ${account.email} will be deleted. Company reports will not be deleted.`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={onDelete}
+              >
+                {t("admin.delete")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
@@ -419,12 +455,16 @@ function AccountRowItem({
 function ChangePasswordDialog({
   onSubmit,
   t,
+  open,
+  onOpenChange,
 }: {
   userId: string;
   onSubmit: (password: string) => Promise<void>;
   t: (key: TranslationKey) => string;
+  // Opened from the row's "⋮" menu, not its own trigger button.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -435,7 +475,7 @@ function ChangePasswordDialog({
     setLoading(true);
     try {
       await onSubmit(password);
-      setOpen(false);
+      onOpenChange(false);
       setPassword("");
     } catch (err) {
       toast.error((err as Error).message);
@@ -445,17 +485,7 @@ function ChangePasswordDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          title={t("superAdmin.changePasswordTitle")}
-          className="transition-transform hover:scale-110"
-        >
-          <KeyRound className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("superAdmin.changePasswordTitle")}</DialogTitle>
@@ -500,13 +530,17 @@ function ChangeEmailDialog({
   currentEmail,
   onSubmit,
   t,
+  open,
+  onOpenChange,
 }: {
   userId: string;
   currentEmail: string;
   onSubmit: (email: string) => Promise<void>;
   t: (key: TranslationKey) => string;
+  // Opened from the row's "⋮" menu, not its own trigger button.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [email, setEmail] = useState(currentEmail);
   const [loading, setLoading] = useState(false);
 
@@ -515,7 +549,7 @@ function ChangeEmailDialog({
     setLoading(true);
     try {
       await onSubmit(email);
-      setOpen(false);
+      onOpenChange(false);
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -527,20 +561,10 @@ function ChangeEmailDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        setOpen(v);
+        onOpenChange(v);
         if (v) setEmail(currentEmail);
       }}
     >
-      <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          title={t("superAdmin.changeEmailTitle")}
-          className="transition-transform hover:scale-110"
-        >
-          <Mail className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("superAdmin.changeEmailDialogTitle")}</DialogTitle>

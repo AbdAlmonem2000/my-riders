@@ -12,6 +12,7 @@ import {
   Layers,
   Loader2,
   MessageSquare,
+  MoreVertical,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -60,6 +61,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   checkIsAdmin,
   deleteReport,
   deleteReportSheet,
@@ -91,6 +99,8 @@ function ReportSheetsDialog({
   t,
   onDownload,
   onDelete,
+  open,
+  onOpenChange,
 }: {
   title: string;
   sheets: ReportSheet[];
@@ -99,24 +109,13 @@ function ReportSheetsDialog({
   t: (key: TranslationKey) => string;
   onDownload: (storagePath: string | null, fileName: string) => void;
   onDelete: (sheetId: string) => void;
+  // Opened from the row's "⋮" menu, not its own trigger button — one
+  // instance is shared across every row instead of mounting one per report.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          title={t("admin.sheetsTitle")}
-          className="relative transition-transform hover:scale-110"
-        >
-          <Layers className="h-4 w-4" />
-          {sheets.length > 1 && (
-            <span className="absolute -end-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
-              {sheets.length}
-            </span>
-          )}
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
@@ -201,14 +200,19 @@ function NoteEditor({
   title,
   t,
   onSave,
+  open,
+  onOpenChange,
 }: {
   reportId: string;
   initialNote: string | null;
   title: string;
   t: (key: TranslationKey) => string;
   onSave: (id: string, value: string) => Promise<void>;
+  // Opened from the row's "⋮" menu, not its own trigger button — one
+  // instance is shared across every row instead of mounting one per report.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [value, setValue] = useState(initialNote ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -217,7 +221,7 @@ function NoteEditor({
     try {
       await onSave(reportId, value);
       toast.success(t("admin.toastNoteSaved"));
-      setOpen(false);
+      onOpenChange(false);
     } catch (err) {
       toast.error(errText(err, t("admin.toastNoteSaveFailed")));
     } finally {
@@ -229,22 +233,10 @@ function NoteEditor({
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        setOpen(o);
+        onOpenChange(o);
         if (o) setValue(initialNote ?? "");
       }}
     >
-      <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          title={t("admin.editNoteTooltip")}
-          className={`transition-transform hover:scale-110 ${
-            initialNote ? "text-primary" : "text-muted-foreground"
-          }`}
-        >
-          <MessageSquare className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
@@ -259,7 +251,7 @@ function NoteEditor({
           rows={4}
         />
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             {t("admin.cancel")}
           </Button>
           <Button onClick={save} disabled={saving}>
@@ -352,6 +344,12 @@ function AdminReports() {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [deletingSheetId, setDeletingSheetId] = useState<string | null>(null);
+  // Row actions live in a single "⋮" dropdown — tracks which report's
+  // dialog (if any) is open, so only one shared instance of each needs to
+  // exist.
+  const [sheetsReportId, setSheetsReportId] = useState<string | null>(null);
+  const [noteReportId, setNoteReportId] = useState<string | null>(null);
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
 
   // Grouped by calendar month so a month with every one of its 30 days
   // uploaded separately doesn't just show as 30 flat rows stacked on top of
@@ -829,90 +827,62 @@ function AdminReports() {
                                 {formatDate(r.created_at)}
                               </TableCell>
                               <TableCell className="text-end">
-                                <ReportSheetsDialog
-                                  title={reportDateLabel(r.day, r.month, r.year, lang)}
-                                  sheets={sheetsByReport.get(r.id) ?? []}
-                                  deletingSheetId={deletingSheetId}
-                                  canDelete={canWrite}
-                                  t={t}
-                                  onDownload={handleDownload}
-                                  onDelete={handleDeleteSheet}
-                                />
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  title={t("admin.downloadTooltip")}
-                                  className="transition-transform hover:scale-110"
-                                  onClick={() => handleDownload(r.storage_path, r.file_name)}
-                                >
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                                {canWrite && (
-                                  <NoteEditor
-                                    reportId={r.id}
-                                    initialNote={r.note}
-                                    title={reportDateLabel(r.day, r.month, r.year, lang)}
-                                    t={t}
-                                    onSave={handleSaveNote}
-                                  />
-                                )}
-                                {canWrite && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    title={
-                                      r.is_hidden
-                                        ? t("admin.showReportTooltip")
-                                        : t("admin.hideReportTooltip")
-                                    }
-                                    className={
-                                      r.is_hidden
-                                        ? "text-primary transition-transform hover:scale-110"
-                                        : "transition-transform hover:scale-110"
-                                    }
-                                    onClick={() => handleToggleHidden(r.id, !r.is_hidden)}
-                                  >
-                                    {r.is_hidden ? (
-                                      <Eye className="h-4 w-4" />
-                                    ) : (
-                                      <EyeOff className="h-4 w-4" />
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button size="sm" variant="ghost">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => setSheetsReportId(r.id)}>
+                                      <Layers className="h-3.5 w-3.5" />
+                                      {t("admin.sheetsTitle")}
+                                      {(sheetsByReport.get(r.id)?.length ?? 0) > 1 && (
+                                        <span className="ms-auto text-xs text-muted-foreground">
+                                          {sheetsByReport.get(r.id)?.length}
+                                        </span>
+                                      )}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleDownload(r.storage_path, r.file_name)}
+                                    >
+                                      <Download className="h-3.5 w-3.5" />
+                                      {t("admin.downloadTooltip")}
+                                    </DropdownMenuItem>
+                                    {canWrite && (
+                                      <DropdownMenuItem onClick={() => setNoteReportId(r.id)}>
+                                        <MessageSquare className="h-3.5 w-3.5" />
+                                        {t("admin.editNoteTooltip")}
+                                      </DropdownMenuItem>
                                     )}
-                                  </Button>
-                                )}
-                                {canWrite && (
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="text-destructive transition-transform hover:scale-110"
+                                    {canWrite && (
+                                      <DropdownMenuItem
+                                        onClick={() => handleToggleHidden(r.id, !r.is_hidden)}
                                       >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>
-                                          {t("admin.deleteReportTitle")}
-                                        </AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          {lang === "ar"
-                                            ? `سيتم حذف تقرير ${reportDateLabel(r.day, r.month, r.year, lang)} وجميع بيانات المناديب المرتبطة به. لا يمكن التراجع.`
-                                            : `The ${reportDateLabel(r.day, r.month, r.year, lang)} report and all associated rider data will be deleted. This cannot be undone.`}
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                                        <AlertDialogAction
-                                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                          onClick={() => handleDelete(r.id)}
+                                        {r.is_hidden ? (
+                                          <Eye className="h-3.5 w-3.5" />
+                                        ) : (
+                                          <EyeOff className="h-3.5 w-3.5" />
+                                        )}
+                                        {r.is_hidden
+                                          ? t("admin.showReportTooltip")
+                                          : t("admin.hideReportTooltip")}
+                                      </DropdownMenuItem>
+                                    )}
+                                    {canWrite && (
+                                      <>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          onClick={() => setDeletingReportId(r.id)}
+                                          className="text-destructive focus:text-destructive"
                                         >
+                                          <Trash2 className="h-3.5 w-3.5" />
                                           {t("admin.delete")}
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
-                                )}
+                                        </DropdownMenuItem>
+                                      </>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -926,6 +896,70 @@ function AdminReports() {
           )}
         </CardContent>
       </Card>
+      {sheetsReportId &&
+        (() => {
+          const r = reportsQuery.data?.find((x) => x.id === sheetsReportId);
+          return (
+            r && (
+              <ReportSheetsDialog
+                title={reportDateLabel(r.day, r.month, r.year, lang)}
+                sheets={sheetsByReport.get(r.id) ?? []}
+                deletingSheetId={deletingSheetId}
+                canDelete={canWrite}
+                t={t}
+                onDownload={handleDownload}
+                onDelete={handleDeleteSheet}
+                open
+                onOpenChange={(v) => !v && setSheetsReportId(null)}
+              />
+            )
+          );
+        })()}
+      {noteReportId &&
+        (() => {
+          const r = reportsQuery.data?.find((x) => x.id === noteReportId);
+          return (
+            r && (
+              <NoteEditor
+                reportId={r.id}
+                initialNote={r.note}
+                title={reportDateLabel(r.day, r.month, r.year, lang)}
+                t={t}
+                onSave={handleSaveNote}
+                open
+                onOpenChange={(v) => !v && setNoteReportId(null)}
+              />
+            )
+          );
+        })()}
+      <AlertDialog open={!!deletingReportId} onOpenChange={(v) => !v && setDeletingReportId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("admin.deleteReportTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const r = reportsQuery.data?.find((x) => x.id === deletingReportId);
+                if (!r) return "";
+                return lang === "ar"
+                  ? `سيتم حذف تقرير ${reportDateLabel(r.day, r.month, r.year, lang)} وجميع بيانات المناديب المرتبطة به. لا يمكن التراجع.`
+                  : `The ${reportDateLabel(r.day, r.month, r.year, lang)} report and all associated rider data will be deleted. This cannot be undone.`;
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deletingReportId) handleDelete(deletingReportId);
+                setDeletingReportId(null);
+              }}
+            >
+              {t("admin.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

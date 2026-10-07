@@ -10,6 +10,7 @@ import {
   EyeOff,
   KeyRound,
   Loader2,
+  MoreVertical,
   Pencil,
   Plus,
   Search,
@@ -59,6 +60,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   uploadRoster,
   deleteRoster,
   getRosterDownloadUrl,
@@ -91,19 +99,22 @@ function riderExtra(extra: unknown): Record<string, unknown> {
 function RiderPasswordAdminDialog({
   riderId,
   riderName,
-  hasPassword,
   saving,
   t,
   onSubmit,
+  open,
+  onOpenChange,
 }: {
   riderId: string;
   riderName: string | null;
-  hasPassword: boolean;
   saving: boolean;
   t: (key: TranslationKey) => string;
   onSubmit: (riderId: string, password: string) => Promise<boolean>;
+  // Opened from the row's "⋮" menu, not its own trigger button — one
+  // instance is shared across every row instead of mounting one per rider.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [pw, setPw] = useState("");
   const [show, setShow] = useState(false);
 
@@ -111,7 +122,7 @@ function RiderPasswordAdminDialog({
     e.preventDefault();
     const ok = await onSubmit(riderId, pw.trim());
     if (ok) {
-      setOpen(false);
+      onOpenChange(false);
       setPw("");
     }
   };
@@ -120,20 +131,10 @@ function RiderPasswordAdminDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        setOpen(v);
+        onOpenChange(v);
         if (!v) setPw("");
       }}
     >
-      <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          title={t("admin.riderPasswordTitle")}
-          className={hasPassword ? "text-primary" : "text-muted-foreground"}
-        >
-          <KeyRound className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
@@ -182,14 +183,19 @@ function DeleteRiderDialog({
   riderName,
   t,
   onDelete,
+  open,
+  onOpenChange,
 }: {
   riderId: string;
   riderName: string | null;
   t: (key: TranslationKey) => string;
   onDelete: (riderId: string, deleteReports: boolean) => Promise<boolean>;
+  // Opened from the row's "⋮" menu, not its own trigger button — one
+  // instance is shared across every row instead of mounting one per rider.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const getCountFn = useServerFn(getRiderReportCount);
-  const [open, setOpen] = useState(false);
   const [reportCount, setReportCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -212,7 +218,7 @@ function DeleteRiderDialog({
     setDeleting(true);
     try {
       const ok = await onDelete(riderId, deleteReports);
-      if (ok) setOpen(false);
+      if (ok) onOpenChange(false);
     } finally {
       setDeleting(false);
     }
@@ -222,23 +228,13 @@ function DeleteRiderDialog({
     <AlertDialog
       open={open}
       onOpenChange={(v) => {
-        setOpen(v);
+        onOpenChange(v);
         if (v) {
           setReportCount(null);
           loadCount();
         }
       }}
     >
-      <AlertDialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          title={t("admin.deleteRiderTooltip")}
-          className="text-destructive hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </AlertDialogTrigger>
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>
@@ -452,6 +448,8 @@ function RiderFormDialog({
   saving,
   t,
   onSubmit,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
   mode: "create" | "edit";
   rider?: {
@@ -466,8 +464,17 @@ function RiderFormDialog({
   saving: boolean;
   t: (key: TranslationKey) => string;
   onSubmit: (values: RiderFormValues) => Promise<boolean>;
+  // "create" renders its own trigger button and manages its own open state
+  // (it's not a row action). "edit" is opened from the row's "⋮" menu
+  // instead, so it's always controlled — one shared instance instead of one
+  // per rider.
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled ? controlledOnOpenChange! : setInternalOpen;
   const [iqama, setIqama] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [name, setName] = useState("");
@@ -539,18 +546,14 @@ function RiderFormDialog({
         if (v) resetFromRider();
       }}
     >
-      <DialogTrigger asChild>
-        {mode === "create" ? (
+      {mode === "create" && (
+        <DialogTrigger asChild>
           <Button size="sm" className="transition-transform active:scale-[0.98]">
             <UserPlus className="ms-2 h-4 w-4" />
             {t("admin.addRiderButton")}
           </Button>
-        ) : (
-          <Button size="sm" variant="ghost" title={t("admin.editRiderTooltip")}>
-            <Pencil className="h-4 w-4" />
-          </Button>
-        )}
-      </DialogTrigger>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
@@ -753,6 +756,12 @@ function AdminRiders() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBlocking, setBulkBlocking] = useState(false);
   const [blockingAll, setBlockingAll] = useState(false);
+  // Row actions live in a single "⋮" dropdown now — each of these tracks
+  // which rider's dialog (if any) is open, so only one instance of each
+  // dialog needs to exist at all, instead of one per row.
+  const [editingRiderId, setEditingRiderId] = useState<string | null>(null);
+  const [passwordRiderId, setPasswordRiderId] = useState<string | null>(null);
+  const [deletingRiderId, setDeletingRiderId] = useState<string | null>(null);
 
   const handleCreateRider = async (values: RiderFormValues) => {
     setSavingRiderId("new");
@@ -1065,604 +1074,622 @@ function AdminRiders() {
   };
 
   return (
-    <Card className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-[backwards]">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Users className="h-5 w-5" />
-          {t("admin.rosterCardTitle")}
-        </CardTitle>
-        <CardDescription>{t("admin.rosterCardDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {canManageRoster && (
-          <>
-            <form onSubmit={handleRosterUpload} className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2 md:col-span-2">
-                <Label>{t("admin.rosterFileLabel")}</Label>
-                <Input
-                  ref={rosterFileRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  onChange={(e) => setRosterFile(e.target.files?.[0] ?? null)}
-                />
-              </div>
-              <div className="flex items-end">
-                <Button
-                  type="submit"
-                  disabled={rosterUploading || !rosterFile}
-                  className="w-full transition-transform active:scale-[0.98]"
-                >
-                  {rosterUploading ? (
-                    <>
-                      <Loader2 className="ms-2 h-4 w-4 animate-spin" />
-                      {t("admin.rosterUploadingButton")}
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="ms-2 h-4 w-4" />
-                      {t("admin.rosterUploadButton")}
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-
-            {adminCheck.data?.rosterFileName && (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
-                    {adminCheck.data.rosterFileName}
-                  </div>
-                  {adminCheck.data.rosterUploadedAt && (
-                    <div className="text-[11px] text-muted-foreground">
-                      {formatDateTime(adminCheck.data.rosterUploadedAt)}
-                    </div>
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleRosterDownload}
-                  title={t("admin.rosterDownloadButton")}
-                >
-                  <Download className="ms-1.5 h-4 w-4" />
-                  {t("admin.rosterDownloadButton")}
-                </Button>
-              </div>
-            )}
-          </>
-        )}
-
-        <div>
-          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium">
-              {t("admin.registeredRidersTitle")}{" "}
-              <span className="text-muted-foreground">({ridersQuery.data?.length ?? 0})</span>
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-              {(ridersQuery.data?.length ?? 0) > 0 && (
-                <Button size="sm" variant="outline" onClick={handleExportExcel}>
-                  <Download className="ms-1.5 h-4 w-4" />
-                  {t("admin.exportExcelButton")}
-                </Button>
-              )}
-              {canManageRoster && (
-                <RiderFormDialog
-                  mode="create"
-                  saving={savingRiderId === "new"}
-                  t={t}
-                  onSubmit={handleCreateRider}
-                />
-              )}
-              {canBlockRiders && (ridersQuery.data?.length ?? 0) > 0 && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      disabled={blockingAll}
-                    >
-                      {blockingAll ? (
-                        <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Ban className="ms-1.5 h-4 w-4" />
-                      )}
-                      {t("admin.blockAllButton")}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t("admin.blockAllConfirmTitle")}</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        {t("admin.blockAllConfirmDesc").replace(
-                          "{count}",
-                          String(ridersQuery.data?.length ?? 0),
-                        )}
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                      <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        onClick={handleBlockAllRiders}
-                      >
-                        {t("admin.blockAllButton")}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-              {canManageRoster && (ridersQuery.data?.length ?? 0) > 0 && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive"
-                      disabled={rosterDeleting}
-                    >
-                      {rosterDeleting ? (
-                        <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="ms-1.5 h-4 w-4" />
-                      )}
-                      {t("admin.rosterDeleteButton")}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t("admin.rosterDeleteTitle")}</AlertDialogTitle>
-                      <AlertDialogDescription>{t("admin.rosterDeleteDesc")}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                      <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        onClick={handleRosterDelete}
-                      >
-                        {t("admin.delete")}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-            </div>
-          </div>
-          {ridersQuery.isLoading && (
-            <div className="flex justify-center py-6">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          )}
-          {ridersQuery.data && ridersQuery.data.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              {t("admin.noRidersYet")}
-            </p>
-          )}
-          {ridersQuery.data && ridersQuery.data.length > 0 && (
+    <>
+      <Card className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-[backwards]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            {t("admin.rosterCardTitle")}
+          </CardTitle>
+          <CardDescription>{t("admin.rosterCardDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {canManageRoster && (
             <>
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <form onSubmit={handleRosterUpload} className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2 md:col-span-2">
+                  <Label>{t("admin.rosterFileLabel")}</Label>
                   <Input
-                    value={riderSearch}
-                    onChange={(e) => setRiderSearch(e.target.value)}
-                    placeholder={t("admin.riderSearchPlaceholder")}
-                    className="pe-9"
+                    ref={rosterFileRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    onChange={(e) => setRosterFile(e.target.files?.[0] ?? null)}
                   />
                 </div>
-                {areas.length > 0 && (
-                  <AreaFilterPicker
-                    areas={areas}
-                    selected={areaFilter}
-                    onChange={setAreaFilter}
-                    t={t}
-                  />
-                )}
-                {!isStaff && (
-                  <UserFilterPicker
-                    onPickAreas={(a) => setAreaFilter(a ? new Set(a) : new Set())}
-                    t={t}
-                  />
-                )}
-              </div>
-              {canEditRiders && filteredRiders.length > 0 && (
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={
-                        allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false
-                      }
-                      onCheckedChange={(v) => toggleSelectAllVisible(!!v)}
-                    />
-                    {selectedIds.size > 0
-                      ? t("admin.selectedCount").replace("{count}", String(selectedIds.size))
-                      : t("admin.selectAllRidersLabel")}
-                  </label>
-                  {selectedIds.size > 0 && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant="outline" onClick={handleExportSelected}>
-                        <Download className="ms-1.5 h-4 w-4" />
-                        {t("admin.exportSelectedButton")}
-                      </Button>
-                      {canBlockRiders && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={bulkBlocking}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              {bulkBlocking ? (
-                                <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
-                              ) : (
-                                <Ban className="ms-1.5 h-4 w-4" />
-                              )}
-                              {t("admin.bulkBlockButton")}
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                {t("admin.bulkBlockConfirmTitle")}
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {t("admin.bulkBlockConfirmDesc").replace(
-                                  "{count}",
-                                  String(selectedIds.size),
-                                )}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                              <AlertDialogAction
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={handleBulkBlock}
-                              >
-                                {t("admin.bulkBlockButton")}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      )}
-                      {canDeleteRiders && (
-                        <BulkDeleteRidersDialog
-                          riderIds={[...selectedIds]}
-                          t={t}
-                          onDelete={handleBulkDelete}
-                        />
-                      )}
-                      <Button size="sm" variant="ghost" onClick={clearSelection}>
-                        <X className="ms-1.5 h-4 w-4" />
-                        {t("admin.clearSelectionButton")}
-                      </Button>
+                <div className="flex items-end">
+                  <Button
+                    type="submit"
+                    disabled={rosterUploading || !rosterFile}
+                    className="w-full transition-transform active:scale-[0.98]"
+                  >
+                    {rosterUploading ? (
+                      <>
+                        <Loader2 className="ms-2 h-4 w-4 animate-spin" />
+                        {t("admin.rosterUploadingButton")}
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="ms-2 h-4 w-4" />
+                        {t("admin.rosterUploadButton")}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+
+              {adminCheck.data?.rosterFileName && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">
+                      {adminCheck.data.rosterFileName}
                     </div>
-                  )}
-                </div>
-              )}
-              {filteredRiders.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  {t("admin.riderSearchNoResults")}
-                </p>
-              ) : viewMode === "table" ? (
-                <div className="overflow-hidden rounded-xl border">
-                  <div className="max-h-[26rem] overflow-auto">
-                    <Table>
-                      <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:h-9 [&_th]:text-xs">
-                        <TableRow className="hover:bg-transparent">
-                          {canEditRiders && (
-                            <TableHead className="w-8">
-                              <Checkbox
-                                checked={
-                                  allVisibleSelected
-                                    ? true
-                                    : someVisibleSelected
-                                      ? "indeterminate"
-                                      : false
-                                }
-                                onCheckedChange={(v) => toggleSelectAllVisible(!!v)}
-                                aria-label={t("admin.selectAllRidersLabel")}
-                              />
-                            </TableHead>
-                          )}
-                          <TableHead className="min-w-[180px]">{t("admin.tableRider")}</TableHead>
-                          <TableHead className="whitespace-nowrap">
-                            {t("admin.tableIqama")}
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap">
-                            {t("admin.tableIdNumber")}
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap">
-                            {t("admin.riderAreaLabel")}
-                          </TableHead>
-                          {extraColumns.map((col) => (
-                            <TableHead key={col} className="whitespace-nowrap">
-                              {col}
-                            </TableHead>
-                          ))}
-                          <TableHead className="whitespace-nowrap text-end">
-                            {t("admin.tableStatus")}
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredRiders.map((r) => {
-                          const extra = riderExtra(r.extra);
-                          return (
-                            <TableRow
-                              key={r.id}
-                              className={r.is_blocked ? "bg-destructive/5" : undefined}
-                            >
-                              {canEditRiders && (
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedIds.has(r.id)}
-                                    onCheckedChange={(v) => toggleSelectRider(r.id, !!v)}
-                                    aria-label={t("admin.selectRiderLabel")}
-                                  />
-                                </TableCell>
-                              )}
-                              <TableCell>
-                                <div className="flex items-center gap-2.5">
-                                  {r.photo_url ? (
-                                    <RiderPhoto
-                                      riderId={r.id}
-                                      src={r.photo_url}
-                                      alt={r.rider_name ?? ""}
-                                      rotation={r.photo_rotation}
-                                      canRotate={canEditRiders}
-                                      className="h-9 w-9 shrink-0 rounded-full border border-border"
-                                    />
-                                  ) : (
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                                      <Users className="h-4 w-4" />
-                                    </div>
-                                  )}
-                                  <div className="min-w-0">
-                                    <div className="truncate font-medium">
-                                      {r.rider_name || "—"}
-                                    </div>
-                                    {r.is_blocked && (
-                                      <div className="text-[11px] font-medium text-destructive">
-                                        {t("admin.riderBlockedLabel")}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-mono text-xs text-muted-foreground">
-                                {r.iqama_number || "—"}
-                              </TableCell>
-                              <TableCell className="font-mono text-xs text-muted-foreground">
-                                {r.id_number || "—"}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                                {r.area || "—"}
-                              </TableCell>
-                              {extraColumns.map((col) => {
-                                const v = extra[col];
-                                return (
-                                  <TableCell
-                                    key={col}
-                                    className="whitespace-nowrap text-xs text-muted-foreground"
-                                  >
-                                    {v == null || v === "" ? "—" : String(v)}
-                                  </TableCell>
-                                );
-                              })}
-                              <TableCell className="text-end">
-                                <div className="flex items-center justify-end gap-1">
-                                  {canEditRiders ? (
-                                    <>
-                                      <RiderFormDialog
-                                        mode="edit"
-                                        rider={r}
-                                        saving={savingRiderId === r.id}
-                                        t={t}
-                                        onSubmit={(values) => handleUpdateRider(r.id, values)}
-                                      />
-                                      <RiderPasswordAdminDialog
-                                        riderId={r.id}
-                                        riderName={r.rider_name}
-                                        hasPassword={!!r.password_hash}
-                                        saving={pwRiderId === r.id}
-                                        t={t}
-                                        onSubmit={handleSetRiderPassword}
-                                      />
-                                      {canBlockRiders && (
-                                        <Button
-                                          size="sm"
-                                          variant={r.is_blocked ? "outline" : "ghost"}
-                                          disabled={blockingRiderId === r.id}
-                                          onClick={() => toggleRiderBlocked(r.id, !r.is_blocked)}
-                                          className={
-                                            r.is_blocked
-                                              ? "text-primary"
-                                              : "text-destructive hover:text-destructive"
-                                          }
-                                        >
-                                          {blockingRiderId === r.id ? (
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                          ) : r.is_blocked ? (
-                                            <>
-                                              <Eye className="ms-1.5 h-4 w-4" />
-                                              {t("admin.riderUnblockButton")}
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Ban className="ms-1.5 h-4 w-4" />
-                                              {t("admin.riderBlockButton")}
-                                            </>
-                                          )}
-                                        </Button>
-                                      )}
-                                      {canDeleteRiders && (
-                                        <DeleteRiderDialog
-                                          riderId={r.id}
-                                          riderName={r.rider_name}
-                                          t={t}
-                                          onDelete={handleDeleteRider}
-                                        />
-                                      )}
-                                    </>
-                                  ) : (
-                                    <span className="text-xs text-muted-foreground">—</span>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                  {filteredRiders.map((r, i) => {
-                    const extra = riderExtra(r.extra);
-                    const extraEntries = extraColumns
-                      .map((col) => [col, extra[col]] as const)
-                      .filter(([, v]) => v != null && v !== "");
-                    return (
-                      <div
-                        key={r.id}
-                        className={`animate-in fade-in relative flex flex-col items-center rounded-xl border p-5 text-center duration-300 fill-mode-[backwards] ${
-                          r.is_blocked ? "bg-destructive/5" : "bg-card"
-                        }`}
-                        style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
-                      >
-                        {canEditRiders && (
-                          <Checkbox
-                            checked={selectedIds.has(r.id)}
-                            onCheckedChange={(v) => toggleSelectRider(r.id, !!v)}
-                            aria-label={t("admin.selectRiderLabel")}
-                            className="absolute start-3 top-3 bg-background"
-                          />
-                        )}
-                        {r.photo_url ? (
-                          <RiderPhoto
-                            riderId={r.id}
-                            src={r.photo_url}
-                            alt={r.rider_name ?? ""}
-                            rotation={r.photo_rotation}
-                            canRotate={canEditRiders}
-                            className="h-28 w-28 shrink-0 rounded-full border border-border"
-                          />
-                        ) : (
-                          <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                            <Users className="h-10 w-10" />
-                          </div>
-                        )}
-                        <div className="mt-3 w-full min-w-0">
-                          <div className="truncate text-base font-semibold">
-                            {r.rider_name || "—"}
-                          </div>
-                          {r.is_blocked && (
-                            <div className="mt-0.5 text-xs font-medium text-destructive">
-                              {t("admin.riderBlockedLabel")}
-                            </div>
-                          )}
-                          {r.iqama_number && (
-                            <div
-                              className="mt-0.5 truncate font-mono text-xs text-muted-foreground"
-                              dir="ltr"
-                            >
-                              {t("admin.tableIqama")}: {r.iqama_number}
-                            </div>
-                          )}
-                          {r.id_number && (
-                            <div
-                              className="truncate font-mono text-xs text-muted-foreground"
-                              dir="ltr"
-                            >
-                              ID: {r.id_number}
-                            </div>
-                          )}
-                          {r.area && (
-                            <div className="mt-1 text-xs text-muted-foreground">{r.area}</div>
-                          )}
-                        </div>
-
-                        {extraEntries.length > 0 && (
-                          <div className="mt-2 flex flex-wrap items-center justify-center gap-1">
-                            {extraEntries.map(([col, v]) => (
-                              <Badge key={col} variant="outline" className="text-[10px]">
-                                {col}: {String(v)}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="mt-4 flex w-full flex-wrap items-center justify-center gap-1">
-                          {canEditRiders ? (
-                            <>
-                              <RiderFormDialog
-                                mode="edit"
-                                rider={r}
-                                saving={savingRiderId === r.id}
-                                t={t}
-                                onSubmit={(values) => handleUpdateRider(r.id, values)}
-                              />
-                              <RiderPasswordAdminDialog
-                                riderId={r.id}
-                                riderName={r.rider_name}
-                                hasPassword={!!r.password_hash}
-                                saving={pwRiderId === r.id}
-                                t={t}
-                                onSubmit={handleSetRiderPassword}
-                              />
-                              {canBlockRiders && (
-                                <Button
-                                  size="sm"
-                                  variant={r.is_blocked ? "outline" : "ghost"}
-                                  disabled={blockingRiderId === r.id}
-                                  onClick={() => toggleRiderBlocked(r.id, !r.is_blocked)}
-                                  className={
-                                    r.is_blocked
-                                      ? "text-primary"
-                                      : "text-destructive hover:text-destructive"
-                                  }
-                                >
-                                  {blockingRiderId === r.id ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : r.is_blocked ? (
-                                    <>
-                                      <Eye className="ms-1.5 h-4 w-4" />
-                                      {t("admin.riderUnblockButton")}
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Ban className="ms-1.5 h-4 w-4" />
-                                      {t("admin.riderBlockButton")}
-                                    </>
-                                  )}
-                                </Button>
-                              )}
-                              {canDeleteRiders && (
-                                <DeleteRiderDialog
-                                  riderId={r.id}
-                                  riderName={r.rider_name}
-                                  t={t}
-                                  onDelete={handleDeleteRider}
-                                />
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </div>
+                    {adminCheck.data.rosterUploadedAt && (
+                      <div className="text-[11px] text-muted-foreground">
+                        {formatDateTime(adminCheck.data.rosterUploadedAt)}
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRosterDownload}
+                    title={t("admin.rosterDownloadButton")}
+                  >
+                    <Download className="ms-1.5 h-4 w-4" />
+                    {t("admin.rosterDownloadButton")}
+                  </Button>
                 </div>
               )}
             </>
           )}
-        </div>
-      </CardContent>
-    </Card>
+
+          <div>
+            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-medium">
+                {t("admin.registeredRidersTitle")}{" "}
+                <span className="text-muted-foreground">({ridersQuery.data?.length ?? 0})</span>
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+                {(ridersQuery.data?.length ?? 0) > 0 && (
+                  <Button size="sm" variant="outline" onClick={handleExportExcel}>
+                    <Download className="ms-1.5 h-4 w-4" />
+                    {t("admin.exportExcelButton")}
+                  </Button>
+                )}
+                {canManageRoster && (
+                  <RiderFormDialog
+                    mode="create"
+                    saving={savingRiderId === "new"}
+                    t={t}
+                    onSubmit={handleCreateRider}
+                  />
+                )}
+                {canBlockRiders && (ridersQuery.data?.length ?? 0) > 0 && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        disabled={blockingAll}
+                      >
+                        {blockingAll ? (
+                          <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Ban className="ms-1.5 h-4 w-4" />
+                        )}
+                        {t("admin.blockAllButton")}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t("admin.blockAllConfirmTitle")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t("admin.blockAllConfirmDesc").replace(
+                            "{count}",
+                            String(ridersQuery.data?.length ?? 0),
+                          )}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={handleBlockAllRiders}
+                        >
+                          {t("admin.blockAllButton")}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+                {canManageRoster && (ridersQuery.data?.length ?? 0) > 0 && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        disabled={rosterDeleting}
+                      >
+                        {rosterDeleting ? (
+                          <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="ms-1.5 h-4 w-4" />
+                        )}
+                        {t("admin.rosterDeleteButton")}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t("admin.rosterDeleteTitle")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t("admin.rosterDeleteDesc")}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={handleRosterDelete}
+                        >
+                          {t("admin.delete")}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </div>
+            </div>
+            {ridersQuery.isLoading && (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {ridersQuery.data && ridersQuery.data.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {t("admin.noRidersYet")}
+              </p>
+            )}
+            {ridersQuery.data && ridersQuery.data.length > 0 && (
+              <>
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={riderSearch}
+                      onChange={(e) => setRiderSearch(e.target.value)}
+                      placeholder={t("admin.riderSearchPlaceholder")}
+                      className="pe-9"
+                    />
+                  </div>
+                  {areas.length > 0 && (
+                    <AreaFilterPicker
+                      areas={areas}
+                      selected={areaFilter}
+                      onChange={setAreaFilter}
+                      t={t}
+                    />
+                  )}
+                  {!isStaff && (
+                    <UserFilterPicker
+                      onPickAreas={(a) => setAreaFilter(a ? new Set(a) : new Set())}
+                      t={t}
+                    />
+                  )}
+                </div>
+                {canEditRiders && filteredRiders.length > 0 && (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={
+                          allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false
+                        }
+                        onCheckedChange={(v) => toggleSelectAllVisible(!!v)}
+                      />
+                      {selectedIds.size > 0
+                        ? t("admin.selectedCount").replace("{count}", String(selectedIds.size))
+                        : t("admin.selectAllRidersLabel")}
+                    </label>
+                    {selectedIds.size > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button size="sm" variant="outline" onClick={handleExportSelected}>
+                          <Download className="ms-1.5 h-4 w-4" />
+                          {t("admin.exportSelectedButton")}
+                        </Button>
+                        {canBlockRiders && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={bulkBlocking}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                {bulkBlocking ? (
+                                  <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Ban className="ms-1.5 h-4 w-4" />
+                                )}
+                                {t("admin.bulkBlockButton")}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  {t("admin.bulkBlockConfirmTitle")}
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  {t("admin.bulkBlockConfirmDesc").replace(
+                                    "{count}",
+                                    String(selectedIds.size),
+                                  )}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={handleBulkBlock}
+                                >
+                                  {t("admin.bulkBlockButton")}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                        {canDeleteRiders && (
+                          <BulkDeleteRidersDialog
+                            riderIds={[...selectedIds]}
+                            t={t}
+                            onDelete={handleBulkDelete}
+                          />
+                        )}
+                        <Button size="sm" variant="ghost" onClick={clearSelection}>
+                          <X className="ms-1.5 h-4 w-4" />
+                          {t("admin.clearSelectionButton")}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {filteredRiders.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    {t("admin.riderSearchNoResults")}
+                  </p>
+                ) : viewMode === "table" ? (
+                  <div className="overflow-hidden rounded-xl border">
+                    <div className="max-h-[26rem] overflow-auto">
+                      <Table>
+                        <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:h-9 [&_th]:text-xs">
+                          <TableRow className="hover:bg-transparent">
+                            {canEditRiders && (
+                              <TableHead className="w-8">
+                                <Checkbox
+                                  checked={
+                                    allVisibleSelected
+                                      ? true
+                                      : someVisibleSelected
+                                        ? "indeterminate"
+                                        : false
+                                  }
+                                  onCheckedChange={(v) => toggleSelectAllVisible(!!v)}
+                                  aria-label={t("admin.selectAllRidersLabel")}
+                                />
+                              </TableHead>
+                            )}
+                            <TableHead className="min-w-[180px]">{t("admin.tableRider")}</TableHead>
+                            <TableHead className="whitespace-nowrap">
+                              {t("admin.tableIqama")}
+                            </TableHead>
+                            <TableHead className="whitespace-nowrap">
+                              {t("admin.tableIdNumber")}
+                            </TableHead>
+                            <TableHead className="whitespace-nowrap">
+                              {t("admin.riderAreaLabel")}
+                            </TableHead>
+                            {extraColumns.map((col) => (
+                              <TableHead key={col} className="whitespace-nowrap">
+                                {col}
+                              </TableHead>
+                            ))}
+                            <TableHead className="whitespace-nowrap text-end">
+                              {t("admin.tableStatus")}
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredRiders.map((r) => {
+                            const extra = riderExtra(r.extra);
+                            return (
+                              <TableRow
+                                key={r.id}
+                                className={r.is_blocked ? "bg-destructive/5" : undefined}
+                              >
+                                {canEditRiders && (
+                                  <TableCell>
+                                    <Checkbox
+                                      checked={selectedIds.has(r.id)}
+                                      onCheckedChange={(v) => toggleSelectRider(r.id, !!v)}
+                                      aria-label={t("admin.selectRiderLabel")}
+                                    />
+                                  </TableCell>
+                                )}
+                                <TableCell>
+                                  <div className="flex items-center gap-2.5">
+                                    {r.photo_url ? (
+                                      <RiderPhoto
+                                        riderId={r.id}
+                                        src={r.photo_url}
+                                        alt={r.rider_name ?? ""}
+                                        rotation={r.photo_rotation}
+                                        canRotate={canEditRiders}
+                                        className="h-9 w-9 shrink-0 rounded-full border border-border"
+                                      />
+                                    ) : (
+                                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                                        <Users className="h-4 w-4" />
+                                      </div>
+                                    )}
+                                    <div className="min-w-0">
+                                      <div className="truncate font-medium">
+                                        {r.rider_name || "—"}
+                                      </div>
+                                      {r.is_blocked && (
+                                        <div className="text-[11px] font-medium text-destructive">
+                                          {t("admin.riderBlockedLabel")}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="font-mono text-xs text-muted-foreground">
+                                  {r.iqama_number || "—"}
+                                </TableCell>
+                                <TableCell className="font-mono text-xs text-muted-foreground">
+                                  {r.id_number || "—"}
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                                  {r.area || "—"}
+                                </TableCell>
+                                {extraColumns.map((col) => {
+                                  const v = extra[col];
+                                  return (
+                                    <TableCell
+                                      key={col}
+                                      className="whitespace-nowrap text-xs text-muted-foreground"
+                                    >
+                                      {v == null || v === "" ? "—" : String(v)}
+                                    </TableCell>
+                                  );
+                                })}
+                                <TableCell className="text-end">
+                                  {canEditRiders ? (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button size="sm" variant="ghost">
+                                          <MoreVertical className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => setEditingRiderId(r.id)}>
+                                          <Pencil className="h-3.5 w-3.5" />
+                                          {t("admin.editRiderTooltip")}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => setPasswordRiderId(r.id)}>
+                                          <KeyRound className="h-3.5 w-3.5" />
+                                          {t("admin.riderPasswordTitle")}
+                                        </DropdownMenuItem>
+                                        {canBlockRiders && (
+                                          <DropdownMenuItem
+                                            disabled={blockingRiderId === r.id}
+                                            onClick={() => toggleRiderBlocked(r.id, !r.is_blocked)}
+                                          >
+                                            {r.is_blocked ? (
+                                              <Eye className="h-3.5 w-3.5" />
+                                            ) : (
+                                              <Ban className="h-3.5 w-3.5" />
+                                            )}
+                                            {r.is_blocked
+                                              ? t("admin.riderUnblockButton")
+                                              : t("admin.riderBlockButton")}
+                                          </DropdownMenuItem>
+                                        )}
+                                        {canDeleteRiders && (
+                                          <>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                              onClick={() => setDeletingRiderId(r.id)}
+                                              className="text-destructive focus:text-destructive"
+                                            >
+                                              <Trash2 className="h-3.5 w-3.5" />
+                                              {t("admin.deleteRiderTooltip")}
+                                            </DropdownMenuItem>
+                                          </>
+                                        )}
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                    {filteredRiders.map((r, i) => {
+                      const extra = riderExtra(r.extra);
+                      const extraEntries = extraColumns
+                        .map((col) => [col, extra[col]] as const)
+                        .filter(([, v]) => v != null && v !== "");
+                      return (
+                        <div
+                          key={r.id}
+                          className={`animate-in fade-in relative flex flex-col items-center rounded-xl border p-5 text-center duration-300 fill-mode-[backwards] ${
+                            r.is_blocked ? "bg-destructive/5" : "bg-card"
+                          }`}
+                          style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
+                        >
+                          {canEditRiders && (
+                            <Checkbox
+                              checked={selectedIds.has(r.id)}
+                              onCheckedChange={(v) => toggleSelectRider(r.id, !!v)}
+                              aria-label={t("admin.selectRiderLabel")}
+                              className="absolute start-3 top-3 bg-background"
+                            />
+                          )}
+                          {r.photo_url ? (
+                            <RiderPhoto
+                              riderId={r.id}
+                              src={r.photo_url}
+                              alt={r.rider_name ?? ""}
+                              rotation={r.photo_rotation}
+                              canRotate={canEditRiders}
+                              className="h-28 w-28 shrink-0 rounded-full border border-border"
+                            />
+                          ) : (
+                            <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                              <Users className="h-10 w-10" />
+                            </div>
+                          )}
+                          <div className="mt-3 w-full min-w-0">
+                            <div className="truncate text-base font-semibold">
+                              {r.rider_name || "—"}
+                            </div>
+                            {r.is_blocked && (
+                              <div className="mt-0.5 text-xs font-medium text-destructive">
+                                {t("admin.riderBlockedLabel")}
+                              </div>
+                            )}
+                            {r.iqama_number && (
+                              <div
+                                className="mt-0.5 truncate font-mono text-xs text-muted-foreground"
+                                dir="ltr"
+                              >
+                                {t("admin.tableIqama")}: {r.iqama_number}
+                              </div>
+                            )}
+                            {r.id_number && (
+                              <div
+                                className="truncate font-mono text-xs text-muted-foreground"
+                                dir="ltr"
+                              >
+                                ID: {r.id_number}
+                              </div>
+                            )}
+                            {r.area && (
+                              <div className="mt-1 text-xs text-muted-foreground">{r.area}</div>
+                            )}
+                          </div>
+
+                          {extraEntries.length > 0 && (
+                            <div className="mt-2 flex flex-wrap items-center justify-center gap-1">
+                              {extraEntries.map(([col, v]) => (
+                                <Badge key={col} variant="outline" className="text-[10px]">
+                                  {col}: {String(v)}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-4 flex w-full items-center justify-center">
+                            {canEditRiders ? (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button size="sm" variant="ghost">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => setEditingRiderId(r.id)}>
+                                    <Pencil className="h-3.5 w-3.5" />
+                                    {t("admin.editRiderTooltip")}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setPasswordRiderId(r.id)}>
+                                    <KeyRound className="h-3.5 w-3.5" />
+                                    {t("admin.riderPasswordTitle")}
+                                  </DropdownMenuItem>
+                                  {canBlockRiders && (
+                                    <DropdownMenuItem
+                                      disabled={blockingRiderId === r.id}
+                                      onClick={() => toggleRiderBlocked(r.id, !r.is_blocked)}
+                                    >
+                                      {r.is_blocked ? (
+                                        <Eye className="h-3.5 w-3.5" />
+                                      ) : (
+                                        <Ban className="h-3.5 w-3.5" />
+                                      )}
+                                      {r.is_blocked
+                                        ? t("admin.riderUnblockButton")
+                                        : t("admin.riderBlockButton")}
+                                    </DropdownMenuItem>
+                                  )}
+                                  {canDeleteRiders && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        onClick={() => setDeletingRiderId(r.id)}
+                                        className="text-destructive focus:text-destructive"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                        {t("admin.deleteRiderTooltip")}
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      {editingRiderId && (
+        <RiderFormDialog
+          mode="edit"
+          rider={ridersQuery.data?.find((x) => x.id === editingRiderId)}
+          saving={savingRiderId === editingRiderId}
+          t={t}
+          onSubmit={(values) => handleUpdateRider(editingRiderId, values)}
+          open
+          onOpenChange={(v) => !v && setEditingRiderId(null)}
+        />
+      )}
+      {passwordRiderId && (
+        <RiderPasswordAdminDialog
+          riderId={passwordRiderId}
+          riderName={ridersQuery.data?.find((x) => x.id === passwordRiderId)?.rider_name ?? null}
+          saving={pwRiderId === passwordRiderId}
+          t={t}
+          onSubmit={handleSetRiderPassword}
+          open
+          onOpenChange={(v) => !v && setPasswordRiderId(null)}
+        />
+      )}
+      {deletingRiderId && (
+        <DeleteRiderDialog
+          riderId={deletingRiderId}
+          riderName={ridersQuery.data?.find((x) => x.id === deletingRiderId)?.rider_name ?? null}
+          t={t}
+          onDelete={handleDeleteRider}
+          open
+          onOpenChange={(v) => !v && setDeletingRiderId(null)}
+        />
+      )}
+    </>
   );
 }

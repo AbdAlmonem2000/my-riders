@@ -7,6 +7,7 @@ import {
   Eye,
   FileSignature,
   Loader2,
+  MoreVertical,
   Pencil,
   Plus,
   Printer,
@@ -50,8 +51,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { LetterDocument, useLetterPrint } from "@/components/letter-document";
 import { checkIsAdmin } from "@/lib/reports.functions";
 import {
@@ -264,6 +271,8 @@ function LetterViewDialog({
   companyUnifiedNumber,
   companyCommercialRegistration,
   t,
+  open,
+  onOpenChange,
 }: {
   letter: LetterRow;
   companyName: string;
@@ -273,8 +282,11 @@ function LetterViewDialog({
   companyUnifiedNumber: string | null;
   companyCommercialRegistration: string | null;
   t: (key: TranslationKey) => string;
+  // Opened from the row's "⋮" menu, not its own trigger button — one
+  // instance is shared across every row instead of mounting one per letter.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const letterNode = (
     <LetterDocument
       t={t}
@@ -297,12 +309,7 @@ function LetterViewDialog({
   );
   const { portal, print } = useLetterPrint(letterNode);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="ghost" title={t("letters.viewButton")}>
-          <Eye className="h-3.5 w-3.5" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{letter.title}</DialogTitle>
@@ -414,6 +421,11 @@ function AdminLetters() {
   const [editingLetterId, setEditingLetterId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [sendingToRider, setSendingToRider] = useState(false);
+  // Row actions live in a single "⋮" dropdown — tracks which letter's
+  // view/delete dialog (if any) is open, so only one shared instance of
+  // each needs to exist.
+  const [viewingLetterId, setViewingLetterId] = useState<string | null>(null);
+  const [deletingLetterId, setDeletingLetterId] = useState<string | null>(null);
 
   const resetForm = () => {
     setSelectedRider(null);
@@ -761,65 +773,38 @@ function AdminLetters() {
                                   {l.is_sent ? t("letters.sentBadge") : t("letters.notSentBadge")}
                                 </Badge>
                               </TableCell>
-                              <TableCell>
-                                <div className="flex items-center justify-end gap-0.5">
-                                  {canWrite && (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      title={t("letters.editButton")}
-                                      onClick={() => loadForEdit(l)}
-                                    >
-                                      <Pencil className="h-3.5 w-3.5" />
+                              <TableCell className="text-end">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button type="button" size="sm" variant="ghost">
+                                      <MoreVertical className="h-3.5 w-3.5" />
                                     </Button>
-                                  )}
-                                  <LetterViewDialog
-                                    letter={l}
-                                    companyName={companyQuery.data?.name ?? ""}
-                                    companyLogoUrl={companyQuery.data?.logo_url ?? null}
-                                    companyStampUrl={companyQuery.data?.stamp_url ?? null}
-                                    companySignatureUrl={companyQuery.data?.signature_url ?? null}
-                                    companyUnifiedNumber={companyQuery.data?.unified_number ?? null}
-                                    companyCommercialRegistration={
-                                      companyQuery.data?.commercial_registration ?? null
-                                    }
-                                    t={t}
-                                  />
-                                  {canWrite && (
-                                    <AlertDialog>
-                                      <AlertDialogTrigger asChild>
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="ghost"
-                                          className="text-destructive hover:text-destructive"
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    {canWrite && (
+                                      <DropdownMenuItem onClick={() => loadForEdit(l)}>
+                                        <Pencil className="h-3.5 w-3.5" />
+                                        {t("letters.editButton")}
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem onClick={() => setViewingLetterId(l.id)}>
+                                      <Eye className="h-3.5 w-3.5" />
+                                      {t("letters.viewButton")}
+                                    </DropdownMenuItem>
+                                    {canWrite && (
+                                      <>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          onClick={() => setDeletingLetterId(l.id)}
+                                          className="text-destructive focus:text-destructive"
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                      </AlertDialogTrigger>
-                                      <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                          <AlertDialogTitle>
-                                            {t("letters.deleteConfirmTitle")}
-                                          </AlertDialogTitle>
-                                          <AlertDialogDescription>
-                                            {t("letters.deleteConfirmDesc")}
-                                          </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                          <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                                          <AlertDialogAction
-                                            onClick={() => handleDelete(l.id)}
-                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                          >
-                                            {t("admin.delete")}
-                                          </AlertDialogAction>
-                                        </AlertDialogFooter>
-                                      </AlertDialogContent>
-                                    </AlertDialog>
-                                  )}
-                                </div>
+                                          {t("admin.delete")}
+                                        </DropdownMenuItem>
+                                      </>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </TableCell>
                             </TableRow>
                           );
@@ -833,6 +818,46 @@ function AdminLetters() {
           )}
         </CardContent>
       </Card>
+      {viewingLetterId &&
+        (() => {
+          const letter = lettersQuery.data?.find((x) => x.id === viewingLetterId);
+          return (
+            letter && (
+              <LetterViewDialog
+                letter={letter}
+                companyName={companyQuery.data?.name ?? ""}
+                companyLogoUrl={companyQuery.data?.logo_url ?? null}
+                companyStampUrl={companyQuery.data?.stamp_url ?? null}
+                companySignatureUrl={companyQuery.data?.signature_url ?? null}
+                companyUnifiedNumber={companyQuery.data?.unified_number ?? null}
+                companyCommercialRegistration={companyQuery.data?.commercial_registration ?? null}
+                t={t}
+                open
+                onOpenChange={(v) => !v && setViewingLetterId(null)}
+              />
+            )
+          );
+        })()}
+      <AlertDialog open={!!deletingLetterId} onOpenChange={(v) => !v && setDeletingLetterId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("letters.deleteConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("letters.deleteConfirmDesc")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deletingLetterId) handleDelete(deletingLetterId);
+                setDeletingLetterId(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t("admin.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
