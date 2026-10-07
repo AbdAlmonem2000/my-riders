@@ -73,6 +73,9 @@ interface RiderMatch {
   company_id: string;
   company_name: string;
   company_logo_url: string | null;
+  // null/empty = no restriction, show every column — set from the new
+  // "report columns visible to riders" section in Company Profile.
+  company_rider_visible_columns: string[] | null;
 }
 
 interface RiderNotification {
@@ -532,15 +535,17 @@ function RiderPage() {
     },
   });
 
-  // Every daily report this rider has, grouped into the calendar month it
-  // falls in — a legacy pre-daily-reports report (no day) is its own
-  // single-report "month" already, so it groups the same way.
+  // Only MONTHLY reports (day IS NULL) — a day report belongs to the
+  // separate admin-side daily dashboard/page instead; what a rider looks up
+  // here is always the whole-month report, same as before the daily
+  // feature existed.
   const months = useMemo(() => {
     const map = new Map<
       string,
       { key: string; month: number; year: number; reportIds: string[] }
     >();
     for (const r of reportsQuery.data ?? []) {
+      if (r.day != null) continue;
       const key = `${r.year}-${r.month}`;
       const g = map.get(key);
       if (g) g.reportIds.push(r.report_id);
@@ -1006,7 +1011,14 @@ function RiderPage() {
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               )}
-              {activeMonthGroup && reportData && <ReportView data={reportData} lang={lang} t={t} />}
+              {activeMonthGroup && reportData && (
+                <ReportView
+                  data={reportData}
+                  visibleColumns={activeRider?.company_rider_visible_columns ?? null}
+                  lang={lang}
+                  t={t}
+                />
+              )}
             </section>
           </div>
         )}
@@ -1027,18 +1039,34 @@ interface RiderReportView {
 
 function ReportView({
   data,
+  visibleColumns,
   lang,
   t,
 }: {
   data: RiderReportView;
+  // The company's chosen whitelist (from Company Profile) — null/empty
+  // means no restriction, show every column, same as before this existed.
+  visibleColumns: string[] | null;
   lang: Lang;
   t: (key: TranslationKey) => string;
 }) {
-  const rowData = data.data;
+  const allowed = useMemo(
+    () => (visibleColumns && visibleColumns.length > 0 ? new Set(visibleColumns) : null),
+    [visibleColumns],
+  );
+  const rowData = useMemo(() => {
+    if (!allowed) return data.data;
+    const filtered: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(data.data)) {
+      if (allowed.has(k)) filtered[k] = v;
+    }
+    return filtered;
+  }, [data.data, allowed]);
   const columns = useMemo(() => {
-    if (Array.isArray(data.columns) && data.columns.length > 0) return data.columns;
-    return Object.keys(rowData);
-  }, [data.columns, rowData]);
+    const cols =
+      Array.isArray(data.columns) && data.columns.length > 0 ? data.columns : Object.keys(rowData);
+    return allowed ? cols.filter((c) => allowed.has(c)) : cols;
+  }, [data.columns, rowData, allowed]);
 
   const metrics = [
     { label: t("rider.metricTotal"), metric: pickMetric(rowData, HIGHLIGHT_KEYS.total) },

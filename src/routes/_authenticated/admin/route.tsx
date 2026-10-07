@@ -12,6 +12,7 @@ import { useMemo, useState } from "react";
 import {
   Bell,
   Building2,
+  ChevronDown,
   CreditCard,
   FileSignature,
   FileSpreadsheet,
@@ -210,14 +211,49 @@ function ExpiryAlertsBell({
   );
 }
 
-const NAV_TABS = [
-  { to: "/admin" as const, key: "admin.navOverview" as const, icon: Home, exact: true },
+// A leaf is a direct link; a group is a header that expands to its own
+// leaves (Overview and Reports each split into a daily/monthly pair) — the
+// header itself never navigates anywhere on its own.
+interface NavLeaf {
+  to: string;
+  key: TranslationKey;
+  icon: React.ComponentType<{ className?: string }>;
+  exact: boolean;
+}
+interface NavGroup {
+  key: TranslationKey;
+  icon: React.ComponentType<{ className?: string }>;
+  children: NavLeaf[];
+}
+type NavEntry = NavLeaf | NavGroup;
+
+const NAV_TABS: NavEntry[] = [
+  {
+    key: "admin.navOverview",
+    icon: Home,
+    children: [
+      { to: "/admin", key: "admin.navOverviewDaily", icon: Home, exact: true },
+      { to: "/admin/overview-monthly", key: "admin.navOverviewMonthly", icon: Home, exact: false },
+    ],
+  },
   { to: "/admin/riders" as const, key: "admin.navRiders" as const, icon: Users, exact: false },
   {
-    to: "/admin/reports" as const,
-    key: "admin.navReports" as const,
+    key: "admin.navReports",
     icon: FileSpreadsheet,
-    exact: false,
+    children: [
+      {
+        to: "/admin/reports",
+        key: "admin.navReportsDaily",
+        icon: FileSpreadsheet,
+        exact: false,
+      },
+      {
+        to: "/admin/reports-monthly",
+        key: "admin.navReportsMonthly",
+        icon: FileSpreadsheet,
+        exact: false,
+      },
+    ],
   },
   {
     to: "/admin/documents" as const,
@@ -287,8 +323,10 @@ const NAV_TABS = [
 interface PagePermissions {
   isStaff: boolean;
   overviewAccess: boolean;
+  overviewDailyAccess: boolean;
   ridersAccess: "none" | "view" | "full";
   reportsAccess: "none" | "view" | "full";
+  reportsDailyAccess: boolean;
   documentsAccess: "none" | "view_only" | "full";
   lettersAccess: "none" | "view" | "full";
   notificationsAccess: boolean;
@@ -298,9 +336,11 @@ interface PagePermissions {
   companyProfileAccess: boolean;
 }
 const PAGE_ACCESS: Record<string, (d: PagePermissions) => boolean> = {
-  "/admin": (d) => d.overviewAccess,
+  "/admin": (d) => d.overviewAccess && d.overviewDailyAccess,
+  "/admin/overview-monthly": (d) => d.overviewAccess,
   "/admin/riders": (d) => d.ridersAccess !== "none",
-  "/admin/reports": (d) => d.reportsAccess !== "none",
+  "/admin/reports": (d) => d.reportsAccess !== "none" && d.reportsDailyAccess,
+  "/admin/reports-monthly": (d) => d.reportsAccess !== "none",
   "/admin/documents": (d) => d.documentsAccess !== "none",
   "/admin/operating-cards": (d) => d.documentsAccess !== "none" && d.operatingCardsAccess,
   "/admin/expiry-alerts": (d) => d.documentsAccess !== "none" && d.expiryAlertsAccess,
@@ -320,6 +360,19 @@ function AdminLayout() {
   const markAnnouncementsReadFn = useServerFn(markAnnouncementsRead);
   const [sidebarOpen, setSidebarOpen] = useState(readStoredSidebarOpen);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // Which nav groups (Overview, Reports) the admin has manually toggled
+  // open — independent of whether the current page happens to be inside
+  // one, since that's handled separately below (a group is also shown
+  // open whenever its own page is the active one).
+  const [openGroups, setOpenGroups] = useState<Set<TranslationKey>>(new Set());
+  const toggleGroup = (key: TranslationKey) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const toggleSidebar = () => {
     setSidebarOpen((v) => {
@@ -464,14 +517,28 @@ function AdminLayout() {
     );
   }
 
+  const leafAllowed = (leaf: NavLeaf) => {
+    if (leaf.to === "/admin/account") return isStaff;
+    const gate = PAGE_ACCESS[leaf.to];
+    return gate ? gate(adminCheck.data!) : !isStaff;
+  };
+
   // "My account" lives in the sidebar for staff (their one place to see
   // their own info/permissions and change their password) but not for real
-  // admins, who already manage that through Company Profile.
-  const visibleNavTabs = NAV_TABS.filter((tab) => {
-    if (tab.to === "/admin/account") return isStaff;
-    const gate = PAGE_ACCESS[tab.to];
-    return gate ? gate(adminCheck.data!) : !isStaff;
-  });
+  // admins, who already manage that through Company Profile. A group (e.g.
+  // Reports) is kept only if at least one of its children survives the
+  // filter, and only with those children.
+  const visibleNavTabs: NavEntry[] = NAV_TABS.map((tab): NavEntry | null => {
+    if ("children" in tab) {
+      const children = tab.children.filter(leafAllowed);
+      return children.length > 0 ? { ...tab, children } : null;
+    }
+    return leafAllowed(tab) ? tab : null;
+  }).filter((tab): tab is NavEntry => tab !== null);
+
+  const firstVisibleTo = visibleNavTabs.flatMap((tab) =>
+    "children" in tab ? tab.children : [tab],
+  )[0]?.to;
 
   // Both admins and staff only see the pages their (plan-intersected)
   // permissions grant — bounce them to the first one they have if they
@@ -481,8 +548,7 @@ function AdminLayout() {
       ? isStaff
       : (PAGE_ACCESS[pathname]?.(adminCheck.data) ?? !isStaff);
   if (!currentPageAllowed) {
-    const fallback = visibleNavTabs[0]?.to;
-    if (fallback) return <Navigate to={fallback} replace />;
+    if (firstVisibleTo) return <Navigate to={firstVisibleTo} replace />;
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
         <Card className="animate-in fade-in slide-in-from-bottom-2 max-w-md duration-500">
@@ -522,7 +588,7 @@ function AdminLayout() {
 
   // `collapsed` is the desktop icon-only sidebar; the mobile drawer always
   // shows full labels.
-  const renderNavLink = (tab: (typeof NAV_TABS)[number], collapsed: boolean) => {
+  const renderNavLink = (tab: NavLeaf, collapsed: boolean) => {
     const badgeCount =
       tab.to === "/admin/documents"
         ? expiringDocsCount
@@ -570,6 +636,57 @@ function AdminLayout() {
     );
   };
 
+  // A group header toggles open/closed instead of navigating — it's shown
+  // open either because the admin toggled it themselves, or because the
+  // page they're currently on is one of its children (so landing on
+  // /admin/reports-monthly directly still shows that item in context).
+  const renderNavEntry = (entry: NavEntry, collapsed: boolean) => {
+    if (!("children" in entry)) return renderNavLink(entry, collapsed);
+    const isChildActive = entry.children.some((c) =>
+      c.exact ? pathname === c.to : pathname.startsWith(c.to),
+    );
+    const isOpen = openGroups.has(entry.key) || isChildActive;
+    return (
+      <div key={entry.key}>
+        <button
+          type="button"
+          onClick={() => toggleGroup(entry.key)}
+          title={collapsed ? t(entry.key) : undefined}
+          className={`${NAV_LINK_CLASS} w-full ${collapsed ? "justify-center" : "justify-between"}`}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <entry.icon className="h-4 w-4 shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${
+                collapsed ? "max-w-0 opacity-0" : "max-w-40 opacity-100"
+              }`}
+            >
+              {t(entry.key)}
+            </span>
+          </span>
+          {!collapsed && (
+            <ChevronDown
+              className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${
+                isOpen ? "rotate-180" : ""
+              }`}
+            />
+          )}
+        </button>
+        {isOpen && (
+          <div
+            className={
+              collapsed
+                ? "flex flex-col items-center gap-1 pt-1"
+                : "ms-3 flex flex-col gap-1 border-s ps-2 pt-1"
+            }
+          >
+            {entry.children.map((child) => renderNavLink(child, collapsed))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="relative min-h-screen bg-muted/30">
       {/* overflow-hidden lives on the blob layer itself, not here — putting it
@@ -598,7 +715,7 @@ function AdminLayout() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3 md:gap-4">
             <MobileNavDrawer title={companyName ?? t("admin.headerTitle")}>
-              {visibleNavTabs.map((tab) => renderNavLink(tab, false))}
+              {visibleNavTabs.map((tab) => renderNavEntry(tab, false))}
             </MobileNavDrawer>
             {companyLogoUrl ? (
               <img
@@ -685,7 +802,7 @@ function AdminLayout() {
           </button>
 
           <nav className="flex flex-col gap-1 p-1">
-            {visibleNavTabs.map((tab) => renderNavLink(tab, !sidebarOpen))}
+            {visibleNavTabs.map((tab) => renderNavEntry(tab, !sidebarOpen))}
           </nav>
         </aside>
 

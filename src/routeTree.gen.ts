@@ -23,7 +23,9 @@ import { Route as AuthenticatedSuperAdminAnnouncementsRouteImport } from './rout
 import { Route as AuthenticatedSuperAdminAccountsRouteImport } from './routes/_authenticated/super-admin/accounts'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminRidersRouteImport } from './routes/_authenticated/admin/riders'
+import { Route as AuthenticatedAdminReportsMonthlyRouteImport } from './routes/_authenticated/admin/reports-monthly'
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin/reports'
+import { Route as AuthenticatedAdminOverviewMonthlyRouteImport } from './routes/_authenticated/admin/overview-monthly'
 import { Route as AuthenticatedAdminOperatingCardsRouteImport } from './routes/_authenticated/admin/operating-cards'
 import { Route as AuthenticatedAdminNotificationsRouteImport } from './routes/_authenticated/admin/notifications'
 import { Route as AuthenticatedAdminLettersRouteImport } from './routes/_authenticated/admin/letters'
@@ -106,10 +108,22 @@ const AuthenticatedAdminRidersRoute =
     path: '/riders',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminReportsMonthlyRoute =
+  AuthenticatedAdminReportsMonthlyRouteImport.update({
+    id: '/reports-monthly',
+    path: '/reports-monthly',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 const AuthenticatedAdminReportsRoute =
   AuthenticatedAdminReportsRouteImport.update({
     id: '/reports',
     path: '/reports',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminOverviewMonthlyRoute =
+  AuthenticatedAdminOverviewMonthlyRouteImport.update({
+    id: '/overview-monthly',
+    path: '/overview-monthly',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminOperatingCardsRoute =
@@ -170,7 +184,9 @@ export interface FileRoutesByFullPath {
   '/admin/letters': typeof AuthenticatedAdminLettersRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
   '/admin/operating-cards': typeof AuthenticatedAdminOperatingCardsRoute
+  '/admin/overview-monthly': typeof AuthenticatedAdminOverviewMonthlyRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/reports-monthly': typeof AuthenticatedAdminReportsMonthlyRoute
   '/admin/riders': typeof AuthenticatedAdminRidersRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/super-admin/accounts': typeof AuthenticatedSuperAdminAccountsRoute
@@ -191,7 +207,9 @@ export interface FileRoutesByTo {
   '/admin/letters': typeof AuthenticatedAdminLettersRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
   '/admin/operating-cards': typeof AuthenticatedAdminOperatingCardsRoute
+  '/admin/overview-monthly': typeof AuthenticatedAdminOverviewMonthlyRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/reports-monthly': typeof AuthenticatedAdminReportsMonthlyRoute
   '/admin/riders': typeof AuthenticatedAdminRidersRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/super-admin/accounts': typeof AuthenticatedSuperAdminAccountsRoute
@@ -216,7 +234,9 @@ export interface FileRoutesById {
   '/_authenticated/admin/letters': typeof AuthenticatedAdminLettersRoute
   '/_authenticated/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
   '/_authenticated/admin/operating-cards': typeof AuthenticatedAdminOperatingCardsRoute
+  '/_authenticated/admin/overview-monthly': typeof AuthenticatedAdminOverviewMonthlyRoute
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/_authenticated/admin/reports-monthly': typeof AuthenticatedAdminReportsMonthlyRoute
   '/_authenticated/admin/riders': typeof AuthenticatedAdminRidersRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/super-admin/accounts': typeof AuthenticatedSuperAdminAccountsRoute
@@ -241,7 +261,9 @@ export interface FileRouteTypes {
     | '/admin/letters'
     | '/admin/notifications'
     | '/admin/operating-cards'
+    | '/admin/overview-monthly'
     | '/admin/reports'
+    | '/admin/reports-monthly'
     | '/admin/riders'
     | '/admin/users'
     | '/super-admin/accounts'
@@ -262,7 +284,9 @@ export interface FileRouteTypes {
     | '/admin/letters'
     | '/admin/notifications'
     | '/admin/operating-cards'
+    | '/admin/overview-monthly'
     | '/admin/reports'
+    | '/admin/reports-monthly'
     | '/admin/riders'
     | '/admin/users'
     | '/super-admin/accounts'
@@ -286,7 +310,9 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/letters'
     | '/_authenticated/admin/notifications'
     | '/_authenticated/admin/operating-cards'
+    | '/_authenticated/admin/overview-monthly'
     | '/_authenticated/admin/reports'
+    | '/_authenticated/admin/reports-monthly'
     | '/_authenticated/admin/riders'
     | '/_authenticated/admin/users'
     | '/_authenticated/super-admin/accounts'
@@ -404,11 +430,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRidersRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/reports-monthly': {
+      id: '/_authenticated/admin/reports-monthly'
+      path: '/reports-monthly'
+      fullPath: '/admin/reports-monthly'
+      preLoaderRoute: typeof AuthenticatedAdminReportsMonthlyRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/_authenticated/admin/reports': {
       id: '/_authenticated/admin/reports'
       path: '/reports'
       fullPath: '/admin/reports'
       preLoaderRoute: typeof AuthenticatedAdminReportsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/overview-monthly': {
+      id: '/_authenticated/admin/overview-monthly'
+      path: '/overview-monthly'
+      fullPath: '/admin/overview-monthly'
+      preLoaderRoute: typeof AuthenticatedAdminOverviewMonthlyRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/operating-cards': {
@@ -471,7 +511,9 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminLettersRoute: typeof AuthenticatedAdminLettersRoute
   AuthenticatedAdminNotificationsRoute: typeof AuthenticatedAdminNotificationsRoute
   AuthenticatedAdminOperatingCardsRoute: typeof AuthenticatedAdminOperatingCardsRoute
+  AuthenticatedAdminOverviewMonthlyRoute: typeof AuthenticatedAdminOverviewMonthlyRoute
   AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
+  AuthenticatedAdminReportsMonthlyRoute: typeof AuthenticatedAdminReportsMonthlyRoute
   AuthenticatedAdminRidersRoute: typeof AuthenticatedAdminRidersRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -488,7 +530,11 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
     AuthenticatedAdminNotificationsRoute: AuthenticatedAdminNotificationsRoute,
     AuthenticatedAdminOperatingCardsRoute:
       AuthenticatedAdminOperatingCardsRoute,
+    AuthenticatedAdminOverviewMonthlyRoute:
+      AuthenticatedAdminOverviewMonthlyRoute,
     AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
+    AuthenticatedAdminReportsMonthlyRoute:
+      AuthenticatedAdminReportsMonthlyRoute,
     AuthenticatedAdminRidersRoute: AuthenticatedAdminRidersRoute,
     AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
     AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,

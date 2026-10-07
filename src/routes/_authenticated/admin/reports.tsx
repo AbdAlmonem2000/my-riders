@@ -296,12 +296,17 @@ function AdminReports() {
   // RLS layer), this just keeps the UI from offering rejected actions.
   const canWrite = adminCheck.data ? adminCheck.data.reportsAccess === "full" : true;
 
+  // This page (and its dashboard counterpart on the overview page) only
+  // ever shows DAY reports now — a plain monthly report (day IS NULL,
+  // including every one uploaded before the daily feature existed) has its
+  // own separate page/dashboard instead of being mixed in here.
   const reportsQuery = useQuery({
     queryKey: ["admin-reports"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("reports")
         .select("*")
+        .not("day", "is", null)
         .order("year", { ascending: false })
         .order("month", { ascending: false })
         .order("day", { ascending: false, nullsFirst: false });

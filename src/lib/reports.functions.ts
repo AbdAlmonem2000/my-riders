@@ -91,7 +91,9 @@ const UploadInput = z
   .object({
     month: z.number().int().min(1).max(12),
     year: z.number().int().min(2000).max(2100),
-    day: z.number().int().min(1).max(31),
+    // null means a whole-month report (the monthly reports page) — no
+    // specific day, same as every report before the daily feature existed.
+    day: z.number().int().min(1).max(31).nullable(),
     fileName: z.string().min(1),
     storagePath: z.string().nullable(),
     headers: z.array(z.string()),
@@ -99,8 +101,8 @@ const UploadInput = z
     idColumn: z.string().nullable(),
     nameColumn: z.string().nullable(),
     rows: z.array(RowSchema),
-    // "new"     -> fail if a report already exists for this day
-    // "replace" -> drop the existing day's report and start fresh
+    // "new"     -> fail if a report already exists for this day/month
+    // "replace" -> drop the existing one and start fresh
     // "merge"   -> keep it, add this sheet's columns onto each rider's row
     mode: z.enum(["new", "replace", "merge"]).optional(),
     note: z.string().trim().max(2000).nullable().optional(),
@@ -110,6 +112,7 @@ const UploadInput = z
   })
   .refine(
     (d) => {
+      if (d.day === null) return true;
       const date = new Date(Date.UTC(d.year, d.month - 1, d.day));
       return (
         date.getUTCFullYear() === d.year &&
@@ -188,21 +191,29 @@ export const uploadReport = createServerFn({ method: "POST" })
     // company, so every riders query below is scoped to it explicitly.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Check for an existing report for this exact day within this company
-    const { data: existing } = await supabase
+    // Check for an existing report for this exact day (or, for a monthly
+    // report, this exact month) within this company. .eq() with a literal
+    // null is unreliable across supabase-js/PostgREST versions, so a null
+    // day is matched with .is() instead.
+    let existingQuery = supabase
       .from("reports")
       .select("id, storage_path")
       .eq("company_id", companyId)
       .eq("month", data.month)
-      .eq("year", data.year)
-      .eq("day", data.day)
-      .maybeSingle();
+      .eq("year", data.year);
+    existingQuery =
+      data.day === null ? existingQuery.is("day", null) : existingQuery.eq("day", data.day);
+    const { data: existing } = await existingQuery.maybeSingle();
 
     const mode = data.mode ?? "new";
     const mergeIntoExisting = !!existing && mode === "merge";
 
     if (existing && mode === "new") {
-      throw new Error("يوجد تقرير لهذا اليوم بالفعل. اختر «استبدال» أو «دمج مع الموجود».");
+      throw new Error(
+        data.day === null
+          ? "يوجد تقرير لهذا الشهر بالفعل. اختر «استبدال» أو «دمج مع الموجود»."
+          : "يوجد تقرير لهذا اليوم بالفعل. اختر «استبدال» أو «دمج مع الموجود».",
+      );
     }
     if (existing && mode === "replace") {
       // Deleting the report row cascades its sheets and rider rows, but the
@@ -246,9 +257,13 @@ export const uploadReport = createServerFn({ method: "POST" })
           // left at its shared default collided the moment a second day
           // was uploaded in the same month, regardless of `day`. This app
           // never reads `title` anywhere; giving it a day-specific value
-          // just keeps every row distinct so that legacy constraint never
-          // fires.
-          title: `${data.year}-${String(data.month).padStart(2, "0")}-${String(data.day).padStart(2, "0")}`,
+          // (or, for a monthly report, a fixed "monthly" suffix — there's
+          // only ever one of those per company/month/year) just keeps every
+          // row distinct so that legacy constraint never fires.
+          title:
+            data.day === null
+              ? `${data.year}-${String(data.month).padStart(2, "0")}-monthly`
+              : `${data.year}-${String(data.month).padStart(2, "0")}-${String(data.day).padStart(2, "0")}`,
         })
         .select("id")
         .single();
@@ -261,7 +276,11 @@ export const uploadReport = createServerFn({ method: "POST" })
         // leak straight to the admin instead of the same clear choice the
         // upfront check already gives them.
         if (reportErr?.code === "23505") {
-          throw new Error("يوجد تقرير لهذا اليوم بالفعل. اختر «استبدال» أو «دمج مع الموجود».");
+          throw new Error(
+            data.day === null
+              ? "يوجد تقرير لهذا الشهر بالفعل. اختر «استبدال» أو «دمج مع الموجود»."
+              : "يوجد تقرير لهذا اليوم بالفعل. اختر «استبدال» أو «دمج مع الموجود».",
+          );
         }
         throw new Error(reportErr?.message ?? "فشل إنشاء التقرير");
       }
@@ -800,6 +819,14 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let lettersAccess: Tier = "full";
     let allowedAreas: string[] | null = null;
     let notificationsAccess = true;
+    // Plan-only sub-toggles (no per-staff permission exists for either —
+    // the super admin controls these per company, same shape as
+    // operatingCardsAccess/expiryAlertsAccess below) that independently
+    // show/hide just the DAILY variant of Reports/Overview; the base
+    // reportsAccess/overviewAccess above still gates the whole nav group
+    // (including the monthly variant).
+    let reportsDailyAccess = true;
+    let overviewDailyAccess = true;
     let operatingCardsAccess = true;
     let operatingCardsUploadAccess = true;
     let operatingCardsExportAccess = true;
@@ -876,7 +903,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       const { data } = await supabase
         .from("companies")
         .select(
-          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access, plan_operating_cards_access, plan_expiry_alerts_access, expiry_notify_days",
+          "name, logo_url, is_suspended, roster_file_name, roster_uploaded_at, plan_overview_access, plan_overview_daily_access, plan_riders_access, plan_reports_access, plan_reports_daily_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access, plan_operating_cards_access, plan_expiry_alerts_access, expiry_notify_days",
         )
         .eq("id", companyId)
         .maybeSingle();
@@ -894,8 +921,10 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       // company's plan, so a restricted-plan company can't be routed
       // around by handing a staff member broader personal permissions.
       const planOverview = (data?.plan_overview_access as boolean | undefined) ?? false;
+      const planOverviewDaily = (data?.plan_overview_daily_access as boolean | undefined) ?? true;
       const planRiders = (data?.plan_riders_access as Tier | undefined) ?? "none";
       const planReports = (data?.plan_reports_access as Tier | undefined) ?? "none";
+      const planReportsDaily = (data?.plan_reports_daily_access as boolean | undefined) ?? true;
       const planDocuments = (data?.plan_documents_access as DocTier | undefined) ?? "none";
       const planLetters = (data?.plan_letters_access as Tier | undefined) ?? "none";
       const planNotifications = (data?.plan_notifications_access as boolean | undefined) ?? true;
@@ -905,8 +934,10 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       const planExpiryAlerts = (data?.plan_expiry_alerts_access as boolean | undefined) ?? true;
       if (isStaff) {
         overviewAccess = overviewAccess && planOverview;
+        overviewDailyAccess = overviewDailyAccess && planOverviewDaily;
         ridersAccess = minTier(ridersAccess, planRiders);
         reportsAccess = minTier(reportsAccess, planReports);
+        reportsDailyAccess = reportsDailyAccess && planReportsDaily;
         documentsAccess = minTier(documentsAccess, planDocuments);
         lettersAccess = minTier(lettersAccess, planLetters);
         notificationsAccess = notificationsAccess && planNotifications;
@@ -918,8 +949,10 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         companyProfileAccess = false;
       } else if (!isSuperAdmin) {
         overviewAccess = planOverview;
+        overviewDailyAccess = planOverviewDaily;
         ridersAccess = planRiders;
         reportsAccess = planReports;
+        reportsDailyAccess = planReportsDaily;
         documentsAccess = planDocuments;
         lettersAccess = planLetters;
         notificationsAccess = planNotifications;
@@ -947,10 +980,12 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       isStaff,
       displayName,
       overviewAccess,
+      overviewDailyAccess,
       ridersAccess,
       canDeleteRiders,
       canBlockRiders,
       reportsAccess,
+      reportsDailyAccess,
       documentsAccess,
       lettersAccess,
       notificationsAccess,

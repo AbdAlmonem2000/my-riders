@@ -189,8 +189,12 @@ const dict = {
   },
   "admin.logout": { ar: "خروج", en: "Logout" },
   "admin.navOverview": { ar: "نظرة عامة", en: "Overview" },
+  "admin.navOverviewDaily": { ar: "يومية", en: "Daily" },
+  "admin.navOverviewMonthly": { ar: "شهرية", en: "Monthly" },
   "admin.navRiders": { ar: "بيانات المناديب", en: "Riders" },
   "admin.navReports": { ar: "التقارير", en: "Reports" },
+  "admin.navReportsDaily": { ar: "تقرير يومي", en: "Daily report" },
+  "admin.navReportsMonthly": { ar: "تقرير شهري", en: "Monthly report" },
   "admin.navDocuments": { ar: "المستندات", en: "Documents" },
   "admin.navOperatingCards": { ar: "كروت التشغيل", en: "Operating cards" },
   "admin.navExpiryAlerts": { ar: "تنبيهات انتهاء المستندات", en: "Expiry alerts" },
@@ -204,6 +208,11 @@ const dict = {
     ar: "تحليل تلقائي لأداء المناديب بناءً على التقارير المرفوعة",
     en: "Automatic rider-performance analysis based on uploaded reports",
   },
+  "admin.monthlyOverviewHeading": {
+    ar: "نظرة عامة — تقارير شهرية",
+    en: "Overview — Monthly reports",
+  },
+  "admin.monthlyOverviewBadge": { ar: "شهري", en: "Monthly" },
   "admin.dashboardNoReports": {
     ar: "ارفع أول تقرير عشان تقدر تشوف أداء المناديب",
     en: "Upload your first report to see rider performance",
@@ -515,6 +524,47 @@ const dict = {
     ar: "هيضيف أعمدة الشيت ده لكل مندوب في تقرير اليوم الموجود (يُطابَق بالإقامة أو الـ ID). مناسب لرفع شيت المسافات وشيت التقييم كل واحد لوحده.",
     en: "Adds this sheet's columns onto each rider in the existing day's report (matched by Iqama or ID). Good for uploading a distances sheet and a ratings sheet separately.",
   },
+  "admin.monthlyUploadCardTitle": { ar: "رفع تقرير شهري جديد", en: "Upload New Monthly Report" },
+  "admin.monthlyUploadCardDesc": {
+    ar: "اختر الشهر والسنة ثم ارفع ملف Excel — تقرير واحد يمثل الشهر كله، من غير تحديد يوم.",
+    en: "Choose the month and year then upload the Excel file — one report for the whole month, no specific day.",
+  },
+  "admin.monthlyModeNew": { ar: "تقرير شهر جديد", en: "New month's report" },
+  "admin.monthlyModeReplace": { ar: "استبدال تقرير الشهر", en: "Replace the month's report" },
+  "admin.monthlyModeMerge": {
+    ar: "دمج شيت إضافي مع تقرير الشهر",
+    en: "Merge an extra sheet into the month's report",
+  },
+  "admin.monthlyModeNewHint": {
+    ar: "لو فيه تقرير للشهر ده بالفعل هيطلع خطأ.",
+    en: "Fails if a report for this month already exists.",
+  },
+  "admin.monthlyModeReplaceHint": {
+    ar: "هيمسح تقرير الشهر الموجود وكل بياناته ويبدأ من جديد.",
+    en: "Deletes the existing month's report and its data, then starts fresh.",
+  },
+  "admin.monthlyModeMergeHint": {
+    ar: "هيضيف أعمدة الشيت ده لكل مندوب في تقرير الشهر الموجود (يُطابَق بالإقامة أو الـ ID). مناسب لرفع شيت المسافات وشيت التقييم كل واحد لوحده.",
+    en: "Adds this sheet's columns onto each rider in the existing month's report (matched by Iqama or ID). Good for uploading a distances sheet and a ratings sheet separately.",
+  },
+  "admin.monthlyNoteLabel": {
+    ar: "ملحوظة عامة للشهر (اختياري)",
+    en: "General note for the month (optional)",
+  },
+  "admin.monthlyUploadButton": { ar: "رفع التقرير الشهري", en: "Upload Monthly Report" },
+  "admin.monthlyUploadedReportsTitle": {
+    ar: "التقارير الشهرية المرفوعة",
+    en: "Uploaded Monthly Reports",
+  },
+  "admin.monthlyNoReportsYet": {
+    ar: "لا توجد تقارير شهرية بعد. ارفع أول تقرير أعلاه.",
+    en: "No monthly reports yet. Upload your first report above.",
+  },
+  "admin.monthlyDeleteReportTitle": { ar: "حذف التقرير الشهري؟", en: "Delete monthly report?" },
+  "admin.monthlyDeleteConfirmDesc": {
+    ar: "سيتم حذف هذا التقرير الشهري وجميع بيانات المناديب المرتبطة به. لا يمكن التراجع.",
+    en: "This monthly report and all associated rider data will be deleted. This cannot be undone.",
+  },
   "admin.toastInvalidDate": { ar: "تاريخ غير صحيح", en: "Invalid date" },
   "admin.noteLabel": {
     ar: "ملحوظة عامة لليوم (اختياري)",
@@ -745,6 +795,14 @@ const dict = {
     en: "Set which pages are open to this company and to any user it creates — closing a page here closes it even if the company's own admin grants it to a staff member.",
   },
   "superAdmin.toastPlanUpdated": { ar: "تم تحديث باقة الشركة", en: "Company plan updated" },
+  "superAdmin.overviewDailyAccessLabel": {
+    ar: "النظرة العامة اليومية",
+    en: "Daily overview",
+  },
+  "superAdmin.reportsDailyAccessLabel": {
+    ar: "التقارير اليومية",
+    en: "Daily reports",
+  },
   "superAdmin.notificationsAccessLabel": {
     ar: "صفحة الإشعارات والإنذارات",
     en: "Notifications & Warnings page",
@@ -1239,6 +1297,30 @@ const dict = {
   "companyProfile.documentsDesc": {
     ar: "السجل التجاري، الشهادة الضريبية، أو أي مستند رسمي آخر — بتاريخ انتهاء لكل واحد",
     en: "Commercial register, tax certificate, or any other official document — each with its own expiry date",
+  },
+  "companyProfile.riderColumnsCardTitle": {
+    ar: "الأعمدة الظاهرة للمندوب",
+    en: "Columns visible to riders",
+  },
+  "companyProfile.riderColumnsTitle": {
+    ar: "التحكم في بيانات التقرير اللي يشوفها المندوب",
+    en: "Control which report data riders see",
+  },
+  "companyProfile.riderColumnsDesc": {
+    ar: "لو فعّلت القيد ده، المندوب هيشوف بس الأعمدة اللي تحددها هنا لما يدخل برقم إقامته أو الـ ID — مش كل بيانات التقرير.",
+    en: "Turn this on and a rider only sees the columns you pick here when they look themselves up — not every column in the report.",
+  },
+  "companyProfile.riderColumnsRestrictLabel": {
+    ar: "قيّد الأعمدة الظاهرة للمندوب",
+    en: "Restrict which columns riders see",
+  },
+  "companyProfile.riderColumnsEmpty": {
+    ar: "مفيش بيانات تقارير شهرية مرفوعة لسه عشان تختار أعمدتها",
+    en: "No monthly report data uploaded yet to pick columns from",
+  },
+  "companyProfile.toastRiderColumnsFailed": {
+    ar: "فشل حفظ الأعمدة الظاهرة للمندوب",
+    en: "Failed to save the columns visible to riders",
   },
   "companyProfile.documentLabelLabel": { ar: "اسم المستند", en: "Document name" },
   "companyProfile.documentLabelPlaceholder": {

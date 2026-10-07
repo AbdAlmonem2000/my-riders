@@ -48,7 +48,7 @@ export const listCompanies = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("companies")
       .select(
-        "id, name, logo_url, is_suspended, created_at, plan_overview_access, plan_riders_access, plan_reports_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access, plan_operating_cards_access, plan_expiry_alerts_access",
+        "id, name, logo_url, is_suspended, created_at, plan_overview_access, plan_overview_daily_access, plan_riders_access, plan_reports_access, plan_reports_daily_access, plan_documents_access, plan_letters_access, plan_notifications_access, plan_users_access, plan_company_profile_access, plan_operating_cards_access, plan_expiry_alerts_access",
       )
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
@@ -276,6 +276,34 @@ export const updateCompanyRegistration = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Which report columns a rider is allowed to see on their own lookup page
+// — null/empty means no restriction (every column shows, same as before
+// this existed). Unlike the plan toggles below, the company's own admin
+// sets this themselves, from the new Company Profile section.
+export const updateRiderVisibleColumns = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        columns: z.array(z.string()).nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertCanManageCompany(context.supabase, context.userId, data.id);
+    const { data: updated, error } = await context.supabase
+      .from("companies")
+      .update({
+        rider_visible_columns: data.columns && data.columns.length > 0 ? data.columns : null,
+      })
+      .eq("id", data.id)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error("لم يتم تحديث الأعمدة الظاهرة للمندوب");
+    return { ok: true };
+  });
+
 // Which pages a company's own admin (and, by extension, any staff it
 // creates — see get_member_* intersection in checkIsAdmin) can reach at
 // all. Only the super admin ever sets this — a company itself has no way
@@ -290,8 +318,10 @@ export const updateCompanyPlan = createServerFn({ method: "POST" })
       .object({
         id: z.string().uuid(),
         overviewAccess: z.boolean(),
+        overviewDailyAccess: z.boolean(),
         ridersAccess: TieredAccessSchema,
         reportsAccess: TieredAccessSchema,
+        reportsDailyAccess: z.boolean(),
         documentsAccess: DocumentsAccessSchema,
         lettersAccess: TieredAccessSchema,
         notificationsAccess: z.boolean(),
@@ -308,8 +338,10 @@ export const updateCompanyPlan = createServerFn({ method: "POST" })
       .from("companies")
       .update({
         plan_overview_access: data.overviewAccess,
+        plan_overview_daily_access: data.overviewDailyAccess,
         plan_riders_access: data.ridersAccess,
         plan_reports_access: data.reportsAccess,
+        plan_reports_daily_access: data.reportsDailyAccess,
         plan_documents_access: data.documentsAccess,
         plan_letters_access: data.lettersAccess,
         plan_notifications_access: data.notificationsAccess,

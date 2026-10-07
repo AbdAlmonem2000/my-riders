@@ -100,9 +100,12 @@ export type Database = {
           plan_notifications_access: boolean
           plan_operating_cards_access: boolean
           plan_overview_access: boolean
+          plan_overview_daily_access: boolean
           plan_reports_access: string
+          plan_reports_daily_access: boolean
           plan_riders_access: string
           plan_users_access: boolean
+          rider_visible_columns: Json | null
           roster_file_name: string | null
           roster_path: string | null
           roster_uploaded_at: string | null
@@ -125,9 +128,12 @@ export type Database = {
           plan_notifications_access?: boolean
           plan_operating_cards_access?: boolean
           plan_overview_access?: boolean
+          plan_overview_daily_access?: boolean
           plan_reports_access?: string
+          plan_reports_daily_access?: boolean
           plan_riders_access?: string
           plan_users_access?: boolean
+          rider_visible_columns?: Json | null
           roster_file_name?: string | null
           roster_path?: string | null
           roster_uploaded_at?: string | null
@@ -150,9 +156,12 @@ export type Database = {
           plan_notifications_access?: boolean
           plan_operating_cards_access?: boolean
           plan_overview_access?: boolean
+          plan_overview_daily_access?: boolean
           plan_reports_access?: string
+          plan_reports_daily_access?: boolean
           plan_riders_access?: string
           plan_users_access?: boolean
+          rider_visible_columns?: Json | null
           roster_file_name?: string | null
           roster_path?: string | null
           roster_uploaded_at?: string | null

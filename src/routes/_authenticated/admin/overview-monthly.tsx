@@ -9,8 +9,6 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   XAxis,
@@ -33,6 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { RiderPhoto } from "@/components/rider-photo";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -63,22 +62,23 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { reportDateLabel } from "@/lib/month-label";
+import { monthLabel, reportDateLabel } from "@/lib/month-label";
 import { HIGHLIGHT_KEYS, isNumericLike, metricNumber, pickMetric } from "@/lib/rider-metrics";
-import { DateInputDMY } from "@/components/date-input-dmy";
 import { usePrintNode } from "@/lib/print-node";
 import { checkIsAdmin } from "@/lib/reports.functions";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 
-export const Route = createFileRoute("/_authenticated/admin/")({
-  component: AdminOverview,
+export const Route = createFileRoute("/_authenticated/admin/overview-monthly")({
+  component: AdminOverviewMonthly,
 });
 
 // Remembered across visits (and page navigations, since it's read once at
 // mount) the same way the admin sidebar's open/closed state is — so picking
 // which columns to compare performance by isn't something the admin has to
 // redo every time they land back on this page.
-const METRIC_COLUMNS_STORAGE_KEY = "admin-dashboard-metric-columns";
+// "-monthly" suffixed so this page's picks never collide with the daily
+// dashboard's own (different columns are often available on each).
+const METRIC_COLUMNS_STORAGE_KEY = "admin-dashboard-metric-columns-monthly";
 
 function readStoredMetricColumns(): Set<string> {
   try {
@@ -96,8 +96,8 @@ function readStoredMetricColumns(): Set<string> {
 // idea as readStoredMetricColumns: survives navigating away, reloading, or
 // logging out, since it only ever changes when the admin picks a different
 // column themselves.
-const BREAKDOWN_DONUT_COLUMN_KEY = "admin-dashboard-breakdown-donut-column";
-const BREAKDOWN_BAR_COLUMN_KEY = "admin-dashboard-breakdown-bar-column";
+const BREAKDOWN_DONUT_COLUMN_KEY = "admin-dashboard-breakdown-donut-column-monthly";
+const BREAKDOWN_BAR_COLUMN_KEY = "admin-dashboard-breakdown-bar-column-monthly";
 
 function readStoredColumn(key: string): string | null {
   try {
@@ -137,7 +137,7 @@ function StatCard({
           <div className="text-xs text-muted-foreground">{label}</div>
           <div className="mt-1 text-2xl font-bold">{value}</div>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform duration-300 hover:scale-110">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 text-violet-700 transition-transform duration-300 hover:scale-110">
           <Icon className="h-5 w-5" />
         </div>
       </CardContent>
@@ -333,28 +333,23 @@ function PerformanceList({
   );
 }
 
-// Status colors match what PerformanceList already uses for the same
-// categories (emerald for improved, destructive for declined), so the chart
-// reads as one system with the lists right below it rather than introducing
-// a new palette. "new" uses a chart palette color instead of --primary,
-// since --primary renders as near-black in this theme.
+// A violet family, distinct from the daily dashboard's orange/teal
+// palette, so a quick glance at an open tab (or a screenshot) says which
+// dashboard it is before reading a word of text. "improved"/"declined"
+// keep the universal green/red meaning the daily dashboard's lists use —
+// only the identity colors (same/new, and the qualitative palette below)
+// change. Plain hex, never the theme's oklch() CSS variables — those broke
+// Recharts fills entirely when wrapped in hsl() elsewhere in this app.
 const STATUS_CHART_COLORS: Record<string, string> = {
   improved: "#059669",
-  declined: "var(--destructive)",
-  same: "var(--muted-foreground)",
-  new: "var(--chart-1)",
+  declined: "#dc2626",
+  same: "#94a3b8",
+  new: "#7c3aed",
 };
 
-// The app's qualitative chart palette (5 distinct, non-black colors) — used
-// to give each top performer's bar its own color instead of a single flat
-// (near-black) --primary fill.
-const CHART_PALETTE = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
+// Five distinct violet/purple tones — used to give each top performer's bar
+// its own color instead of a single flat fill.
+const CHART_PALETTE = ["#7c3aed", "#a855f7", "#c026d3", "#6d28d9", "#9333ea"];
 
 function StatusSummaryChart({
   improvedCount,
@@ -455,53 +450,6 @@ function StatusDonutChart({
             </span>
           </div>
         </>
-      )}
-    </div>
-  );
-}
-
-// The chosen metric's total across every rider, one point per day in the
-// selected range — a full-width strip under the breakdown panels, reading
-// left-to-right as oldest -> newest like the other trend chart on this page.
-function DailyTrendChart({
-  data,
-  metricLabel,
-  t,
-}: {
-  data: { label: string; value: number }[];
-  metricLabel: string | null;
-  t: (key: TranslationKey) => string;
-}) {
-  const config: ChartConfig = { value: { label: metricLabel ?? "" } };
-
-  // Keeps its own card mounted at all times (title + fixed-height frame),
-  // even with 0 or 1 points — a search that narrows the range down no
-  // longer makes this whole panel vanish and reappear as you type.
-  return (
-    <div className="rounded-lg border p-3">
-      <div className="mb-2 text-sm font-medium">{t("admin.dashboardDailyTrendTitle")}</div>
-      {data.length < 2 ? (
-        <div className="flex h-48 items-center justify-center">
-          <span className="text-xs text-muted-foreground">{t("documents.searchNoResults")}</span>
-        </div>
-      ) : (
-        <ChartContainer config={config} className="aspect-auto h-48 w-full">
-          <LineChart data={data} margin={{ top: 20, right: 8, left: 8, bottom: 0 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={11} />
-            <YAxis hide />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Line
-              type="monotone"
-              dataKey="value"
-              stroke={CHART_PALETTE[0]}
-              strokeWidth={2}
-              dot={{ r: 3, fill: CHART_PALETTE[0] }}
-            >
-              <LabelList dataKey="value" position="top" fontSize={11} className="fill-foreground" />
-            </Line>
-          </LineChart>
-        </ChartContainer>
       )}
     </div>
   );
@@ -1145,7 +1093,10 @@ function RiderSearchCard({
   const [foundRider, setFoundRider] = useState<FoundRider | null>(null);
 
   const historyQuery = useQuery({
-    queryKey: ["rider-history", foundRider?.id],
+    // Distinct from the daily dashboard's "rider-history" key — same rider
+    // ID, but this query is filtered to month-only rows, so the two must
+    // never share a cache entry.
+    queryKey: ["rider-history-monthly", foundRider?.id],
     enabled: !!foundRider,
     queryFn: async (): Promise<RiderHistoryEntry[]> => {
       const { data: rrRows, error } = await supabase
@@ -1166,10 +1117,10 @@ function RiderSearchCard({
       return (rrRows ?? [])
         .map((rr): RiderHistoryEntry | null => {
           const rep = repById.get(rr.report_id);
-          // Day reports only — this card's history is scoped to the daily
-          // dashboard it lives on; the monthly dashboard has its own
-          // RiderSearchCard scoped the other way.
-          if (!rep || rep.day == null) return null;
+          // Month reports only (day IS NULL) — this card's history is
+          // scoped to the monthly dashboard it lives on; the daily
+          // dashboard has its own RiderSearchCard scoped the other way.
+          if (!rep || rep.day != null) return null;
           return {
             reportId: rr.report_id,
             month: rep.month,
@@ -1305,7 +1256,7 @@ function RiderSearchCard({
                   className="h-14 w-14 shrink-0 rounded-full border border-border"
                 />
               ) : (
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700">
                   <Users className="h-6 w-6" />
                 </div>
               )}
@@ -1399,7 +1350,7 @@ function RiderSearchCard({
   );
 }
 
-function AdminOverview() {
+function AdminOverviewMonthly() {
   const { t, lang } = useLanguage();
 
   const isAdminFn = useServerFn(checkIsAdmin);
@@ -1433,20 +1384,18 @@ function AdminOverview() {
       }
     : null;
 
-  // Same query key/shape as the reports page — sharing the cache means
-  // switching tabs doesn't re-fetch, and the table is small enough that a
-  // full select here is cheap. Only DAY reports — a plain monthly report
-  // (day IS NULL) belongs to the separate monthly overview page instead.
+  // Same query key/shape as the monthly reports page — sharing the cache
+  // means switching tabs doesn't re-fetch. Only MONTH reports (day IS
+  // NULL) — a day report belongs to the separate daily overview page.
   const reportsQuery = useQuery({
-    queryKey: ["admin-reports"],
+    queryKey: ["admin-reports-monthly"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("reports")
         .select("*")
-        .not("day", "is", null)
+        .is("day", null)
         .order("year", { ascending: false })
-        .order("month", { ascending: false })
-        .order("day", { ascending: false, nullsFirst: false });
+        .order("month", { ascending: false });
       if (error) throw error;
       return data;
     },
@@ -1484,121 +1433,39 @@ function AdminOverview() {
 
   const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
 
-  // The dashboard compares a chosen date range against the equal-length
-  // period right before it — a plain calendar month is just the common
-  // case (from day 1 to the month's last day), not a special code path.
-  // Defaults to the latest month that actually has a report, so the
-  // dashboard looks the same as before (a whole month) until the admin
-  // narrows it down.
-  const latestReport = reports[0] ?? null;
-  const defaultRange = useMemo(() => {
-    if (!latestReport) return null;
-    const lastDay = new Date(Date.UTC(latestReport.year, latestReport.month, 0)).getUTCDate();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return {
-      from: `${latestReport.year}-${pad(latestReport.month)}-01`,
-      to: `${latestReport.year}-${pad(latestReport.month)}-${pad(lastDay)}`,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestReport?.year, latestReport?.month]);
-
-  const [rangeFrom, setRangeFrom] = useState("");
-  const [rangeTo, setRangeTo] = useState("");
-  // Only seeds the fields once, the first time a default becomes available
-  // — never overwrites a range the admin already picked.
+  // A monthly report page compares one PICKED MONTH against the calendar
+  // month right before it — the plain month-to-month comparison this page
+  // always used, unlike the daily dashboard's arbitrary day range (which a
+  // single month-report row couldn't support anyway: there's only ever one
+  // row per month here, never several days to pick a sub-range from).
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  // Seeds the newest report once it's available — never overwrites a pick
+  // the admin already made.
   useEffect(() => {
-    if (!rangeFrom && !rangeTo && defaultRange) {
-      setRangeFrom(defaultRange.from);
-      setRangeTo(defaultRange.to);
-    }
-  }, [defaultRange, rangeFrom, rangeTo]);
+    if (!selectedReportId && reports[0]) setSelectedReportId(reports[0].id);
+  }, [reports, selectedReportId]);
 
-  const DAY_MS = 86_400_000;
-  const parseIsoDate = (s: string) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-    if (!m) return null;
-    return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
-  };
-  const fromParsed = parseIsoDate(rangeFrom);
-  const toParsed = parseIsoDate(rangeTo);
-  const fromMs = fromParsed ? Date.UTC(fromParsed.y, fromParsed.m - 1, fromParsed.d) : null;
-  const toMs = toParsed ? Date.UTC(toParsed.y, toParsed.m - 1, toParsed.d) : null;
-  const rangeValid = fromMs !== null && toMs !== null && fromMs <= toMs;
-  const rangeDays = rangeValid ? Math.round((toMs! - fromMs!) / DAY_MS) + 1 : 0;
-  // A whole calendar month (day 1 to that month's last day) compares against
-  // the previous CALENDAR month, not a generic "same number of days back" —
-  // months have different lengths, so counting backward by day count alone
-  // would drift off the actual previous month's boundaries (e.g. 31 days
-  // back from the end of October lands in August, not September). Any
-  // other, genuinely custom range (not aligned to a full month) still
-  // compares against the equal-length window immediately before it.
-  const isFullMonthRange =
-    rangeValid &&
-    fromParsed!.d === 1 &&
-    toParsed!.y === fromParsed!.y &&
-    toParsed!.m === fromParsed!.m &&
-    toParsed!.d === new Date(Date.UTC(fromParsed!.y, fromParsed!.m, 0)).getUTCDate();
-  let prevFromMs: number | null = null;
-  let prevToMs: number | null = null;
-  if (isFullMonthRange) {
-    const prevMonthDate = new Date(Date.UTC(fromParsed!.y, fromParsed!.m - 2, 1));
+  const selectedReport = reports.find((r) => r.id === selectedReportId) ?? null;
+  const previousReport = useMemo(() => {
+    if (!selectedReport) return null;
+    const prevMonthDate = new Date(Date.UTC(selectedReport.year, selectedReport.month - 2, 1));
     const py = prevMonthDate.getUTCFullYear();
     const pm = prevMonthDate.getUTCMonth() + 1;
-    prevFromMs = Date.UTC(py, pm - 1, 1);
-    prevToMs = Date.UTC(py, pm, 0);
-  } else if (rangeValid) {
-    prevToMs = fromMs! - DAY_MS;
-    prevFromMs = prevToMs - (rangeDays - 1) * DAY_MS;
-  }
+    return reports.find((r) => r.year === py && r.month === pm) ?? null;
+  }, [reports, selectedReport]);
 
-  // A report row with no day (uploaded before daily reports existed) stands
-  // for its ENTIRE month, so it's "in range" whenever the range touches that
-  // month at all — everything else compares the exact calendar day.
-  function reportInWindow(
-    r: { year: number; month: number; day: number | null },
-    winFromMs: number,
-    winToMs: number,
-  ): boolean {
-    if (r.day != null) {
-      const ms = Date.UTC(r.year, r.month - 1, r.day);
-      return ms >= winFromMs && ms <= winToMs;
-    }
-    const monthStartMs = Date.UTC(r.year, r.month - 1, 1);
-    const monthEndMs = Date.UTC(r.year, r.month, 0);
-    return monthStartMs <= winToMs && monthEndMs >= winFromMs;
-  }
-
-  const currentReportIds = useMemo(() => {
-    if (!rangeValid) return [];
-    return reports.filter((r) => reportInWindow(r, fromMs!, toMs!)).map((r) => r.id);
-  }, [reports, rangeValid, fromMs, toMs]);
-
-  const previousReportIds = useMemo(() => {
-    if (!rangeValid || prevFromMs === null || prevToMs === null) return [];
-    return reports.filter((r) => reportInWindow(r, prevFromMs, prevToMs)).map((r) => r.id);
-  }, [reports, rangeValid, prevFromMs, prevToMs]);
-
-  const hasPrevious = previousReportIds.length > 0;
-
-  const previousRangeLabel = useMemo(() => {
-    if (!hasPrevious || prevFromMs === null || prevToMs === null) return null;
-    const from = new Date(prevFromMs);
-    const to = new Date(prevToMs);
-    const fromLabel = reportDateLabel(
-      from.getUTCDate(),
-      from.getUTCMonth() + 1,
-      from.getUTCFullYear(),
-      lang,
-    );
-    if (prevFromMs === prevToMs) return fromLabel;
-    const toLabel = reportDateLabel(
-      to.getUTCDate(),
-      to.getUTCMonth() + 1,
-      to.getUTCFullYear(),
-      lang,
-    );
-    return `${fromLabel} — ${toLabel}`;
-  }, [hasPrevious, prevFromMs, prevToMs, lang]);
+  const currentReportIds = useMemo(
+    () => (selectedReport ? [selectedReport.id] : []),
+    [selectedReport],
+  );
+  const previousReportIds = useMemo(
+    () => (previousReport ? [previousReport.id] : []),
+    [previousReport],
+  );
+  const hasPrevious = !!previousReport;
+  const previousRangeLabel = previousReport
+    ? monthLabel(previousReport.month, previousReport.year, lang)
+    : null;
 
   const currentRowsQuery = useQuery({
     queryKey: ["rider-reports-rows", "range", currentReportIds],
@@ -1794,41 +1661,6 @@ function AdminOverview() {
   // riders' values in floating point drifts off a clean whole number.
   const totalCurrent = Math.round(visibleRows.reduce((s, r) => s + r.current, 0));
 
-  // One point per day in the selected range — the sum of every rider's
-  // value that day, not per-rider, so it reads as "how busy was this day"
-  // rather than duplicating the per-rider breakdown above.
-  const dailyTrend = useMemo(() => {
-    const reportById = new Map(reports.map((r) => [r.id, r]));
-    const q = highlightQuery.trim().toLowerCase();
-    const sums = new Map<string, number>();
-    for (const rr of currentRowsQuery.data ?? []) {
-      if (!riderMatchesQuery(riderMetaById.get(rr.rider_id), q)) continue;
-      const m = pickMetricValue((rr.data ?? {}) as Record<string, unknown>);
-      if (!m) continue;
-      const n = metricNumber(m.value);
-      if (n === null) continue;
-      sums.set(rr.report_id, (sums.get(rr.report_id) ?? 0) + n);
-    }
-    return [...sums.entries()]
-      .map(([reportId, value]) => {
-        const rep = reportById.get(reportId);
-        if (!rep) return null;
-        const ms = rep.day
-          ? Date.UTC(rep.year, rep.month - 1, rep.day)
-          : Date.UTC(rep.year, rep.month - 1, 1);
-        // Summing many rows' values in floating point can land on something
-        // like 2362.4500000000003 — rounding here (not just at display time)
-        // means the tooltip shows the same clean number as the point label.
-        return {
-          ms,
-          label: reportDateLabel(rep.day, rep.month, rep.year, lang),
-          value: Math.round(value),
-        };
-      })
-      .filter((x): x is { ms: number; label: string; value: number } => x !== null)
-      .sort((a, b) => a.ms - b.ms);
-  }, [currentRowsQuery.data, reports, pickMetricValue, lang, highlightQuery, riderMetaById]);
-
   const isLoadingDashboard =
     currentReportIds.length > 0 &&
     (currentRowsQuery.isLoading || (hasPrevious && previousRowsQuery.isLoading));
@@ -1888,7 +1720,8 @@ function AdminOverview() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `riders-report-${rangeFrom || "all"}-${rangeTo || "all"}.xlsx`;
+    const fileSuffix = selectedReport ? `${selectedReport.year}-${selectedReport.month}` : "all";
+    link.download = `riders-report-monthly-${fileSuffix}.xlsx`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1897,6 +1730,10 @@ function AdminOverview() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <h2 className="text-xl font-bold text-violet-700">{t("admin.monthlyOverviewHeading")}</h2>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label={t("admin.statReportsCount")}
@@ -1944,22 +1781,30 @@ function AdminOverview() {
         <CardHeader className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle>{t("admin.dashboardTitle")}</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                {t("admin.dashboardTitle")}
+                <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100">
+                  {t("admin.monthlyOverviewBadge")}
+                </Badge>
+              </CardTitle>
               <CardDescription>{t("admin.dashboardDesc")}</CardDescription>
             </div>
             {reports.length > 0 && (
               <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">
-                    {t("admin.dashboardRangeFrom")}
-                  </Label>
-                  <DateInputDMY value={rangeFrom} onChange={setRangeFrom} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">
-                    {t("admin.dashboardRangeTo")}
-                  </Label>
-                  <DateInputDMY value={rangeTo} onChange={setRangeTo} />
+                  <Label className="text-xs text-muted-foreground">{t("admin.monthLabel")}</Label>
+                  <Select value={selectedReportId ?? undefined} onValueChange={setSelectedReportId}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {reports.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {monthLabel(r.month, r.year, lang)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 {rows.length > 0 && (
                   <Button
@@ -2104,8 +1949,6 @@ function AdminOverview() {
                   </div>
                 </>
               )}
-
-              <DailyTrendChart data={dailyTrend} metricLabel={metricLabel} t={t} />
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <BreakdownDonutChart

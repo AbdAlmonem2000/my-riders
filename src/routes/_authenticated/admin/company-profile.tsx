@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   BellRing,
   Building2,
+  Columns3,
   Download,
   FileText,
   Hash,
@@ -25,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +48,7 @@ import {
   updateCompanyRegistration,
   updateCompanySignature,
   updateCompanyStamp,
+  updateRiderVisibleColumns,
 } from "@/lib/accounts.functions";
 import { uploadCompanyLogo, uploadCompanySignature, uploadCompanyStamp } from "@/lib/company-logo";
 import {
@@ -448,6 +451,115 @@ function RegistrationSection({
   );
 }
 
+// Which report columns a rider sees on their own lookup page. The "available"
+// list comes from the company's own uploaded monthly reports (rider_reports
+// is RLS-scoped to this company already, same as every other page reading
+// it directly), not a fixed schema — a company can call its columns
+// anything. Restricting is opt-in: off means "show everything", exactly the
+// behavior every company already had before this existed.
+function RiderVisibleColumnsSection({
+  companyId,
+  currentColumns,
+  t,
+}: {
+  companyId: string;
+  currentColumns: string[] | null;
+  t: (key: TranslationKey) => string;
+}) {
+  const queryClient = useQueryClient();
+  const updateFn = useServerFn(updateRiderVisibleColumns);
+  const [restrict, setRestrict] = useState(!!currentColumns && currentColumns.length > 0);
+  const [selected, setSelected] = useState<Set<string>>(new Set(currentColumns ?? []));
+  const [saving, setSaving] = useState(false);
+
+  const availableColumnsQuery = useQuery({
+    queryKey: ["company-monthly-report-columns", companyId],
+    queryFn: async () => {
+      const { data: reportRows, error: repErr } = await supabase
+        .from("reports")
+        .select("id")
+        .eq("company_id", companyId)
+        .is("day", null);
+      if (repErr) throw repErr;
+      const reportIds = (reportRows ?? []).map((r) => r.id);
+      if (reportIds.length === 0) return [];
+      const { data: rrRows, error: rrErr } = await supabase
+        .from("rider_reports")
+        .select("columns, data")
+        .in("report_id", reportIds);
+      if (rrErr) throw rrErr;
+      const seen = new Set<string>();
+      const order: string[] = [];
+      for (const r of rrRows ?? []) {
+        const cols =
+          Array.isArray(r.columns) && r.columns.length > 0
+            ? (r.columns as unknown[]).map(String)
+            : Object.keys((r.data ?? {}) as object);
+        for (const c of cols) {
+          if (!seen.has(c)) {
+            seen.add(c);
+            order.push(c);
+          }
+        }
+      }
+      return order;
+    },
+  });
+
+  const toggle = (col: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
+  };
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await updateFn({ data: { id: companyId, columns: restrict ? [...selected] : null } });
+      toast.success(t("admin.save"));
+      queryClient.invalidateQueries({ queryKey: ["company-profile", companyId] });
+    } catch (err) {
+      toast.error(errText(err, t("companyProfile.toastRiderColumnsFailed")));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const columns = availableColumnsQuery.data ?? [];
+
+  return (
+    <div className="space-y-2">
+      <SectionLabel icon={Columns3}>{t("companyProfile.riderColumnsTitle")}</SectionLabel>
+      <p className="text-xs text-muted-foreground">{t("companyProfile.riderColumnsDesc")}</p>
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <Checkbox checked={restrict} onCheckedChange={(v) => setRestrict(!!v)} />
+        {t("companyProfile.riderColumnsRestrictLabel")}
+      </label>
+      {restrict &&
+        (availableColumnsQuery.isLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        ) : columns.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t("companyProfile.riderColumnsEmpty")}</p>
+        ) : (
+          <div className="grid max-h-64 gap-1.5 overflow-y-auto rounded-lg border p-2 sm:grid-cols-2">
+            {columns.map((c) => (
+              <label key={c} className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox checked={selected.has(c)} onCheckedChange={() => toggle(c)} />
+                <span className="truncate">{c}</span>
+              </label>
+            ))}
+          </div>
+        ))}
+      <Button type="button" size="sm" disabled={saving} onClick={submit}>
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.save")}
+      </Button>
+    </div>
+  );
+}
+
 function AssetUploadField({
   icon: Icon,
   title,
@@ -809,7 +921,9 @@ function AdminCompanyProfile() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("companies")
-        .select("logo_url, stamp_url, signature_url, unified_number, commercial_registration")
+        .select(
+          "logo_url, stamp_url, signature_url, unified_number, commercial_registration, rider_visible_columns",
+        )
         .eq("id", companyId!)
         .maybeSingle();
       if (error) throw error;
@@ -1097,6 +1211,21 @@ function AdminCompanyProfile() {
           <AddCompanyDocument saving={savingDocId === "new"} t={t} onAdd={handleAddDocument} />
         </CardContent>
       </Card>
+
+      {companyId && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle>{t("companyProfile.riderColumnsCardTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RiderVisibleColumnsSection
+              companyId={companyId}
+              currentColumns={(companyQuery.data?.rider_visible_columns as string[] | null) ?? null}
+              t={t}
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

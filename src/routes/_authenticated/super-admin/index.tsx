@@ -78,8 +78,14 @@ export const Route = createFileRoute("/_authenticated/super-admin/")({
 
 interface CompanyPlan {
   overviewAccess: boolean;
+  // Only meaningful when overviewAccess is on — shows/hides just the DAILY
+  // overview page; the monthly one stays available either way.
+  overviewDailyAccess: boolean;
   ridersAccess: TieredAccess;
   reportsAccess: TieredAccess;
+  // Only meaningful when reportsAccess isn't 'none' — shows/hides just the
+  // DAILY reports page; the monthly one stays available either way.
+  reportsDailyAccess: boolean;
   documentsAccess: DocumentsAccess;
   lettersAccess: TieredAccess;
   notificationsAccess: boolean;
@@ -95,8 +101,10 @@ interface CompanyPlan {
 
 const ALL_ACCESS_PLAN: CompanyPlan = {
   overviewAccess: true,
+  overviewDailyAccess: true,
   ridersAccess: "full",
   reportsAccess: "full",
+  reportsDailyAccess: true,
   documentsAccess: "full",
   lettersAccess: "full",
   notificationsAccess: true,
@@ -171,10 +179,25 @@ function CompanyPlanDialog({
           <label className="flex cursor-pointer items-center gap-2 text-sm">
             <Checkbox
               checked={plan.overviewAccess}
-              onCheckedChange={(v) => setPlan((p) => ({ ...p, overviewAccess: !!v }))}
+              onCheckedChange={(v) =>
+                setPlan((p) => ({
+                  ...p,
+                  overviewAccess: !!v,
+                  overviewDailyAccess: !!v && p.overviewDailyAccess,
+                }))
+              }
             />
             {t("users.overviewAccessLabel")}
           </label>
+          {plan.overviewAccess && (
+            <label className="me-4 flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox
+                checked={plan.overviewDailyAccess}
+                onCheckedChange={(v) => setPlan((p) => ({ ...p, overviewDailyAccess: !!v }))}
+              />
+              {t("superAdmin.overviewDailyAccessLabel")}
+            </label>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs">{t("users.ridersAccessLabel")}</Label>
             <TierPicker
@@ -189,9 +212,24 @@ function CompanyPlanDialog({
             <TierPicker
               value={plan.reportsAccess}
               fullLabelKey="users.reportsAccessFullLabel"
-              onChange={(v) => setPlan((p) => ({ ...p, reportsAccess: v }))}
+              onChange={(v) =>
+                setPlan((p) => ({
+                  ...p,
+                  reportsAccess: v,
+                  reportsDailyAccess: v !== "none" && p.reportsDailyAccess,
+                }))
+              }
               t={t}
             />
+            {plan.reportsAccess !== "none" && (
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox
+                  checked={plan.reportsDailyAccess}
+                  onCheckedChange={(v) => setPlan((p) => ({ ...p, reportsDailyAccess: !!v }))}
+                />
+                {t("superAdmin.reportsDailyAccessLabel")}
+              </label>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("users.documentsAccessLabel")}</Label>
@@ -497,8 +535,10 @@ function CompaniesPage() {
                         companyName={c.name}
                         currentPlan={{
                           overviewAccess: c.plan_overview_access,
+                          overviewDailyAccess: c.plan_overview_daily_access,
                           ridersAccess: c.plan_riders_access as TieredAccess,
                           reportsAccess: c.plan_reports_access as TieredAccess,
+                          reportsDailyAccess: c.plan_reports_daily_access,
                           documentsAccess: c.plan_documents_access as DocumentsAccess,
                           lettersAccess: c.plan_letters_access as TieredAccess,
                           notificationsAccess: c.plan_notifications_access,
