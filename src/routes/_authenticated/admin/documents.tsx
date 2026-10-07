@@ -123,6 +123,21 @@ function docTypeKey(dt: DocType): TranslationKey {
   return `documents.type.${dt}` as TranslationKey;
 }
 
+// The dedicated Operating Cards page owns the additional card itself
+// entirely — grouping up to 3 riders per card, the same-area rule, and bulk
+// upload, none of which this page's plain per-rider slot ever offered.
+// Showing it here too just let an admin upload through this weaker path by
+// mistake, so this page no longer renders or counts that one slot (the main
+// operating_card slot stays, since plenty of companies only ever use a
+// single card and never touch the Operating Cards page at all). The card's
+// own form isn't a separate slot at all — it's stored as a normal
+// vehicle_registration document (the two were the same physical document
+// anyway), so whichever rider it's been copied onto (by adding them to a
+// card that already has one, or by the group upload itself) just shows up
+// under the vehicle_registration slot below, same as anyone's own,
+// independently-uploaded one would.
+const DOCUMENTS_PAGE_DOC_TYPES = DOC_TYPES.filter((dt) => dt !== "operating_card_extra");
+
 // Mirrors DocumentSlot's own needsExpiry branch exactly — a no-expiry slot
 // (fixed or a custom one marked that way) counts as "ok" once a doc row
 // exists at all, "missing" only when it genuinely doesn't, rather than
@@ -687,7 +702,7 @@ function RiderDocumentsDialog({
           <DialogDescription>{t("documents.dialogDesc")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          {DOC_TYPES.map((dt) => (
+          {DOCUMENTS_PAGE_DOC_TYPES.map((dt) => (
             <DocumentSlot
               key={dt}
               docType={dt}
@@ -788,14 +803,31 @@ function AdminDocuments() {
   const docsQuery = useQuery({
     queryKey: ["rider-documents"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rider_documents")
-        .select(
-          "id, rider_id, doc_type, storage_path, file_name, card_number, plate_number, label, expiry_date, uploaded_at, needs_expiry",
-        )
-        .limit(5000);
-      if (error) throw error;
-      return data as DocRow[];
+      // A flat .limit(N) here silently truncated a large company's full
+      // document list (every type, every rider, every custom document) —
+      // Postgres has no guaranteed row order without an explicit sort, so
+      // whichever rows happened to fall outside the cap (often a row just
+      // added/updated, since MVCC can relocate it) simply vanished from
+      // this page while the narrower, type-filtered Operating Cards page
+      // (well under any cap) kept showing it fine. Paginating through every
+      // row instead, ordered by id for a stable, non-overlapping cursor,
+      // means this page always sees the company's complete document set
+      // regardless of how large it grows.
+      const pageSize = 1000;
+      const rows: DocRow[] = [];
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("rider_documents")
+          .select(
+            "id, rider_id, doc_type, storage_path, file_name, card_number, plate_number, label, expiry_date, uploaded_at, needs_expiry",
+          )
+          .order("id", { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        rows.push(...((data ?? []) as DocRow[]));
+        if (!data || data.length < pageSize) break;
+      }
+      return rows;
     },
   });
 
@@ -833,7 +865,7 @@ function AdminDocuments() {
       const riderDocs = docsByRider.get(r.id) ?? [];
       const byType = new Map(riderDocs.map((d) => [d.doc_type, d]));
       const counts: Record<DocStatus, number> = { ok: 0, warning: 0, expired: 0, missing: 0 };
-      for (const dt of DOC_TYPES) {
+      for (const dt of DOCUMENTS_PAGE_DOC_TYPES) {
         counts[statusOf(byType.get(dt), dt)]++;
       }
       for (const d of riderDocs) {
@@ -1081,7 +1113,7 @@ function AdminDocuments() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">{t("documents.missingAnyTypeOption")}</SelectItem>
-                      {DOC_TYPES.map((dt) => (
+                      {DOCUMENTS_PAGE_DOC_TYPES.map((dt) => (
                         <SelectItem key={dt} value={dt}>
                           {t(docTypeKey(dt))}
                         </SelectItem>
@@ -1187,7 +1219,7 @@ function AdminDocuments() {
                                   )}
                                   {counts.missing > 0 && (
                                     <span className="text-muted-foreground">
-                                      {counts.missing}/{DOC_TYPES.length}{" "}
+                                      {counts.missing}/{DOCUMENTS_PAGE_DOC_TYPES.length}{" "}
                                       <Clock className="inline h-3 w-3" />
                                     </span>
                                   )}
@@ -1317,7 +1349,7 @@ function AdminDocuments() {
                           )}
                           {counts.missing > 0 && (
                             <span className="text-muted-foreground">
-                              {counts.missing}/{DOC_TYPES.length}{" "}
+                              {counts.missing}/{DOCUMENTS_PAGE_DOC_TYPES.length}{" "}
                               <Clock className="inline h-3 w-3" />
                             </span>
                           )}

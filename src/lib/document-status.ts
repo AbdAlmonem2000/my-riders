@@ -1,13 +1,18 @@
 // Shared between the documents admin page and (later) any other place that
 // needs to know a rider document's type or expiry state.
 
+// operating_card_extra_form used to be its own slot (the operating card's
+// form), but it was just vehicle_registration under a different name — every
+// rider_documents row that used it was migrated onto vehicle_registration
+// instead (see 20261012000000_merge_operating_card_form_into_vehicle_registration.sql),
+// and the card-group "تعديل الاستمارة" upload now writes to
+// vehicle_registration directly, so this type no longer exists anywhere.
 export const DOC_TYPES = [
   "iqama_photo",
   "driving_license",
   "operating_card",
   "vehicle_registration",
   "operating_card_extra",
-  "operating_card_extra_form",
   "ajeer_contract",
   "driver_card",
   "health_certificate",
@@ -18,11 +23,7 @@ export type DocType = (typeof DOC_TYPES)[number];
 
 // These are never time-limited, so unlike every other slot they carry no
 // expiry date at all — no status badge countdown, no "edit date" action.
-export const NO_EXPIRY_DOC_TYPES = new Set<string>([
-  "personal_photo",
-  "vehicle_registration",
-  "operating_card_extra_form",
-]);
+export const NO_EXPIRY_DOC_TYPES = new Set<string>(["personal_photo", "vehicle_registration"]);
 
 // A custom (admin-named) document has no shared type key — each one is its
 // own fresh "custom:<uuid>", so whether IT needs an expiry date can't come

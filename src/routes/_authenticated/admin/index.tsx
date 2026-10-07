@@ -210,15 +210,16 @@ interface PerfRow {
   riderName: string | null;
   idText: string | null;
   idNumber: string | null;
+  iqamaNumber: string | null;
   current: number;
   previous: number | null;
   delta: number | null;
 }
 
 // Matches a rider's name, their displayed ID (Iqama when they have one,
-// else their plain ID number) AND their plain ID number specifically — a
-// rider with both still has to be findable by either one, not just
-// whichever one happens to show.
+// else their plain ID number), their plain ID number specifically, AND
+// their Iqama number specifically — a rider with both still has to be
+// findable by either one, not just whichever one happens to show.
 function riderMatchesQuery(
   meta:
     | {
@@ -226,6 +227,7 @@ function riderMatchesQuery(
         riderName?: string | null;
         idText?: string | null;
         idNumber?: string | null;
+        iqamaNumber?: string | null;
       }
     | undefined,
   q: string,
@@ -239,7 +241,8 @@ function riderMatchesQuery(
   return (
     (meta.name ?? meta.riderName ?? "").toLowerCase().includes(q) ||
     (meta.idText ?? "").toLowerCase().includes(q) ||
-    (meta.idNumber ?? "").toLowerCase().includes(q)
+    (meta.idNumber ?? "").toLowerCase().includes(q) ||
+    (meta.iqamaNumber ?? "").toLowerCase().includes(q)
   );
 }
 
@@ -780,7 +783,7 @@ function RidersPerformanceTable({
     return sortPerfRows(list);
   }, [rows, query]);
 
-  const colSpan = showChange ? 4 : 3;
+  const colSpan = showChange ? 5 : 4;
 
   return (
     <div className="space-y-2">
@@ -799,6 +802,7 @@ function RidersPerformanceTable({
             <TableRow className="hover:bg-transparent">
               <TableHead>{t("admin.riderNameLabel")}</TableHead>
               <TableHead>{t("admin.tableIqama")}</TableHead>
+              <TableHead>{t("admin.tableIdNumber")}</TableHead>
               <TableHead>{metricLabel ?? t("admin.dashboardMetricValue")}</TableHead>
               {showChange && <TableHead>{t("admin.dashboardChangeColumn")}</TableHead>}
             </TableRow>
@@ -818,7 +822,10 @@ function RidersPerformanceTable({
                 >
                   <TableCell className="font-medium">{r.riderName || "—"}</TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground" dir="ltr">
-                    {r.idText || "—"}
+                    {r.iqamaNumber || "—"}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground" dir="ltr">
+                    {r.idNumber || "—"}
                   </TableCell>
                   <TableCell className="font-mono">{r.current}</TableCell>
                   {showChange && (
@@ -1113,10 +1120,14 @@ function RiderSearchCard({
   delay: number;
   company: CompanyLetterhead | null;
   canRotatePhotos: boolean;
-  // Lets the main dashboard's "all riders" table filter itself to the same
-  // rider as soon as one is found here, instead of being two disconnected
-  // searches.
-  onFound: (riderName: string | null) => void;
+  // Lets the main dashboard's KPI tiles, charts, and "all riders" table all
+  // filter themselves to the same rider as soon as one is found here,
+  // instead of being disconnected searches. Passed as the rider's own
+  // Iqama/ID (exactly what was searched) rather than their name — a name
+  // can collide between riders, while the number that was just looked up
+  // can't, so the dashboard below narrows to this ONE rider precisely
+  // instead of risking a same-name mismatch.
+  onFound: (riderQuery: string | null) => void;
   // Same column the admin picked in "مقارنة الأداء حسب عمود" above, so this
   // card's own table reads the same metric as the rest of the page instead
   // of always falling back to an auto-detected "total" column.
@@ -1223,7 +1234,7 @@ function RiderSearchCard({
           photoUrl: rider.photo_url,
           photoRotation: rider.photo_rotation,
         });
-        onFound(rider.rider_name);
+        onFound(rider.iqama_number || rider.id_number || rider.rider_name || null);
       }
     } finally {
       setSearching(false);
@@ -1305,6 +1316,9 @@ function RiderSearchCard({
                       {t("admin.tableIdNumber")}: {foundRider.idNumber}
                     </div>
                   )}
+                </div>
+                <div className="mt-1 text-xs text-primary">
+                  {t("admin.dashboardSearchLinkedNote")}
                 </div>
               </div>
             </div>
@@ -1612,16 +1626,23 @@ function AdminOverview() {
   const riderMetaById = useMemo(() => {
     const map = new Map<
       string,
-      { name: string | null; idText: string | null; idNumber: string | null }
+      {
+        name: string | null;
+        idText: string | null;
+        idNumber: string | null;
+        iqamaNumber: string | null;
+      }
     >();
     for (const r of ridersQuery.data ?? []) {
       map.set(r.id, {
         name: r.rider_name,
         // The displayed fallback (prefers Iqama) — kept separate from
-        // idNumber below so a rider WITH an Iqama can still be found by
-        // searching their plain ID number, not just whichever one shows.
+        // idNumber/iqamaNumber below so a rider WITH an Iqama can still be
+        // found by searching their plain ID number, not just whichever one
+        // shows.
         idText: r.iqama_number || r.id_number || null,
         idNumber: r.id_number,
+        iqamaNumber: r.iqama_number,
       });
     }
     return map;
@@ -1763,6 +1784,7 @@ function AdminOverview() {
         riderName: meta.name,
         idText: meta.idText,
         idNumber: meta.idNumber,
+        iqamaNumber: meta.iqamaNumber,
         current: n,
         previous,
         delta: previous === null ? null : n - previous,
@@ -1780,7 +1802,8 @@ function AdminOverview() {
       (r) =>
         (r.riderName ?? "").toLowerCase().includes(q) ||
         (r.idText ?? "").toLowerCase().includes(q) ||
-        (r.idNumber ?? "").toLowerCase().includes(q),
+        (r.idNumber ?? "").toLowerCase().includes(q) ||
+        (r.iqamaNumber ?? "").toLowerCase().includes(q),
     );
   }, [rows, highlightQuery]);
 
@@ -1936,7 +1959,7 @@ function AdminOverview() {
         delay={180}
         company={companyLetterhead}
         canRotatePhotos={adminCheck.data?.ridersAccess === "full"}
-        onFound={(riderName) => setHighlightQuery(riderName ?? "")}
+        onFound={(riderQuery) => setHighlightQuery(riderQuery ?? "")}
         pickMetricValue={pickMetricValue}
       />
 

@@ -11,6 +11,7 @@ import {
   isValidOperatingCardNumber,
   normalizeSheetDateToIso,
   OPERATING_CARD_NUMBER_FORMAT,
+  OPERATING_CARD_TYPES,
 } from "@/lib/document-status";
 import { cellText, looksLikeIdentifier } from "@/lib/rider-identity";
 
@@ -422,6 +423,44 @@ export const updateOperatingCardGroup = createServerFn({ method: "POST" })
     return { ok: true, updated: updated.length };
   });
 
+// A rider's card form (stored as vehicle_registration — see the merge
+// migration) only ever got onto their documents because they were on a
+// card, so once they're off every operating card entirely (removed from
+// one, or their whole group deleted), it no longer represents anything and
+// leaves with the card. A rider still on another card (operating_card vs.
+// operating_card_extra) keeps their form, since it may still belong to that
+// other one.
+async function cleanupOrphanedCardForm(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  companyId: string,
+  riderId: string,
+) {
+  const { data: remaining } = await supabase
+    .from("rider_documents")
+    .select("id")
+    .eq("rider_id", riderId)
+    .eq("company_id", companyId)
+    .in("doc_type", [...OPERATING_CARD_TYPES])
+    .not("card_number", "is", null);
+  if (remaining && remaining.length > 0) return;
+
+  const { data: formRow } = await supabase
+    .from("rider_documents")
+    .select("id, storage_path")
+    .eq("rider_id", riderId)
+    .eq("company_id", companyId)
+    .eq("doc_type", "vehicle_registration")
+    .maybeSingle();
+  if (!formRow) return;
+
+  const { error } = await supabase.from("rider_documents").delete().eq("id", formRow.id);
+  if (error) throw new Error(error.message);
+  if (formRow.storage_path) {
+    await deleteDocumentFileIfOrphaned(supabase, companyId, formRow.storage_path, formRow.id);
+  }
+}
+
 // Deletes the whole card group at once: every rider linked to this card
 // number loses that document slot entirely (same end state as deleting
 // their own document one by one in documents.tsx), plus the shared file
@@ -441,7 +480,7 @@ export const deleteOperatingCardGroup = createServerFn({ method: "POST" })
 
     const { data: existing } = await supabase
       .from("rider_documents")
-      .select("storage_path")
+      .select("rider_id, storage_path")
       .eq("company_id", companyId)
       .eq("doc_type", data.docType)
       .eq("card_number", data.cardNumber);
@@ -462,6 +501,10 @@ export const deleteOperatingCardGroup = createServerFn({ method: "POST" })
     if (paths.length > 0) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       await supabaseAdmin.storage.from("rider-documents").remove(paths);
+    }
+
+    for (const r of existing ?? []) {
+      await cleanupOrphanedCardForm(supabase, companyId, r.rider_id);
     }
 
     return { ok: true, deleted: deleted.length };
@@ -504,6 +547,8 @@ export const removeRiderFromOperatingCard = createServerFn({ method: "POST" })
     if (existing.storage_path) {
       await deleteDocumentFileIfOrphaned(supabase, companyId, existing.storage_path, existing.id);
     }
+
+    await cleanupOrphanedCardForm(supabase, companyId, data.riderId);
 
     return { ok: true };
   });
@@ -557,12 +602,10 @@ export const addRiderToOperatingCard = createServerFn({ method: "POST" })
 
     const { data: groupRow } = await supabase
       .from("rider_documents")
-      .select("storage_path, file_name, expiry_date, plate_number, uploaded_at")
+      .select("rider_id, storage_path, file_name, expiry_date, plate_number, uploaded_at")
       .eq("company_id", companyId)
       .eq("doc_type", data.docType)
-      .eq("card_number", data.cardNumber)
-      .limit(1)
-      .maybeSingle();
+      .eq("card_number", data.cardNumber);
 
     const { error } = await supabase.from("rider_documents").upsert(
       {
@@ -570,31 +613,79 @@ export const addRiderToOperatingCard = createServerFn({ method: "POST" })
         rider_id: data.riderId,
         doc_type: data.docType,
         card_number: data.cardNumber,
-        storage_path: groupRow?.storage_path ?? null,
-        file_name: groupRow?.file_name ?? null,
-        expiry_date: groupRow?.expiry_date ?? null,
-        plate_number: groupRow?.plate_number ?? null,
-        uploaded_at: groupRow?.uploaded_at ?? new Date().toISOString(),
+        storage_path: groupRow?.[0]?.storage_path ?? null,
+        file_name: groupRow?.[0]?.file_name ?? null,
+        expiry_date: groupRow?.[0]?.expiry_date ?? null,
+        plate_number: groupRow?.[0]?.plate_number ?? null,
+        uploaded_at: groupRow?.[0]?.uploaded_at ?? new Date().toISOString(),
       },
       { onConflict: "rider_id,doc_type" },
     );
     if (error) throw new Error(error.message);
 
+    // The group's form isn't keyed by card_number — it's just another
+    // rider_documents row (doc_type vehicle_registration), one per rider
+    // already on the card — so a newly added rider doesn't inherit it
+    // automatically the way the card's own file/expiry above does. If any
+    // current member of the group already has one, give the new rider the
+    // same file, same as EditCardFormDialog would if it were re-run for the
+    // whole group right now. Skips a rider who already has their own
+    // vehicle_registration (never overwrites a file they uploaded
+    // themselves, independent of any card).
+    const groupRiderIds = (groupRow ?? []).map((r) => r.rider_id);
+    if (groupRiderIds.length > 0) {
+      const { data: existingForm } = await supabase
+        .from("rider_documents")
+        .select("storage_path, file_name")
+        .eq("company_id", companyId)
+        .eq("doc_type", "vehicle_registration")
+        .in("rider_id", groupRiderIds)
+        .not("storage_path", "is", null)
+        .limit(1)
+        .maybeSingle();
+      const { data: riderOwnForm } = await supabase
+        .from("rider_documents")
+        .select("storage_path")
+        .eq("company_id", companyId)
+        .eq("doc_type", "vehicle_registration")
+        .eq("rider_id", data.riderId)
+        .maybeSingle();
+      if (existingForm?.storage_path && !riderOwnForm?.storage_path) {
+        const { error: formErr } = await supabase.from("rider_documents").upsert(
+          {
+            company_id: companyId,
+            rider_id: data.riderId,
+            doc_type: "vehicle_registration",
+            storage_path: existingForm.storage_path,
+            file_name: existingForm.file_name,
+            expiry_date: null,
+            needs_expiry: false,
+            card_number: null,
+            plate_number: null,
+            uploaded_at: new Date().toISOString(),
+          },
+          { onConflict: "rider_id,doc_type" },
+        );
+        if (formErr) throw new Error(formErr.message);
+      }
+    }
+
     return { ok: true };
   });
 
-// Uploads the "استمارة كرت التشغيل الإضافي" (operating_card_extra_form) for
-// every rider sharing one card group at once, from the Operating Cards page
-// itself — the same "upload once, apply to the whole group" convenience as
-// the card file/expiry, even though this form has no card number or expiry
-// of its own (it's a plain no-expiry document, just like personal_photo).
+// Uploads the operating card's form (stored as vehicle_registration — it's
+// the same physical document, not a separate slot) for every rider sharing
+// one card group at once, from the Operating Cards page itself — the same
+// "upload once, apply to the whole group" convenience as the card file/
+// expiry, even though this form has no card number or expiry of its own
+// (it's a plain no-expiry document, just like personal_photo).
 const CardFormInput = z.object({
   riderIds: z.array(z.string().uuid()).min(1),
   storagePath: z.string().min(1),
   fileName: z.string().min(1),
 });
 
-export const uploadOperatingCardExtraForm = createServerFn({ method: "POST" })
+export const uploadOperatingCardForm = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => CardFormInput.parse(d))
   .handler(async ({ data, context }) => {
@@ -614,7 +705,7 @@ export const uploadOperatingCardExtraForm = createServerFn({ method: "POST" })
       .from("rider_documents")
       .select("storage_path")
       .eq("company_id", companyId)
-      .eq("doc_type", "operating_card_extra_form")
+      .eq("doc_type", "vehicle_registration")
       .in("rider_id", [...validRiderIds]);
     const prevPaths = [
       ...new Set((prevRows ?? []).map((r) => r.storage_path).filter(Boolean)),
@@ -623,7 +714,7 @@ export const uploadOperatingCardExtraForm = createServerFn({ method: "POST" })
     const payload = [...validRiderIds].map((riderId) => ({
       company_id: companyId,
       rider_id: riderId,
-      doc_type: "operating_card_extra_form",
+      doc_type: "vehicle_registration",
       storage_path: data.storagePath,
       file_name: data.fileName,
       expiry_date: null,

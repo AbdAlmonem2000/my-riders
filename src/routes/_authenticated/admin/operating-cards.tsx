@@ -75,7 +75,7 @@ import {
   deleteOperatingCardGroup,
   removeRiderFromOperatingCard,
   updateOperatingCardGroup,
-  uploadOperatingCardExtraForm,
+  uploadOperatingCardForm,
   uploadOperatingCardFile,
 } from "@/lib/operating-cards.functions";
 import { checkIsAdmin } from "@/lib/reports.functions";
@@ -132,6 +132,13 @@ interface CardGroup {
   // otherwise whichever rider happens to have one (an older,
   // per-rider-uploaded card). Null when no one in the group has a file yet.
   fileRiderId: string | null;
+  // The card's form is stored as vehicle_registration (the same physical
+  // document — see the merge migration) and isn't keyed by card_number like
+  // the card file is — it's just another rider_documents row, one per
+  // rider on the group — so this is whichever member rider's form row
+  // represents the group (every member is kept in sync with the same one,
+  // see EditCardFormDialog/addRiderToOperatingCard), null if none has one.
+  formFileRiderId: string | null;
   plateNumber: string | null;
   expiryDate: string | null;
   // "missing" here means no file yet, same as a status badge's "missing"
@@ -310,9 +317,9 @@ function EditCardGroupDialog({
   );
 }
 
-// Uploads the "استمارة كرت التشغيل الإضافي" once for every rider sharing
-// this card — a plain no-expiry document, same convenience as uploading the
-// card's own file/expiry once instead of per rider.
+// Uploads the card's form (stored as vehicle_registration) once for every
+// rider sharing this card — a plain no-expiry document, same convenience as
+// uploading the card's own file/expiry once instead of per rider.
 function EditCardFormDialog({
   group,
   companyId,
@@ -327,7 +334,7 @@ function EditCardFormDialog({
   t: (key: TranslationKey) => string;
 }) {
   const queryClient = useQueryClient();
-  const uploadFormFn = useServerFn(uploadOperatingCardExtraForm);
+  const uploadFormFn = useServerFn(uploadOperatingCardForm);
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -739,7 +746,7 @@ function AdminOperatingCards() {
         .select(
           "id, rider_id, doc_type, card_number, plate_number, expiry_date, storage_path, file_name",
         )
-        .in("doc_type", [...OPERATING_CARD_TYPES])
+        .in("doc_type", [...OPERATING_CARD_TYPES, "vehicle_registration"])
         .limit(5000);
       if (error) throw error;
       return data as CardDocRow[];
@@ -773,6 +780,7 @@ function AdminOperatingCards() {
         cardNumber,
         groupFile: null,
         fileRiderId: null,
+        formFileRiderId: null,
         plateNumber: null,
         expiryDate: null,
         status: "missing" as DocStatus,
@@ -792,6 +800,11 @@ function AdminOperatingCards() {
       });
       byKey.set(key, group);
     }
+    const formRiderIds = new Set(
+      (cardDocsQuery.data ?? [])
+        .filter((d) => d.doc_type === "vehicle_registration" && d.storage_path)
+        .map((d) => d.rider_id),
+    );
     for (const group of byKey.values()) {
       // A group's file is only shown as "the" file once every rider in it
       // points at the exact same storage object — otherwise there's no
@@ -812,6 +825,8 @@ function AdminOperatingCards() {
       group.fileRiderId = group.groupFile
         ? group.riders[0].riderId
         : (group.riders.find((r) => r.hasFile)?.riderId ?? null);
+      group.formFileRiderId =
+        group.riders.find((r) => formRiderIds.has(r.riderId))?.riderId ?? null;
       const computed = group.fileRiderId ? computeDocStatus(group.expiryDate) : null;
       group.status = computed?.status ?? "missing";
       group.daysLeft = computed?.daysLeft ?? null;
@@ -830,6 +845,7 @@ function AdminOperatingCards() {
           (g.plateNumber ?? "").toLowerCase().includes(q) ||
           g.riders.some(
             (r) =>
+              (r.riderName ?? "").toLowerCase().includes(q) ||
               (r.iqamaNumber ?? "").toLowerCase().includes(q) ||
               (r.idNumber ?? "").toLowerCase().includes(q),
           ),
@@ -1222,6 +1238,26 @@ function AdminOperatingCards() {
                                   >
                                     <Download className="h-3.5 w-3.5" />
                                     {t("documents.downloadButton")}
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {g.formFileRiderId && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      handleView(g.formFileRiderId!, "vehicle_registration")
+                                    }
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                    {t("operatingCards.viewFormButton")}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      handleDownload(g.formFileRiderId!, "vehicle_registration")
+                                    }
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    {t("operatingCards.downloadFormButton")}
                                   </DropdownMenuItem>
                                 </>
                               )}

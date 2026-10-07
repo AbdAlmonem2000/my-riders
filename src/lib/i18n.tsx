@@ -291,6 +291,10 @@ const dict = {
     ar: "لا توجد تقارير لهذا المندوب",
     en: "No reports for this rider",
   },
+  "admin.dashboardSearchLinkedNote": {
+    ar: "المؤشرات والرسوم والجدول تحت اتفلترت على هذا المندوب كمان",
+    en: "The KPI tiles, charts, and table below are now filtered to this rider too",
+  },
   "admin.dashboardDetailsButton": { ar: "التفاصيل", en: "Details" },
   "admin.dashboardRiderTrendTitle": {
     ar: "مقارنة الأداء شهريًا",
@@ -888,10 +892,6 @@ const dict = {
     ar: "كرت تشغيل إضافي",
     en: "Additional operating card",
   },
-  "documents.type.operating_card_extra_form": {
-    ar: "استمارة كرت التشغيل الإضافي",
-    en: "Additional operating card form",
-  },
   "documents.type.vehicle_registration": { ar: "استمارة السيارة", en: "Vehicle registration" },
   "documents.type.health_certificate": { ar: "الشهادة الصحية", en: "Health certificate" },
   "documents.type.personal_photo": { ar: "الصورة الشخصية", en: "Personal photo" },
@@ -1067,11 +1067,13 @@ const dict = {
   },
   "operatingCards.editFormButton": { ar: "تعديل الاستمارة", en: "Edit the form" },
   "operatingCards.editFormDesc": {
-    ar: "رفع استمارة كرت التشغيل الإضافي بيتطبق على كل المناديب المرتبطين بنفس رقم الكرت",
-    en: "Uploading the additional operating card form applies to every rider linked to this card number",
+    ar: "رفع استمارة الكرت بيتطبق على كل المناديب المرتبطين بنفس رقم الكرت",
+    en: "Uploading the card's form applies to every rider linked to this card number",
   },
   "operatingCards.toastFormSaveSuccess": { ar: "تم حفظ الاستمارة", en: "Form saved" },
   "operatingCards.toastFormSaveFailed": { ar: "فشل حفظ الاستمارة", en: "Failed to save the form" },
+  "operatingCards.viewFormButton": { ar: "عرض الاستمارة", en: "View the form" },
+  "operatingCards.downloadFormButton": { ar: "تنزيل الاستمارة", en: "Download the form" },
   "operatingCards.currentFileLabel": { ar: "الملف الحالي", en: "Current file" },
   "operatingCards.toastGroupSaveSuccess": { ar: "تم حفظ بيانات الكرت", en: "Card details saved" },
   "expiryAlerts.pageTitle": { ar: "تنبيهات انتهاء المستندات", en: "Document expiry alerts" },
