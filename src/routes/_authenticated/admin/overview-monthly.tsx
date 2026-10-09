@@ -69,6 +69,7 @@ import { checkIsAdmin } from "@/lib/reports.functions";
 import { updateDashboardFilters } from "@/lib/dashboard-filters.functions";
 import { errText } from "@/lib/error-text";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/overview-monthly")({
   component: AdminOverviewMonthly,
@@ -1384,16 +1385,20 @@ function AdminOverviewMonthly() {
   // NULL) — a day report belongs to the separate daily overview page.
   const reportsQuery = useQuery({
     queryKey: ["admin-reports-monthly"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("reports")
-        .select("*")
-        .is("day", null)
-        .order("year", { ascending: false })
-        .order("month", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      // No cap here relied purely on PostgREST's own default row limit —
+      // fine for a new company, silently incomplete once a few years of
+      // monthly uploads cross it.
+      fetchAllRows(({ from, to }) =>
+        supabase
+          .from("reports")
+          .select("*")
+          .is("day", null)
+          .order("year", { ascending: false })
+          .order("month", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const riderCountQuery = useQuery({
@@ -1412,18 +1417,31 @@ function AdminOverviewMonthly() {
   // only rider_name is actually used here.
   const ridersQuery = useQuery({
     queryKey: ["company-riders"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("riders")
-        .select(
-          "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, extra, is_blocked, password_hash",
-        )
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      // A flat .limit() here silently dropped every rider past PostgREST's
+      // default row cap once the roster grew past it — see the same fix on
+      // the Riders/Documents pages.
+      fetchAllRows<{
+        id: string;
+        iqama_number: string | null;
+        id_number: string | null;
+        rider_name: string | null;
+        photo_url: string | null;
+        photo_rotation: number;
+        extra: unknown;
+        is_blocked: boolean;
+        password_hash: string | null;
+      }>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select(
+            "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, extra, is_blocked, password_hash",
+          )
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
@@ -1466,12 +1484,25 @@ function AdminOverviewMonthly() {
     queryKey: ["rider-reports-rows", "range", currentReportIds],
     enabled: currentReportIds.length > 0,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rider_reports")
-        .select("rider_id, report_id, data, columns")
-        .in("report_id", currentReportIds);
-      if (error) throw error;
-      return data ?? [];
+      // A plain, unpaginated select here silently truncated a wide
+      // selection at whatever row cap PostgREST applies by default — see
+      // the matching fix on the daily overview page. Paginating through
+      // every row, ordered by id for a stable cursor, means it always
+      // comes back whole regardless of how many riders/months it spans.
+      const pageSize = 1000;
+      const rows: { rider_id: string; report_id: string; data: unknown; columns: unknown }[] = [];
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("rider_reports")
+          .select("rider_id, report_id, data, columns")
+          .in("report_id", currentReportIds)
+          .order("id", { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        rows.push(...(data ?? []));
+        if (!data || data.length < pageSize) break;
+      }
+      return rows;
     },
   });
 
@@ -1479,12 +1510,20 @@ function AdminOverviewMonthly() {
     queryKey: ["rider-reports-rows", "range", previousReportIds],
     enabled: previousReportIds.length > 0,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rider_reports")
-        .select("rider_id, data")
-        .in("report_id", previousReportIds);
-      if (error) throw error;
-      return data ?? [];
+      const pageSize = 1000;
+      const rows: { rider_id: string; data: unknown }[] = [];
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("rider_reports")
+          .select("rider_id, data")
+          .in("report_id", previousReportIds)
+          .order("id", { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        rows.push(...(data ?? []));
+        if (!data || data.length < pageSize) break;
+      }
+      return rows;
     },
   });
 

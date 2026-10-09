@@ -79,6 +79,7 @@ import {
   getRiderDocumentDownloadUrl,
 } from "@/lib/documents.functions";
 import { checkIsAdmin } from "@/lib/reports.functions";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 import {
   DOC_TYPES,
   computeDocStatus,
@@ -783,18 +784,23 @@ function AdminDocuments() {
 
   const ridersQuery = useQuery({
     queryKey: ["company-riders"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("riders")
-        .select(
-          "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, area, extra, is_blocked, password_hash",
-        )
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      return data as RiderRow[];
-    },
+    queryFn: () =>
+      // A flat .limit() here silently dropped every rider past PostgREST's
+      // default row cap once the roster grew past it — paginating through
+      // every row (same order, plus `id` as a stable tiebreaker so pages
+      // never skip/repeat a row sharing the same created_at) means the
+      // full roster always comes back regardless of its size.
+      fetchAllRows<RiderRow>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select(
+            "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, area, extra, is_blocked, password_hash",
+          )
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const docsQuery = useQuery({

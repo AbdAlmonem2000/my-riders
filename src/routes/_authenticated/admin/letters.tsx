@@ -72,6 +72,7 @@ import { formatDate } from "@/lib/date-format";
 import { errText } from "@/lib/error-text";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import { usePushDispatch } from "@/lib/push-client";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/letters")({
   component: AdminLetters,
@@ -366,16 +367,19 @@ function AdminLetters() {
 
   const ridersQuery = useQuery({
     queryKey: ["company-riders"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("riders")
-        .select("id, iqama_number, id_number, rider_name, photo_url, photo_rotation, extra")
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      return data as RiderRow[];
-    },
+    queryFn: () =>
+      // A flat .limit() here silently dropped every rider past PostgREST's
+      // default row cap once the roster grew past it — see the same fix on
+      // the Riders/Documents pages.
+      fetchAllRows<RiderRow>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select("id, iqama_number, id_number, rider_name, photo_url, photo_rotation, extra")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
   const riderById = useMemo(
     () => new Map((ridersQuery.data ?? []).map((r) => [r.id, r])),
@@ -384,16 +388,20 @@ function AdminLetters() {
 
   const lettersQuery = useQuery({
     queryKey: ["company-letters"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("company_letters")
-        .select(
-          "id, rider_id, title, body, letter_date, include_stamp, include_signature, is_sent, created_at",
-        )
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as LetterRow[];
-    },
+    queryFn: () =>
+      // No explicit cap here at all, so it relied purely on PostgREST's own
+      // default row limit — fine while a company has few letters, silently
+      // incomplete once it genuinely doesn't.
+      fetchAllRows<LetterRow>(({ from, to }) =>
+        supabase
+          .from("company_letters")
+          .select(
+            "id, rider_id, title, body, letter_date, include_stamp, include_signature, is_sent, created_at",
+          )
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const [savedSearch, setSavedSearch] = useState("");

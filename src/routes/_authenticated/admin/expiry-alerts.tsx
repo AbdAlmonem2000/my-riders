@@ -71,6 +71,7 @@ import {
 import { errText } from "@/lib/error-text";
 import { formatDate } from "@/lib/date-format";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/expiry-alerts")({
   component: AdminExpiryAlerts,
@@ -370,30 +371,36 @@ function AdminExpiryAlerts() {
 
   const ridersQuery = useQuery({
     queryKey: ["expiry-alerts-full-riders"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("riders")
-        .select("id, rider_name, iqama_number, id_number, area")
-        .is("deleted_at", null)
-        .limit(5000);
-      if (error) throw error;
-      return data as RiderLite[];
-    },
+    queryFn: () =>
+      // A flat .limit() here silently dropped every rider past PostgREST's
+      // default row cap once the roster grew past it — see the same fix on
+      // the Riders/Documents pages.
+      fetchAllRows<RiderLite>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select("id, rider_name, iqama_number, id_number, area")
+          .is("deleted_at", null)
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const docsQuery = useQuery({
     queryKey: ["expiry-alerts-docs"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rider_documents")
-        .select(
-          "id, rider_id, doc_type, expiry_date, label, storage_path, file_name, card_number, plate_number",
-        )
-        .not("expiry_date", "is", null)
-        .limit(10000);
-      if (error) throw error;
-      return data as DocRow[];
-    },
+    queryFn: () =>
+      // Same silent-truncation risk — a large roster with full document
+      // sets could reach a cap and leave whole riders missing from the
+      // expiry list.
+      fetchAllRows<DocRow>(({ from, to }) =>
+        supabase
+          .from("rider_documents")
+          .select(
+            "id, rider_id, doc_type, expiry_date, label, storage_path, file_name, card_number, plate_number",
+          )
+          .not("expiry_date", "is", null)
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const isLoading = ridersQuery.isLoading || docsQuery.isLoading;

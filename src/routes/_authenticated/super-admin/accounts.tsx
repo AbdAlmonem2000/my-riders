@@ -410,21 +410,31 @@ function AccountRowItem({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <ChangeEmailDialog
-        userId={account.id}
-        currentEmail={account.email ?? ""}
-        t={t}
-        onSubmit={onUpdateEmail}
-        open={emailOpen}
-        onOpenChange={setEmailOpen}
-      />
-      <ChangePasswordDialog
-        userId={account.id}
-        t={t}
-        onSubmit={onUpdatePassword}
-        open={passwordOpen}
-        onOpenChange={setPasswordOpen}
-      />
+      {/* Gated on {emailOpen,passwordOpen} && instead of always rendering —
+          each dialog seeds its form state via useState(prop), which only
+          re-reads the prop on a fresh mount. Always-mounted, the state from
+          a previous open+edit+cancel would stick around and reappear
+          verbatim next time, instead of resetting to the account's real
+          current value. */}
+      {emailOpen && (
+        <ChangeEmailDialog
+          userId={account.id}
+          currentEmail={account.email ?? ""}
+          t={t}
+          onSubmit={onUpdateEmail}
+          open={emailOpen}
+          onOpenChange={setEmailOpen}
+        />
+      )}
+      {passwordOpen && (
+        <ChangePasswordDialog
+          userId={account.id}
+          t={t}
+          onSubmit={onUpdatePassword}
+          open={passwordOpen}
+          onOpenChange={setPasswordOpen}
+        />
+      )}
       {!account.isSuperAdmin && (
         <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
           <AlertDialogContent>

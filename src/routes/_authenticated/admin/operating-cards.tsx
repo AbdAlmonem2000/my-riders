@@ -91,6 +91,7 @@ import {
 import { errText } from "@/lib/error-text";
 import { formatDate } from "@/lib/date-format";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/operating-cards")({
   component: AdminOperatingCards,
@@ -727,30 +728,36 @@ function AdminOperatingCards() {
 
   const ridersQuery = useQuery({
     queryKey: ["operating-cards-riders"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("riders")
-        .select("id, rider_name, iqama_number, id_number, area")
-        .is("deleted_at", null)
-        .limit(5000);
-      if (error) throw error;
-      return data as RiderLite[];
-    },
+    queryFn: () =>
+      // A flat .limit() here silently dropped every rider past PostgREST's
+      // default row cap once the roster grew past it — see the same fix on
+      // the Riders/Documents pages.
+      fetchAllRows<RiderLite>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select("id, rider_name, iqama_number, id_number, area")
+          .is("deleted_at", null)
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const cardDocsQuery = useQuery({
     queryKey: ["operating-cards-docs"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rider_documents")
-        .select(
-          "id, rider_id, doc_type, card_number, plate_number, expiry_date, storage_path, file_name",
-        )
-        .in("doc_type", [...OPERATING_CARD_TYPES, "vehicle_registration"])
-        .limit(5000);
-      if (error) throw error;
-      return data as CardDocRow[];
-    },
+    queryFn: () =>
+      // Same silent-truncation risk as above — a company with enough
+      // operating-card/form documents could cross the cap and have whole
+      // card groups just missing from this page.
+      fetchAllRows<CardDocRow>(({ from, to }) =>
+        supabase
+          .from("rider_documents")
+          .select(
+            "id, rider_id, doc_type, card_number, plate_number, expiry_date, storage_path, file_name",
+          )
+          .in("doc_type", [...OPERATING_CARD_TYPES, "vehicle_registration"])
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const isLoading = ridersQuery.isLoading || cardDocsQuery.isLoading;

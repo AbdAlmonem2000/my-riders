@@ -71,6 +71,7 @@ import { checkIsAdmin } from "@/lib/reports.functions";
 import { updateDashboardFilters } from "@/lib/dashboard-filters.functions";
 import { errText } from "@/lib/error-text";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   component: AdminOverview,
@@ -1436,17 +1437,23 @@ function AdminOverview() {
   // (day IS NULL) belongs to the separate monthly overview page instead.
   const reportsQuery = useQuery({
     queryKey: ["admin-reports"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("reports")
-        .select("*")
-        .not("day", "is", null)
-        .order("year", { ascending: false })
-        .order("month", { ascending: false })
-        .order("day", { ascending: false, nullsFirst: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      // No cap here relied purely on PostgREST's own default row limit —
+      // fine for a new company, silently incomplete once a few years of
+      // daily uploads cross it. `id` is just a stable pagination tiebreaker
+      // on top of the real sort (year/month/day are already unique per
+      // company here, so it never actually changes the order shown).
+      fetchAllRows(({ from, to }) =>
+        supabase
+          .from("reports")
+          .select("*")
+          .not("day", "is", null)
+          .order("year", { ascending: false })
+          .order("month", { ascending: false })
+          .order("day", { ascending: false, nullsFirst: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const riderCountQuery = useQuery({
@@ -1465,18 +1472,31 @@ function AdminOverview() {
   // only rider_name is actually used here.
   const ridersQuery = useQuery({
     queryKey: ["company-riders"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("riders")
-        .select(
-          "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, extra, is_blocked, password_hash",
-        )
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      // A flat .limit() here silently dropped every rider past PostgREST's
+      // default row cap once the roster grew past it — see the same fix on
+      // the Riders/Documents pages.
+      fetchAllRows<{
+        id: string;
+        iqama_number: string | null;
+        id_number: string | null;
+        rider_name: string | null;
+        photo_url: string | null;
+        photo_rotation: number;
+        extra: unknown;
+        is_blocked: boolean;
+        password_hash: string | null;
+      }>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select(
+            "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, extra, is_blocked, password_hash",
+          )
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
@@ -1601,12 +1621,28 @@ function AdminOverview() {
     queryKey: ["rider-reports-rows", "range", currentReportIds],
     enabled: currentReportIds.length > 0,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rider_reports")
-        .select("rider_id, report_id, data, columns")
-        .in("report_id", currentReportIds);
-      if (error) throw error;
-      return data ?? [];
+      // A plain, unpaginated select here silently truncated a wide date
+      // range (many riders × many days can run well past a thousand rows)
+      // at whatever row cap PostgREST applies by default — a day whose
+      // rows got cut off this way simply vanished from every chart/total
+      // that reads this query, with no error anywhere to notice it by.
+      // Paginating through every row, ordered by id for a stable,
+      // non-overlapping cursor, means the range always comes back whole
+      // regardless of how many riders/days it spans.
+      const pageSize = 1000;
+      const rows: { rider_id: string; report_id: string; data: unknown; columns: unknown }[] = [];
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("rider_reports")
+          .select("rider_id, report_id, data, columns")
+          .in("report_id", currentReportIds)
+          .order("id", { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        rows.push(...(data ?? []));
+        if (!data || data.length < pageSize) break;
+      }
+      return rows;
     },
   });
 
@@ -1614,12 +1650,20 @@ function AdminOverview() {
     queryKey: ["rider-reports-rows", "range", previousReportIds],
     enabled: previousReportIds.length > 0,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rider_reports")
-        .select("rider_id, data")
-        .in("report_id", previousReportIds);
-      if (error) throw error;
-      return data ?? [];
+      const pageSize = 1000;
+      const rows: { rider_id: string; data: unknown }[] = [];
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("rider_reports")
+          .select("rider_id, data")
+          .in("report_id", previousReportIds)
+          .order("id", { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        rows.push(...(data ?? []));
+        if (!data || data.length < pageSize) break;
+      }
+      return rows;
     },
   });
 
@@ -1827,7 +1871,12 @@ function AdminOverview() {
   const dailyTrend = useMemo(() => {
     const reportById = new Map(reports.map((r) => [r.id, r]));
     const q = highlightQuery.trim().toLowerCase();
-    const sums = new Map<string, number>();
+    // Seeded with every report in the selected range up front (at 0) —
+    // otherwise a day whose sheet simply doesn't carry the picked metric
+    // column (a different header that day, say) never got a `sums` entry
+    // at all and silently vanished from the chart instead of showing as a
+    // real, if empty, day.
+    const sums = new Map<string, number>(currentReportIds.map((id) => [id, 0]));
     for (const rr of currentRowsQuery.data ?? []) {
       if (!riderMatchesQuery(riderMetaById.get(rr.rider_id), q)) continue;
       const m = pickMetricValue((rr.data ?? {}) as Record<string, unknown>);
@@ -1854,7 +1903,15 @@ function AdminOverview() {
       })
       .filter((x): x is { ms: number; label: string; value: number } => x !== null)
       .sort((a, b) => a.ms - b.ms);
-  }, [currentRowsQuery.data, reports, pickMetricValue, lang, highlightQuery, riderMetaById]);
+  }, [
+    currentRowsQuery.data,
+    currentReportIds,
+    reports,
+    pickMetricValue,
+    lang,
+    highlightQuery,
+    riderMetaById,
+  ]);
 
   const isLoadingDashboard =
     currentReportIds.length > 0 &&

@@ -42,6 +42,7 @@ import { computeDocStatus, docTypeNeedsExpiry, isCustomDocType } from "@/lib/doc
 import { formatDateTime } from "@/lib/date-format";
 import { listAnnouncements, markAnnouncementsRead } from "@/lib/announcements.functions";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 const SIDEBAR_STORAGE_KEY = "admin-sidebar-open";
 
@@ -406,13 +407,18 @@ function AdminLayout() {
   // thresholds: this badge's is a fixed 30 days, the bell's is per-user).
   const expiringDocsQuery = useQuery({
     queryKey: ["rider-documents-expiring"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("rider_documents")
-        .select("id, rider_id, doc_type, expiry_date, label");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      // No cap at all here relied purely on PostgREST's own default row
+      // limit — this runs on every admin page, for every document (not
+      // just ones with an expiry), so it's the single riskiest unpaginated
+      // query in the app for a company with a large roster.
+      fetchAllRows(({ from, to }) =>
+        supabase
+          .from("rider_documents")
+          .select("id, rider_id, doc_type, expiry_date, label")
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
     enabled: !!adminCheck.data?.isAdmin,
     refetchInterval: 5 * 60_000,
   });
@@ -426,11 +432,16 @@ function AdminLayout() {
   const documentsAccess = adminCheck.data?.documentsAccess ?? "none";
   const expiryAlertRidersQuery = useQuery({
     queryKey: ["expiry-alerts-riders"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("riders").select("id, rider_name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      // Same silent-truncation risk as the query above — runs on every
+      // admin page.
+      fetchAllRows<{ id: string; rider_name: string | null }>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select("id, rider_name")
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
     enabled: documentsAccess !== "none",
     refetchInterval: 5 * 60_000,
   });

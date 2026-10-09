@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 async function assertSuperAdmin(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -409,14 +410,20 @@ export const deleteCompany = createServerFn({ method: "POST" })
       throw new Error("لا يمكن حذف الشركة قبل حذف كل حساباتها من صفحة الحسابات أولاً");
     }
 
-    // Delete storage files
-    const { data: reps } = await context.supabase
-      .from("reports")
-      .select("storage_path")
-      .eq("company_id", data.id);
-    const paths = (reps ?? [])
-      .map((r: { storage_path: string | null }) => r.storage_path)
-      .filter((p: string | null): p is string => !!p);
+    // Delete storage files. Unpaginated, this would silently miss reports
+    // past PostgREST's default row cap for a company with years of
+    // history — not a correctness bug (the reports themselves still get
+    // deleted via the cascade below), just orphaned files left behind in
+    // storage.
+    const reps = await fetchAllRows<{ storage_path: string | null }>(({ from, to }) =>
+      context.supabase
+        .from("reports")
+        .select("storage_path")
+        .eq("company_id", data.id)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    const paths = reps.map((r) => r.storage_path).filter((p): p is string => !!p);
     if (paths.length > 0) {
       await supabaseAdmin.storage.from("reports").remove(paths);
     }

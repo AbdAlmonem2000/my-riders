@@ -72,6 +72,7 @@ import {
 import { errText } from "@/lib/error-text";
 import { formatDateTime } from "@/lib/date-format";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   component: AdminUsers,
@@ -667,11 +668,13 @@ function AdminUsers() {
   // an admin picks a staff member's allowed areas from.
   const areasQuery = useQuery({
     queryKey: ["company-rider-areas"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("riders").select("area");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      // No cap here relied purely on PostgREST's own default row limit —
+      // truncation here just means missing area options in the filter, but
+      // it's just as free to paginate as every other roster-sized query.
+      fetchAllRows<{ area: string | null }>(({ from, to }) =>
+        supabase.from("riders").select("area, id").order("id", { ascending: true }).range(from, to),
+      ),
   });
   const availableAreas = useMemo(() => {
     const set = new Set<string>();

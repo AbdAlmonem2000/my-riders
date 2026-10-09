@@ -78,6 +78,7 @@ import { errText } from "@/lib/error-text";
 import { formatDate, formatDateTime } from "@/lib/date-format";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import { usePushDispatch } from "@/lib/push-client";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({
   component: AdminReports,
@@ -135,9 +136,12 @@ function ReportSheetsDialog({
               className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2"
             >
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{s.file_name}</div>
+                <div className="truncate text-sm font-medium" dir="ltr">
+                  {s.file_name}
+                </div>
                 <div className="text-[11px] text-muted-foreground">
-                  {formatDateTime(s.created_at)} · {s.rider_count} {t("admin.statTotalRiders")}
+                  <span dir="ltr">{formatDateTime(s.created_at)}</span> · {s.rider_count}{" "}
+                  {t("admin.statTotalRiders")}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -294,17 +298,23 @@ function AdminReports() {
   // own separate page/dashboard instead of being mixed in here.
   const reportsQuery = useQuery({
     queryKey: ["admin-reports"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("reports")
-        .select("*")
-        .not("day", "is", null)
-        .order("year", { ascending: false })
-        .order("month", { ascending: false })
-        .order("day", { ascending: false, nullsFirst: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      // No cap here relied purely on PostgREST's own default row limit —
+      // fine for a new company, silently incomplete once a few years of
+      // daily uploads cross it. `id` is just a stable pagination tiebreaker
+      // on top of the real sort (year/month/day are already unique per
+      // company here, so it never actually changes the order shown).
+      fetchAllRows(({ from, to }) =>
+        supabase
+          .from("reports")
+          .select("*")
+          .not("day", "is", null)
+          .order("year", { ascending: false })
+          .order("month", { ascending: false })
+          .order("day", { ascending: false, nullsFirst: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const sheetsQuery = useQuery({

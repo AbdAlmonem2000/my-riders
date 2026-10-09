@@ -14,6 +14,7 @@ import {
   OPERATING_CARD_TYPES,
 } from "@/lib/document-status";
 import { cellText, looksLikeIdentifier } from "@/lib/rider-identity";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 const CardDocTypeSchema = z.enum(["operating_card", "operating_card_extra"]);
 
@@ -88,14 +89,26 @@ export const bulkAssignOperatingCards = createServerFn({ method: "POST" })
     // Every rider referenced, resolved by Iqama number against the full
     // company (service role — a bulk sheet can legitimately span more area
     // than the caller's own allowed_areas can currently SELECT, and a
-    // missing match has to be reported either way).
-    const { data: ridersRaw } = await supabaseAdmin
-      .from("riders")
-      .select("id, iqama_number, area, rider_name")
-      .eq("company_id", companyId)
-      .is("deleted_at", null);
+    // missing match has to be reported either way). Unpaginated, this would
+    // silently miss riders past PostgREST's default row cap for a large
+    // roster — their rows in the sheet would wrongly report as "rider not
+    // found" instead of actually assigning the card.
+    const ridersRaw = await fetchAllRows<{
+      id: string;
+      iqama_number: string | null;
+      area: string | null;
+      rider_name: string | null;
+    }>(({ from, to }) =>
+      supabaseAdmin
+        .from("riders")
+        .select("id, iqama_number, area, rider_name")
+        .eq("company_id", companyId)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
     const riderByIqama = new Map(
-      (ridersRaw ?? []).filter((r) => r.iqama_number).map((r) => [r.iqama_number as string, r]),
+      ridersRaw.filter((r) => r.iqama_number).map((r) => [r.iqama_number as string, r]),
     );
 
     interface ResolvedRow {

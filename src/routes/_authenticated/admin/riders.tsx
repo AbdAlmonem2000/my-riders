@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Ban,
@@ -85,6 +85,7 @@ import { errText } from "@/lib/error-text";
 import { formatDateTime } from "@/lib/date-format";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import { useViewMode } from "@/lib/use-view-mode";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/riders")({
   component: AdminRiders,
@@ -214,6 +215,18 @@ function DeleteRiderDialog({
     }
   };
 
+  // Mounts already open (opened from the row's "⋮" menu, not its own
+  // trigger) — Radix never calls onOpenChange for that, only for a change
+  // it sees happen itself, so the count has to be loaded off `open` turning
+  // true instead, not from inside the AlertDialog's onOpenChange.
+  useEffect(() => {
+    if (open) {
+      setReportCount(null);
+      loadCount();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, riderId]);
+
   const submit = async (deleteReports: boolean) => {
     setDeleting(true);
     try {
@@ -225,16 +238,7 @@ function DeleteRiderDialog({
   };
 
   return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(v) => {
-        onOpenChange(v);
-        if (v) {
-          setReportCount(null);
-          loadCount();
-        }
-      }}
-    >
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>
@@ -494,6 +498,18 @@ function RiderFormDialog({
     setExtraRows(Object.entries(extra).map(([key, value]) => ({ key, value: String(value) })));
   };
 
+  // "edit" mode mounts with `open` already true (the row's "⋮" menu renders
+  // this component fresh instead of toggling a Trigger) — Radix's Dialog
+  // only calls onOpenChange in response to an actual open/close request it
+  // sees happen, never just because the `open` prop arrived already true,
+  // so the onOpenChange-based reset below never ran and every field showed
+  // blank. Firing off `open` itself instead catches both that initial
+  // already-open mount and every later "create" mode open via its Trigger.
+  useEffect(() => {
+    if (open) resetFromRider();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, rider?.id]);
+
   // Uploads straight to our own storage instead of requiring an external
   // link — the resulting public URL just replaces whatever was in the photo
   // field, same as pasting a link there by hand.
@@ -539,13 +555,7 @@ function RiderFormDialog({
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        setOpen(v);
-        if (v) resetFromRider();
-      }}
-    >
+    <Dialog open={open} onOpenChange={setOpen}>
       {mode === "create" && (
         <DialogTrigger asChild>
           <Button size="sm" className="transition-transform active:scale-[0.98]">
@@ -708,18 +718,34 @@ function AdminRiders() {
 
   const ridersQuery = useQuery({
     queryKey: ["company-riders"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("riders")
-        .select(
-          "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, area, extra, is_blocked, password_hash",
-        )
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      // A flat .limit() here silently dropped every rider past PostgREST's
+      // default row cap once the roster grew past it — paginating through
+      // every row (ordered the same way, plus `id` as a stable tiebreaker
+      // so pages never skip/repeat a row sharing the same created_at)
+      // means the full roster always comes back regardless of its size.
+      fetchAllRows<{
+        id: string;
+        iqama_number: string | null;
+        id_number: string | null;
+        rider_name: string | null;
+        photo_url: string | null;
+        photo_rotation: number;
+        area: string | null;
+        extra: unknown;
+        is_blocked: boolean;
+        password_hash: string | null;
+      }>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select(
+            "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, area, extra, is_blocked, password_hash",
+          )
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   // Any column the directory sheet carried beyond Iqama/ID/name/photo is
@@ -1560,7 +1586,7 @@ function AdminRiders() {
                             </div>
                           )}
                           <div className="mt-3 w-full min-w-0">
-                            <div className="truncate text-base font-semibold">
+                            <div className="text-sm leading-tight font-semibold break-words">
                               {r.rider_name || "—"}
                             </div>
                             {r.is_blocked && (

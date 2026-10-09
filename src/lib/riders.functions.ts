@@ -9,6 +9,7 @@ import {
   looksLikeIdentifier,
   type RiderIdentity,
 } from "@/lib/rider-identity";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 const RowSchema = z.record(z.string(), z.unknown());
 
@@ -148,12 +149,28 @@ export const uploadRoster = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const companyId = await resolveActiveCompany(supabase, userId);
 
-    const { data: existingRaw } = await supabase
-      .from("riders")
-      .select("id, iqama_number, id_number, rider_name, photo_url, area, extra")
-      .eq("company_id", companyId)
-      .is("deleted_at", null);
-    const existing = (existingRaw ?? []) as ExistingRider[];
+    // Unpaginated, this would silently miss riders past PostgREST's default
+    // row cap for a large roster — matching only `existing` means anyone
+    // past the cap would never be recognized, and this exact sheet would
+    // re-create them as brand-new duplicate riders instead of updating them.
+    const existingRows = await fetchAllRows<{
+      id: string;
+      iqama_number: string | null;
+      id_number: string | null;
+      rider_name: string | null;
+      photo_url: string | null;
+      area: string | null;
+      extra: Json;
+    }>(({ from, to }) =>
+      supabase
+        .from("riders")
+        .select("id, iqama_number, id_number, rider_name, photo_url, area, extra")
+        .eq("company_id", companyId)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    const existing = existingRows as unknown as ExistingRider[];
     const index = indexRiders(existing);
     const existingById = new Map(existing.map((r) => [r.id, r]));
 
@@ -309,16 +326,30 @@ export const deleteRoster = createServerFn({ method: "POST" })
       .update({ roster_path: null, roster_file_name: null, roster_uploaded_at: null })
       .eq("id", companyId);
 
-    const { data: linkedRaw } = await supabase
-      .from("rider_reports")
-      .select("rider_id")
-      .eq("company_id", companyId);
-    const linked = new Set((linkedRaw ?? []).map((r: { rider_id: string }) => r.rider_id));
+    // Unpaginated, these two selects would silently truncate for a company
+    // with enough rider_reports/riders rows to cross PostgREST's default
+    // row cap — and since "not in `linked`" is exactly the condition that
+    // gets a rider hard-deleted below, a truncated `linked` set would
+    // wrongly delete riders who genuinely have report history.
+    const linkedRaw = await fetchAllRows<{ rider_id: string }>(({ from, to }) =>
+      supabase
+        .from("rider_reports")
+        .select("rider_id")
+        .eq("company_id", companyId)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    const linked = new Set(linkedRaw.map((r) => r.rider_id));
 
-    const { data: allRaw } = await supabase.from("riders").select("id").eq("company_id", companyId);
-    const toDelete = (allRaw ?? [])
-      .map((r: { id: string }) => r.id)
-      .filter((id: string) => !linked.has(id));
+    const allRaw = await fetchAllRows<{ id: string }>(({ from, to }) =>
+      supabase
+        .from("riders")
+        .select("id")
+        .eq("company_id", companyId)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    const toDelete = allRaw.map((r) => r.id).filter((id) => !linked.has(id));
 
     let deleted = 0;
     const CHUNK = 200;

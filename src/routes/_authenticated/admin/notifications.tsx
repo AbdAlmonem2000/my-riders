@@ -51,6 +51,7 @@ import { errText } from "@/lib/error-text";
 import { formatDate } from "@/lib/date-format";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import { usePushDispatch } from "@/lib/push-client";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/notifications")({
   component: AdminNotifications,
@@ -191,16 +192,19 @@ function AdminNotifications() {
 
   const ridersQuery = useQuery({
     queryKey: ["company-riders"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("riders")
-        .select("id, iqama_number, id_number, rider_name, photo_url, photo_rotation")
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      return data as RiderRow[];
-    },
+    queryFn: () =>
+      // A flat .limit() here silently dropped every rider past PostgREST's
+      // default row cap once the roster grew past it — see the same fix on
+      // the Riders/Documents pages.
+      fetchAllRows<RiderRow>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select("id, iqama_number, id_number, rider_name, photo_url, photo_rotation")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
   });
 
   const sentQuery = useQuery({

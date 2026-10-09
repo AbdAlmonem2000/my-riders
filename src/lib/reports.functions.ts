@@ -9,6 +9,7 @@ import {
   looksLikeIdentifier,
   type RiderIdentity,
 } from "@/lib/rider-identity";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 const RowSchema = z.record(z.string(), z.unknown());
 
@@ -307,12 +308,19 @@ export const uploadReport = createServerFn({ method: "POST" })
       // duplicate. A monthly report is never the authority on identity, so an
       // existing name/number is left untouched and only blank fields get
       // backfilled — the directory owns name/photo/extra data.
-      const { data: existingRaw } = await supabaseAdmin
-        .from("riders")
-        .select("id, iqama_number, id_number, rider_name")
-        .eq("company_id", companyId)
-        .is("deleted_at", null);
-      const existingRiders = (existingRaw ?? []) as RiderIdentity[];
+      // Unpaginated, this would silently miss riders past PostgREST's
+      // default row cap for a large roster — a rider past the cap would
+      // never match an existing row here and get re-inserted as a brand-new
+      // duplicate rider on every report that mentions them.
+      const existingRiders = await fetchAllRows<RiderIdentity>(({ from, to }) =>
+        supabaseAdmin
+          .from("riders")
+          .select("id, iqama_number, id_number, rider_name")
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .order("id", { ascending: true })
+          .range(from, to),
+      );
       const riderIndex = indexRiders(existingRiders);
       const existingById = new Map(existingRiders.map((r) => [r.id, r]));
 
