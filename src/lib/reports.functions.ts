@@ -429,16 +429,27 @@ export const uploadReport = createServerFn({ method: "POST" })
 
         for (let i = 0; i < withIqama.length; i += WRITE_CHUNK) {
           const slice = withIqama.slice(i, i + WRITE_CHUNK);
+          // A plain insert, not an upsert: `resolvedByKey` above already
+          // merged any rows that share an Iqama within this same sheet, and
+          // `riderIndex` (built from non-deleted riders only) already routed
+          // anyone matching an existing rider to the update path instead of
+          // here — so every row in `withIqama` is a genuinely new Iqama. An
+          // upsert here would need `onConflict` to target
+          // riders_company_iqama_uk, but that index is partial (`WHERE
+          // deleted_at IS NULL`, so a soft-deleted rider's Iqama can be
+          // reused) and PostgREST's on_conflict can't express a partial
+          // index's predicate — Postgres then rejects the statement outright
+          // with "no unique or exclusion constraint matching the ON CONFLICT
+          // specification", for every row, not just real duplicates.
           const { data: c, error } = await supabaseAdmin
             .from("riders")
-            .upsert(
+            .insert(
               slice.map((r) => ({
                 company_id: companyId,
                 iqama_number: r.iqama,
                 id_number: r.idNumber,
                 rider_name: r.name,
               })),
-              { onConflict: "company_id,iqama_number", ignoreDuplicates: false },
             )
             .select("id, iqama_number, id_number");
           if (error) throw new Error(error.message);
