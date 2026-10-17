@@ -236,12 +236,14 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
 
     const cardNumber = data.cardNumber?.trim() || null;
     const isCard = isOperatingCardDocType(data.docType, label);
+    const plateNumber = data.plateNumber?.trim() || null;
 
     if (isCard) {
       if (!cardNumber) throw new Error("لازم إدخال رقم كرت التشغيل");
       if (!isValidOperatingCardNumber(cardNumber)) {
         throw new Error(`رقم كرت التشغيل لازم يكون بالشكل ${OPERATING_CARD_NUMBER_FORMAT} بالظبط`);
       }
+      if (!plateNumber) throw new Error("لازم إدخال رقم اللوحة");
       await assertOperatingCardAssignment(
         companyId,
         data.riderId,
@@ -260,7 +262,7 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
         storage_path: data.storagePath,
         file_name: data.fileName,
         card_number: isCard ? cardNumber : null,
-        plate_number: isCard ? data.plateNumber?.trim() || null : null,
+        plate_number: isCard ? plateNumber : null,
         expiry_date: resolveExpiryDate(data.docType, data.expiryDate, needsExpiry),
         needs_expiry: needsExpiry,
         label,
@@ -308,6 +310,7 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
     }
 
     const isCard = isOperatingCardDocType(data.docType, existing.label);
+    const plateNumber = data.plateNumber?.trim() || null;
     let cardNumber: string | null = existing.card_number;
     if (isCard) {
       const newCardNumber = data.cardNumber?.trim() || null;
@@ -315,6 +318,7 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
       if (!isValidOperatingCardNumber(newCardNumber)) {
         throw new Error(`رقم كرت التشغيل لازم يكون بالشكل ${OPERATING_CARD_NUMBER_FORMAT} بالظبط`);
       }
+      if (!plateNumber) throw new Error("لازم إدخال رقم اللوحة");
       if (newCardNumber !== existing.card_number) {
         const { data: rider } = await supabase
           .from("riders")
@@ -340,7 +344,7 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
       .update({
         expiry_date: resolveExpiryDate(data.docType, data.expiryDate, existing.needs_expiry),
         card_number: cardNumber,
-        ...(isCard ? { plate_number: data.plateNumber?.trim() || null } : {}),
+        ...(isCard ? { plate_number: plateNumber } : {}),
       })
       .eq("rider_id", data.riderId)
       .eq("doc_type", data.docType)

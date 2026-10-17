@@ -201,6 +201,7 @@ function EditCardGroupDialog({
     if (!isValidOperatingCardNumber(cardNumber)) {
       return toast.error(t("documents.toastCardNumberInvalid"));
     }
+    if (!plateNumber.trim()) return toast.error(t("documents.toastPlateNumberRequired"));
     if (file && !hasAllowedDocExtension(file.name)) {
       return toast.error(t("documents.toastInvalidExtension"));
     }
@@ -576,6 +577,7 @@ function BulkUploadDialog({
       const parsed = await parseOperatingCardsExcel(file);
       if (!parsed.iqamaColumn) throw new Error(t("operatingCards.toastNoIqamaColumn"));
       if (!parsed.cardNumberColumn) throw new Error(t("operatingCards.toastNoCardColumn"));
+      if (!parsed.plateNumberColumn) throw new Error(t("operatingCards.toastNoPlateColumn"));
       if (parsed.rows.length === 0) throw new Error(t("admin.toastEmptyFile"));
 
       const res = await bulkFn({

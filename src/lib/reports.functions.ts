@@ -809,6 +809,10 @@ export interface DashboardFiltersScope {
   metricColumns: string[];
   donutColumn: string | null;
   barColumn: string | null;
+  // Which column the working-hours alert reads as "hours worked" — only
+  // meaningful on the daily scope (that alert has no monthly equivalent),
+  // but kept on the shared scope shape like every other picker here.
+  hoursColumn: string | null;
 }
 export interface DashboardFilters {
   daily: DashboardFiltersScope;
@@ -818,6 +822,7 @@ const EMPTY_DASHBOARD_FILTERS_SCOPE: DashboardFiltersScope = {
   metricColumns: [],
   donutColumn: null,
   barColumn: null,
+  hoursColumn: null,
 };
 
 // The company's one shared dashboard_filters jsonb blob, tolerant of
@@ -833,6 +838,7 @@ function parseDashboardFilters(raw: unknown): DashboardFilters {
       metricColumns: Array.isArray(s.metricColumns) ? s.metricColumns.map(String) : [],
       donutColumn: typeof s.donutColumn === "string" ? s.donutColumn : null,
       barColumn: typeof s.barColumn === "string" ? s.barColumn : null,
+      hoursColumn: typeof s.hoursColumn === "string" ? s.hoursColumn : null,
     };
   };
   return { daily: parseScope(obj.daily), monthly: parseScope(obj.monthly) };

@@ -116,6 +116,27 @@ interface AlertItem {
   area: string | null;
 }
 
+// One row per document, or — for a shared operating card — one row per
+// (docType, cardNumber) group carrying every rider linked to it.
+interface DisplayRow {
+  key: string;
+  docType: string;
+  typeLabel: string;
+  expiryDate: string | null;
+  status: DocStatus;
+  daysLeft: number | null;
+  hasFile: boolean;
+  cardNumber: string | null;
+  plateNumber: string | null;
+  area: string | null;
+  riders: { id: string; name: string; iqamaNumber: string | null; idNumber: string | null }[];
+  // Which single underlying AlertItem drives the renew dialog / view /
+  // download actions — any one member of a card group works, since those
+  // actions already operate at the card-group level, not per rider.
+  renewItemId: string;
+  renewRiderId: string;
+}
+
 const STATUS_FILTERS: { value: "all" | DocStatus; key: TranslationKey }[] = [
   { value: "all", key: "documents.filterAll" },
   { value: "expired", key: "documents.statusExpired" },
@@ -442,6 +463,17 @@ function AdminExpiryAlerts() {
           daysLeft,
           hasFile: !!d.storage_path,
           fileName: d.file_name,
+          // Deliberately NOT passing `d.label` here: a custom admin-named
+          // "كرت تشغيل..." document would then satisfy isOperatingCardDocType
+          // too, but this page's renew dialog routes any isCard item through
+          // uploadOperatingCardFile/updateOperatingCardGroup, whose docType
+          // is validated server-side against the fixed operating_card/
+          // operating_card_extra enum — a custom "custom:<uuid>" doc_type
+          // would be rejected. Treating it as a plain per-rider document
+          // here (the regular uploadRiderDocument/updateRiderDocumentExpiry
+          // path, which already handles any doc_type) is what actually
+          // works, even though it means a custom card's riders don't get
+          // grouped into one row below the way the two fixed slots do.
           isCard: isOperatingCardDocType(d.doc_type) && !!cardNumber,
           cardNumber,
           plateNumber: d.plate_number,
@@ -452,6 +484,72 @@ function AdminExpiryAlerts() {
         };
       });
   }, [docsQuery.data, ridersQuery.data, t]);
+
+  // An operating card's document is one row per rider sharing it — grouped
+  // here into one display row per (docType, cardNumber) so a 3-rider card
+  // shows once, with all three riders listed together, instead of three
+  // separate rows that each repeat the same card number/plate/expiry. A
+  // non-card document (Iqama photo, license, ...) stays one row per rider,
+  // exactly as before.
+  const displayRows = useMemo(() => {
+    const rows: DisplayRow[] = [];
+    const cardGroups = new Map<string, AlertItem[]>();
+    for (const it of items) {
+      if (it.isCard && it.cardNumber) {
+        const key = `${it.docType}::${it.cardNumber}`;
+        const list = cardGroups.get(key);
+        if (list) list.push(it);
+        else cardGroups.set(key, [it]);
+      } else {
+        rows.push({
+          key: it.id,
+          docType: it.docType,
+          typeLabel: it.typeLabel,
+          expiryDate: it.expiryDate,
+          status: it.status,
+          daysLeft: it.daysLeft,
+          hasFile: it.hasFile,
+          cardNumber: null,
+          plateNumber: null,
+          area: it.area,
+          riders: [
+            {
+              id: it.riderId,
+              name: it.riderName,
+              iqamaNumber: it.iqamaNumber,
+              idNumber: it.idNumber,
+            },
+          ],
+          renewItemId: it.id,
+          renewRiderId: it.riderId,
+        });
+      }
+    }
+    for (const [key, group] of cardGroups) {
+      const first = group[0];
+      rows.push({
+        key,
+        docType: first.docType,
+        typeLabel: first.typeLabel,
+        expiryDate: first.expiryDate,
+        status: first.status,
+        daysLeft: first.daysLeft,
+        hasFile: first.hasFile,
+        cardNumber: first.cardNumber,
+        plateNumber: first.plateNumber,
+        area: first.area,
+        riders: group.map((g) => ({
+          id: g.riderId,
+          name: g.riderName,
+          iqamaNumber: g.iqamaNumber,
+          idNumber: g.idNumber,
+        })),
+        renewItemId: first.id,
+        renewRiderId: first.riderId,
+      });
+    }
+    return rows;
+  }, [items]);
 
   const docTypeOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -472,27 +570,29 @@ function AdminExpiryAlerts() {
   );
 
   const filtered = useMemo(() => {
-    let result = items;
+    let result = displayRows;
     const q = search.trim().toLowerCase();
     if (q) {
-      result = result.filter(
-        (it) =>
-          it.riderName.toLowerCase().includes(q) ||
-          (it.iqamaNumber ?? "").toLowerCase().includes(q) ||
-          (it.idNumber ?? "").toLowerCase().includes(q),
+      result = result.filter((row) =>
+        row.riders.some(
+          (r) =>
+            r.name.toLowerCase().includes(q) ||
+            (r.iqamaNumber ?? "").toLowerCase().includes(q) ||
+            (r.idNumber ?? "").toLowerCase().includes(q),
+        ),
       );
     }
     if (areaFilter.size > 0) {
-      result = result.filter((it) => areaFilter.has(it.area?.trim() || ""));
+      result = result.filter((row) => areaFilter.has(row.area?.trim() || ""));
     }
     if (docTypeFilter.size > 0) {
-      result = result.filter((it) => docTypeFilter.has(it.docType));
+      result = result.filter((row) => docTypeFilter.has(row.docType));
     }
     if (statusFilter !== "all") {
-      result = result.filter((it) => it.status === statusFilter);
+      result = result.filter((row) => row.status === statusFilter);
     }
     return [...result].sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0));
-  }, [items, search, areaFilter, docTypeFilter, statusFilter]);
+  }, [displayRows, search, areaFilter, docTypeFilter, statusFilter]);
 
   const renewingItem = items.find((it) => it.id === renewingItemId) ?? null;
 
@@ -589,7 +689,7 @@ function AdminExpiryAlerts() {
                   <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:h-9 [&_th]:text-xs">
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="whitespace-nowrap">
-                        {t("admin.riderNameLabel")}
+                        {t("operatingCards.tableRiders")}
                       </TableHead>
                       <TableHead className="whitespace-nowrap">{t("admin.tableIqama")}</TableHead>
                       <TableHead className="whitespace-nowrap">
@@ -597,6 +697,12 @@ function AdminExpiryAlerts() {
                       </TableHead>
                       <TableHead className="whitespace-nowrap">
                         {t("expiryAlerts.tableDocType")}
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap">
+                        {t("operatingCards.tableCardNumber")}
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap">
+                        {t("documents.plateNumberLabel")}
                       </TableHead>
                       <TableHead className="whitespace-nowrap">
                         {t("operatingCards.tableStatus")}
@@ -608,26 +714,47 @@ function AdminExpiryAlerts() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((it) => (
-                      <TableRow key={it.id}>
-                        <TableCell className="whitespace-nowrap text-sm font-medium">
-                          {it.riderName}
+                    {filtered.map((row) => (
+                      <TableRow key={row.key}>
+                        <TableCell className="text-sm font-medium">
+                          <div className="space-y-0.5">
+                            {row.riders.map((r) => (
+                              <div key={r.id} className="whitespace-nowrap">
+                                {r.name}
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground" dir="ltr">
+                          <div className="space-y-0.5">
+                            {row.riders.map((r) => (
+                              <div key={r.id} className="whitespace-nowrap">
+                                {r.iqamaNumber || r.idNumber || "—"}
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                          {row.area || "—"}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">{row.typeLabel}</TableCell>
+                        <TableCell
+                          className="whitespace-nowrap font-mono text-xs text-muted-foreground"
+                          dir="ltr"
+                        >
+                          {row.cardNumber || "—"}
                         </TableCell>
                         <TableCell
                           className="whitespace-nowrap font-mono text-xs text-muted-foreground"
                           dir="ltr"
                         >
-                          {it.iqamaNumber || it.idNumber || "—"}
+                          {row.plateNumber || "—"}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {it.area || "—"}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-sm">{it.typeLabel}</TableCell>
                         <TableCell className="whitespace-nowrap">
-                          <StatusBadge status={it.status} daysLeft={it.daysLeft} t={t} />
+                          <StatusBadge status={row.status} daysLeft={row.daysLeft} t={t} />
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {it.expiryDate ? formatDate(it.expiryDate) : "—"}
+                          {row.expiryDate ? formatDate(row.expiryDate) : "—"}
                         </TableCell>
                         <TableCell className="sticky end-0 z-10 bg-background text-end shadow-[-4px_0_6px_-4px_rgb(0_0_0/0.15)]">
                           <DropdownMenu>
@@ -638,21 +765,23 @@ function AdminExpiryAlerts() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               {canWrite && (
-                                <DropdownMenuItem onClick={() => setRenewingItemId(it.id)}>
+                                <DropdownMenuItem
+                                  onClick={() => setRenewingItemId(row.renewItemId)}
+                                >
                                   <Pencil className="h-3.5 w-3.5" />
                                   {t("expiryAlerts.renewButton")}
                                 </DropdownMenuItem>
                               )}
-                              {it.hasFile && (
+                              {row.hasFile && (
                                 <>
                                   <DropdownMenuItem
-                                    onClick={() => handleView(it.riderId, it.docType)}
+                                    onClick={() => handleView(row.renewRiderId, row.docType)}
                                   >
                                     <Eye className="h-3.5 w-3.5" />
                                     {t("documents.viewButton")}
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
-                                    onClick={() => handleDownload(it.riderId, it.docType)}
+                                    onClick={() => handleDownload(row.renewRiderId, row.docType)}
                                   >
                                     <Download className="h-3.5 w-3.5" />
                                     {t("documents.downloadButton")}

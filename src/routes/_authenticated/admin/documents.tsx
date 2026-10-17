@@ -258,6 +258,7 @@ function DocumentSlot({
       if (!cardNumber.trim()) return toast.error(t("documents.toastCardNumberRequired"));
       if (!isValidOperatingCardNumber(cardNumber))
         return toast.error(t("documents.toastCardNumberInvalid"));
+      if (!plateNumber.trim()) return toast.error(t("documents.toastPlateNumberRequired"));
     }
     const ok = await onUpload(
       docType,
@@ -283,6 +284,7 @@ function DocumentSlot({
       if (!cardNumber.trim()) return toast.error(t("documents.toastCardNumberRequired"));
       if (!isValidOperatingCardNumber(cardNumber))
         return toast.error(t("documents.toastCardNumberInvalid"));
+      if (!plateNumber.trim()) return toast.error(t("documents.toastPlateNumberRequired"));
     }
     const ok = await onUpdateExpiry(
       docType,
@@ -449,7 +451,7 @@ function DocumentSlot({
           )}
           {isOperatingCard && (
             <div className="space-y-1">
-              <Label className="text-xs">{t("documents.plateNumberOptionalLabel")}</Label>
+              <Label className="text-xs">{t("documents.plateNumberLabel")}</Label>
               <Input
                 value={plateNumber}
                 onChange={(e) => setPlateNumber(e.target.value)}
@@ -500,7 +502,7 @@ function DocumentSlot({
           )}
           {isOperatingCard && (
             <div className="space-y-1">
-              <Label className="text-xs">{t("documents.plateNumberOptionalLabel")}</Label>
+              <Label className="text-xs">{t("documents.plateNumberLabel")}</Label>
               <Input
                 value={plateNumber}
                 onChange={(e) => setPlateNumber(e.target.value)}

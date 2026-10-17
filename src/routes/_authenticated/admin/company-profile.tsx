@@ -68,6 +68,7 @@ import { computeDocStatus, hasAllowedDocExtension, isValidExpiryDate } from "@/l
 import { formatDate } from "@/lib/date-format";
 import { errText } from "@/lib/error-text";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export const Route = createFileRoute("/_authenticated/admin/company-profile")({
   component: AdminCompanyProfile,
@@ -482,19 +483,29 @@ function RiderVisibleColumnsSection({
   const availableColumnsQuery = useQuery({
     queryKey: ["company-monthly-report-columns", companyId],
     queryFn: async () => {
-      const { data: reportRows, error: repErr } = await supabase
-        .from("reports")
-        .select("id")
-        .eq("company_id", companyId)
-        .is("day", null);
-      if (repErr) throw repErr;
-      const reportIds = (reportRows ?? []).map((r) => r.id);
+      // Unpaginated, both selects below would silently miss rows past
+      // PostgREST's default row cap — a company with many months of
+      // monthly reports, or a large roster, could lose whole reports' worth
+      // of columns from this list with no error anywhere.
+      const reportRows = await fetchAllRows<{ id: string }>(({ from, to }) =>
+        supabase
+          .from("reports")
+          .select("id")
+          .eq("company_id", companyId)
+          .is("day", null)
+          .order("id", { ascending: true })
+          .range(from, to),
+      );
+      const reportIds = reportRows.map((r) => r.id);
       if (reportIds.length === 0) return [];
-      const { data: rrRows, error: rrErr } = await supabase
-        .from("rider_reports")
-        .select("columns, data")
-        .in("report_id", reportIds);
-      if (rrErr) throw rrErr;
+      const rrRows = await fetchAllRows<{ columns: unknown; data: unknown }>(({ from, to }) =>
+        supabase
+          .from("rider_reports")
+          .select("columns, data")
+          .in("report_id", reportIds)
+          .order("id", { ascending: true })
+          .range(from, to),
+      );
       const seen = new Set<string>();
       const order: string[] = [];
       for (const r of rrRows ?? []) {

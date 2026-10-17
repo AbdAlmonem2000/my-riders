@@ -12,14 +12,19 @@ import { useMemo, useState } from "react";
 import {
   Bell,
   Building2,
+  CalendarClock,
+  CalendarDays,
+  CalendarRange,
   ChevronDown,
   CreditCard,
+  FileBarChart2,
+  FileClock,
   FileSignature,
   FileSpreadsheet,
   FileText,
   FileWarning,
-  Home,
   Landmark,
+  LayoutDashboard,
   Loader2,
   Lock,
   Megaphone,
@@ -231,10 +236,15 @@ type NavEntry = NavLeaf | NavGroup;
 const NAV_TABS: NavEntry[] = [
   {
     key: "admin.navOverview",
-    icon: Home,
+    icon: LayoutDashboard,
     children: [
-      { to: "/admin", key: "admin.navOverviewDaily", icon: Home, exact: true },
-      { to: "/admin/overview-monthly", key: "admin.navOverviewMonthly", icon: Home, exact: false },
+      { to: "/admin", key: "admin.navOverviewDaily", icon: CalendarDays, exact: true },
+      {
+        to: "/admin/overview-monthly",
+        key: "admin.navOverviewMonthly",
+        icon: CalendarRange,
+        exact: false,
+      },
     ],
   },
   { to: "/admin/riders" as const, key: "admin.navRiders" as const, icon: Users, exact: false },
@@ -245,13 +255,13 @@ const NAV_TABS: NavEntry[] = [
       {
         to: "/admin/reports",
         key: "admin.navReportsDaily",
-        icon: FileSpreadsheet,
+        icon: FileClock,
         exact: false,
       },
       {
         to: "/admin/reports-monthly",
         key: "admin.navReportsMonthly",
-        icon: FileSpreadsheet,
+        icon: FileBarChart2,
         exact: false,
       },
     ],
@@ -271,7 +281,9 @@ const NAV_TABS: NavEntry[] = [
   {
     to: "/admin/expiry-alerts" as const,
     key: "admin.navExpiryAlerts" as const,
-    icon: FileWarning,
+    // Distinct from the top-bar expiry bell (FileWarning), which now sits
+    // right next to this same nav item's own badge.
+    icon: CalendarClock,
     exact: false,
   },
   {
@@ -401,10 +413,12 @@ function AdminLayout() {
     refetchInterval: 60_000,
   });
 
-  // Powers the small "expiring soon" badge on the Documents nav item — no
-  // extra click needed to know something needs attention. Also feeds the
-  // configurable-lead-time alert bell below (same rows, two different
-  // thresholds: this badge's is a fixed 30 days, the bell's is per-user).
+  // Powers the small "expired" badge on the Expiry Alerts nav item — counts
+  // only documents already past their expiry date (not ones merely expiring
+  // soon), so it doesn't need extra clicks to know something's actually
+  // overdue. Also feeds the configurable-lead-time alert bell below (same
+  // rows, a different threshold: the bell includes "expiring soon" too, on
+  // each user's own lead time).
   const expiringDocsQuery = useQuery({
     queryKey: ["rider-documents-expiring"],
     queryFn: () =>
@@ -424,8 +438,9 @@ function AdminLayout() {
   });
   const expiringDocsCount = useMemo(
     () =>
-      (expiringDocsQuery.data ?? []).filter((d) => computeDocStatus(d.expiry_date).status !== "ok")
-        .length,
+      (expiringDocsQuery.data ?? []).filter(
+        (d) => computeDocStatus(d.expiry_date).status === "expired",
+      ).length,
     [expiringDocsQuery.data],
   );
 
@@ -601,11 +616,15 @@ function AdminLayout() {
   // shows full labels.
   const renderNavLink = (tab: NavLeaf, collapsed: boolean) => {
     const badgeCount =
-      tab.to === "/admin/documents"
+      tab.to === "/admin/expiry-alerts"
         ? expiringDocsCount
         : tab.to === "/admin/company-profile"
           ? expiringCompanyDocsCount
           : 0;
+    // The expiry-alerts badge shows the real count, matching the number the
+    // page itself lists — only the company-profile one (a much smaller,
+    // bounded set of documents) still caps at "9+".
+    const badgeCapsAtNine = tab.to === "/admin/company-profile";
     const badgeTooltipKey =
       tab.to === "/admin/company-profile"
         ? ("companyProfile.expiringBadgeTooltip" as const)
@@ -632,7 +651,7 @@ function AdminLayout() {
               title={t(badgeTooltipKey)}
               className="absolute -end-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-destructive text-[9px] font-semibold text-destructive-foreground"
             >
-              {badgeCount > 9 ? "9+" : badgeCount}
+              {badgeCapsAtNine && badgeCount > 9 ? "9+" : badgeCount}
             </span>
           )}
         </span>

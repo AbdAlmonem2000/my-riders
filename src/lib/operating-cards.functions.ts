@@ -144,6 +144,10 @@ export const bulkAssignOperatingCards = createServerFn({ method: "POST" })
         return;
       }
       const plateNumberRaw = cellText(row, data.plateNumberColumn);
+      if (!plateNumberRaw) {
+        rowErrors.push({ rowNumber, message: "رقم اللوحة فاضي" });
+        return;
+      }
       const expiryRaw = cellText(row, data.expiryDateColumn);
       let expiryDate: string | null = null;
       if (expiryRaw) {
@@ -358,6 +362,8 @@ export const updateOperatingCardGroup = createServerFn({ method: "POST" })
     if (data.expiryDate && !isValidExpiryDate(data.expiryDate)) {
       throw new Error("تاريخ الانتهاء غير صحيح");
     }
+    const plateNumber = data.plateNumber?.trim() || null;
+    if (!plateNumber) throw new Error("لازم إدخال رقم اللوحة");
 
     const newCardNumber = data.newCardNumber?.trim() || null;
     const isRenumbering = !!newCardNumber && newCardNumber !== data.cardNumber;
@@ -422,7 +428,7 @@ export const updateOperatingCardGroup = createServerFn({ method: "POST" })
     const { data: updated, error } = await supabase
       .from("rider_documents")
       .update({
-        plate_number: data.plateNumber?.trim() || null,
+        plate_number: plateNumber,
         expiry_date: data.expiryDate,
         ...(isRenumbering ? { card_number: newCardNumber } : {}),
       })

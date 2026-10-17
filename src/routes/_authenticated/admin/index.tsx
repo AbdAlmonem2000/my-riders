@@ -17,6 +17,7 @@ import {
   YAxis,
 } from "recharts";
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   FileSpreadsheet,
@@ -245,19 +246,6 @@ function riderMatchesQuery(
     (meta.idNumber ?? "").toLowerCase().includes(q) ||
     (meta.iqamaNumber ?? "").toLowerCase().includes(q)
   );
-}
-
-// Biggest improvement first, biggest decline last, with riders new to the
-// period (no previous value to compare against) sorted after everyone with
-// a real delta — shared by the live table and the printed export so the two
-// always read in the same order.
-function sortPerfRows(rows: PerfRow[]): PerfRow[] {
-  return [...rows].sort((a, b) => {
-    if (a.delta === null && b.delta === null) return b.current - a.current;
-    if (a.delta === null) return 1;
-    if (b.delta === null) return -1;
-    return b.delta - a.delta;
-  });
 }
 
 function PerformanceList({
@@ -754,119 +742,6 @@ function BreakdownBarChart({
           </BarChart>
         </ChartContainer>
       )}
-    </div>
-  );
-}
-
-// Every rider in the current period, not just the top 5 — searchable by
-// name, sorted by the biggest change first (new riders, with no previous
-// value to compare against, sort after everyone with a real delta).
-function RidersPerformanceTable({
-  rows,
-  metricLabel,
-  showChange,
-  query,
-  onQueryChange,
-  t,
-}: {
-  rows: PerfRow[];
-  metricLabel: string | null;
-  showChange: boolean;
-  // Shared with the KPI tiles above, so typing here filters the whole page
-  // together instead of disconnected boxes.
-  query: string;
-  onQueryChange: (value: string) => void;
-  t: (key: TranslationKey) => string;
-}) {
-  const sorted = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = q ? rows.filter((r) => riderMatchesQuery(r, q)) : rows;
-    return sortPerfRows(list);
-  }, [rows, query]);
-
-  const colSpan = showChange ? 5 : 4;
-
-  return (
-    <div className="space-y-2">
-      <div className="relative">
-        <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          placeholder={t("admin.dashboardRiderSearchPlaceholder")}
-          className="ps-9"
-        />
-      </div>
-      <div className="max-h-96 overflow-auto rounded-lg border">
-        <Table>
-          <TableHeader className="sticky top-0 bg-muted">
-            <TableRow className="hover:bg-transparent">
-              <TableHead>{t("admin.riderNameLabel")}</TableHead>
-              <TableHead>{t("admin.tableIqama")}</TableHead>
-              <TableHead>{t("admin.tableIdNumber")}</TableHead>
-              <TableHead>{metricLabel ?? t("admin.dashboardMetricValue")}</TableHead>
-              {showChange && <TableHead>{t("admin.dashboardChangeColumn")}</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sorted.map((r) => {
-              const rowQuery = r.riderName || r.idText || r.idNumber || "";
-              const isActive =
-                rowQuery !== "" && query.trim().toLowerCase() === rowQuery.toLowerCase();
-              return (
-                <TableRow
-                  key={r.riderId}
-                  className={
-                    "cursor-pointer" + (isActive ? " bg-primary/10" : " hover:bg-muted/50")
-                  }
-                  onClick={() => onQueryChange(isActive ? "" : rowQuery)}
-                >
-                  <TableCell className="font-medium">{r.riderName || "—"}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground" dir="ltr">
-                    {r.iqamaNumber || "—"}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground" dir="ltr">
-                    {r.idNumber || "—"}
-                  </TableCell>
-                  <TableCell className="font-mono">{r.current}</TableCell>
-                  {showChange && (
-                    <TableCell>
-                      {r.delta === null ? (
-                        <span className="text-xs text-muted-foreground">
-                          {t("admin.dashboardNewCount")}
-                        </span>
-                      ) : (
-                        <span
-                          className={
-                            r.delta > 0
-                              ? "font-mono font-semibold text-emerald-600"
-                              : r.delta < 0
-                                ? "font-mono font-semibold text-destructive"
-                                : "font-mono text-muted-foreground"
-                          }
-                        >
-                          {r.delta > 0 ? "+" : ""}
-                          {r.delta}
-                        </span>
-                      )}
-                    </TableCell>
-                  )}
-                </TableRow>
-              );
-            })}
-            {sorted.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={colSpan}
-                  className="py-6 text-center text-sm text-muted-foreground"
-                >
-                  {t("documents.searchNoResults")}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
     </div>
   );
 }
@@ -1483,6 +1358,7 @@ function AdminOverview() {
         rider_name: string | null;
         photo_url: string | null;
         photo_rotation: number;
+        area: string | null;
         extra: unknown;
         is_blocked: boolean;
         password_hash: string | null;
@@ -1490,7 +1366,7 @@ function AdminOverview() {
         supabase
           .from("riders")
           .select(
-            "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, extra, is_blocked, password_hash",
+            "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, area, extra, is_blocked, password_hash",
           )
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
@@ -1498,6 +1374,64 @@ function AdminOverview() {
           .range(from, to),
       ),
   });
+
+  // Which operating card(s) each rider is on, and who else shares each one —
+  // drives the working-hours alert below. The shared 24 hours split across
+  // however many of those riders actually worked THAT day (not the card's
+  // full roster) — a 3-rider card where only 2 showed up that day still
+  // splits 12/12, not 8/8. Both card slots (operating_card and
+  // operating_card_extra) are tracked — they're independent (the same raw
+  // card number can mean two different cards across the two slots, same as
+  // everywhere else this app handles cards — see OPERATING_CARD_TYPES), and
+  // a rider can be on one of each at once, so a rider maps to a LIST of
+  // cards here, not just one.
+  const cardGroupsQuery = useQuery({
+    queryKey: ["company-operating-card-members"],
+    queryFn: () =>
+      fetchAllRows<{
+        rider_id: string;
+        doc_type: string;
+        card_number: string | null;
+        plate_number: string | null;
+      }>(({ from, to }) =>
+        supabase
+          .from("rider_documents")
+          .select("rider_id, doc_type, card_number, plate_number")
+          .in("doc_type", ["operating_card", "operating_card_extra"])
+          .not("card_number", "is", null)
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
+  });
+
+  const cardByRider = useMemo(() => {
+    interface CardGroup {
+      cardKey: string;
+      cardNumber: string;
+      plateNumber: string | null;
+      members: Set<string>;
+    }
+    const groupsByKey = new Map<string, CardGroup>();
+    for (const row of cardGroupsQuery.data ?? []) {
+      const cardKey = `${row.doc_type}:${row.card_number}`;
+      let group = groupsByKey.get(cardKey);
+      if (!group) {
+        group = { cardKey, cardNumber: row.card_number!, plateNumber: null, members: new Set() };
+        groupsByKey.set(cardKey, group);
+      }
+      group.members.add(row.rider_id);
+      if (row.plate_number) group.plateNumber = row.plate_number;
+    }
+    const map = new Map<string, CardGroup[]>();
+    for (const row of cardGroupsQuery.data ?? []) {
+      const cardKey = `${row.doc_type}:${row.card_number}`;
+      const group = groupsByKey.get(cardKey)!;
+      const list = map.get(row.rider_id);
+      if (list) list.push(group);
+      else map.set(row.rider_id, [group]);
+    }
+    return map;
+  }, [cardGroupsQuery.data]);
 
   const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
 
@@ -1675,6 +1609,7 @@ function AdminOverview() {
         idText: string | null;
         idNumber: string | null;
         iqamaNumber: string | null;
+        area: string | null;
       }
     >();
     for (const r of ridersQuery.data ?? []) {
@@ -1687,6 +1622,7 @@ function AdminOverview() {
         idText: r.iqama_number || r.id_number || null,
         idNumber: r.id_number,
         iqamaNumber: r.iqama_number,
+        area: r.area,
       });
     }
     return map;
@@ -1703,6 +1639,7 @@ function AdminOverview() {
       metricColumns?: string[];
       donutColumn?: string | null;
       barColumn?: string | null;
+      hoursColumn?: string | null;
     }) => {
       if (!canPickMetricColumn) return;
       updateDashboardFiltersFn({ data: { scope: "daily", filters } }).catch((e) => {
@@ -1746,6 +1683,35 @@ function AdminOverview() {
     }
     return [...set];
   }, [currentRowsQuery.data]);
+
+  // Which column the working-hours alert below reads as "hours worked" —
+  // independent of the primary metric column above, since a company's
+  // performance metric (orders/deliveries) and its hours column are never
+  // the same one. Shared company-wide and persisted exactly like
+  // metricColumns above (same dashboard_filters.daily blob, same
+  // load-once-then-sync pattern) — whoever opens the dashboard next, on any
+  // device, sees the same pick.
+  const [hoursColumnState, setHoursColumnState] = useState<string>("auto");
+  const hoursColumnSyncedRef = useRef(false);
+  useEffect(() => {
+    if (hoursColumnSyncedRef.current || !adminCheck.data) return;
+    hoursColumnSyncedRef.current = true;
+    setHoursColumnState(adminCheck.data.dashboardFilters.daily.hoursColumn ?? "auto");
+  }, [adminCheck.data]);
+  const setHoursColumn = (next: string) => {
+    setHoursColumnState(next);
+    persistDashboardFilters({ hoursColumn: next === "auto" ? null : next });
+  };
+  const hoursColumn = hoursColumnState;
+  const pickHoursMetric = useCallback(
+    (row: Record<string, unknown>) => {
+      if (hoursColumn === "auto") return pickMetric(row, HIGHLIGHT_KEYS.hours);
+      return isNumericLike(row[hoursColumn])
+        ? { label: hoursColumn, value: row[hoursColumn] }
+        : null;
+    },
+    [hoursColumn],
+  );
 
   const pickMetricValue = useCallback(
     (row: Record<string, unknown>) => {
@@ -1913,9 +1879,153 @@ function AdminOverview() {
     riderMetaById,
   ]);
 
+  // Who actually has a row in each day's report — the working-hours alert
+  // below splits a card's 24 hours only across members who showed up THAT
+  // day, not the card's full roster (a 3-rider card where one of them
+  // didn't work that day splits 12/12 between the other two, not 8/8).
+  const presentRidersByReport = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const rr of currentRowsQuery.data ?? []) {
+      let present = map.get(rr.report_id);
+      if (!present) {
+        present = new Set();
+        map.set(rr.report_id, present);
+      }
+      present.add(rr.rider_id);
+    }
+    return map;
+  }, [currentRowsQuery.data]);
+
+  // A shared operating card is only on the road 24 hours a day total, split
+  // across however many of its riders actually worked that day — so a rider
+  // who's alone on the card that day can log up to 24 hours, 12 if one
+  // other card-mate also worked that day, 8 if all 3 did. One row per
+  // (card, day) that has at least one rider over their share, listing every
+  // card-mate who worked that day (not just the one who went over) so the
+  // full picture is in one place instead of split across separate rows.
+  // Card membership is read as it stands today — the report rows themselves
+  // don't record which card a rider was on back when they were uploaded.
+  const hoursViolationGroups = useMemo(() => {
+    const reportById = new Map(reports.map((r) => [r.id, r]));
+    const rowByReportRider = new Map<string, Record<string, unknown>>();
+    for (const rr of currentRowsQuery.data ?? []) {
+      rowByReportRider.set(
+        `${rr.report_id}:${rr.rider_id}`,
+        (rr.data ?? {}) as Record<string, unknown>,
+      );
+    }
+
+    interface GroupRider {
+      id: string;
+      name: string;
+      iqamaNumber: string | null;
+      idNumber: string | null;
+      hours: number | null;
+      exceeded: boolean;
+    }
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        cardNumber: string;
+        plateNumber: string | null;
+        area: string | null;
+        date: string;
+        ms: number;
+        maxAllowed: number;
+        riders: GroupRider[];
+      }
+    >();
+
+    for (const rr of currentRowsQuery.data ?? []) {
+      const cards = cardByRider.get(rr.rider_id);
+      if (!cards) continue;
+      for (const card of cards) {
+        const groupKey = `${rr.report_id}:${card.cardKey}`;
+        if (groups.has(groupKey)) continue;
+
+        const present = presentRidersByReport.get(rr.report_id);
+        const activeMembers = present
+          ? [...card.members].filter((id) => present.has(id))
+          : [rr.rider_id];
+        const activeCount = activeMembers.length || 1;
+        const maxAllowed = 24 / activeCount;
+
+        const riders: GroupRider[] = activeMembers.map((id) => {
+          const row = rowByReportRider.get(`${rr.report_id}:${id}`);
+          const metric = row ? pickHoursMetric(row) : null;
+          const hours = metric ? metricNumber(metric.value) : null;
+          const meta = riderMetaById.get(id);
+          return {
+            id,
+            name: meta?.name || "—",
+            iqamaNumber: meta?.iqamaNumber ?? null,
+            idNumber: meta?.idNumber ?? null,
+            hours,
+            exceeded: hours !== null && hours > maxAllowed,
+          };
+        });
+        if (!riders.some((r) => r.exceeded)) continue;
+
+        const rep = reportById.get(rr.report_id);
+        groups.set(groupKey, {
+          key: groupKey,
+          cardNumber: card.cardNumber,
+          plateNumber: card.plateNumber,
+          // Every rider on a card shares the same area (enforced when the
+          // card is assigned — see assertOperatingCardAssignment), so any
+          // one member's area represents the whole card.
+          area: riderMetaById.get(rr.rider_id)?.area ?? null,
+          date: rep ? reportDateLabel(rep.day, rep.month, rep.year, lang) : "—",
+          ms: rep
+            ? rep.day
+              ? Date.UTC(rep.year, rep.month - 1, rep.day)
+              : Date.UTC(rep.year, rep.month - 1, 1)
+            : 0,
+          maxAllowed,
+          riders,
+        });
+      }
+    }
+    return [...groups.values()].sort((a, b) => b.ms - a.ms);
+  }, [
+    currentRowsQuery.data,
+    cardByRider,
+    presentRidersByReport,
+    pickHoursMetric,
+    reports,
+    riderMetaById,
+    lang,
+  ]);
+
+  const [hoursSearch, setHoursSearch] = useState("");
+  const filteredHoursGroups = useMemo(() => {
+    const q = hoursSearch.trim().toLowerCase();
+    if (!q) return hoursViolationGroups;
+    return hoursViolationGroups.filter(
+      (g) =>
+        g.cardNumber.toLowerCase().includes(q) ||
+        (g.plateNumber ?? "").toLowerCase().includes(q) ||
+        g.riders.some(
+          (r) =>
+            r.name.toLowerCase().includes(q) ||
+            (r.iqamaNumber ?? "").toLowerCase().includes(q) ||
+            (r.idNumber ?? "").toLowerCase().includes(q),
+        ),
+    );
+  }, [hoursViolationGroups, hoursSearch]);
+
   const isLoadingDashboard =
     currentReportIds.length > 0 &&
     (currentRowsQuery.isLoading || (hasPrevious && previousRowsQuery.isLoading));
+
+  // Separate from isLoadingDashboard above (which only waits on the rows
+  // the metric/chart section needs) — while cardGroupsQuery is still in
+  // flight, cardByRider is an empty map, so hoursViolationGroups would
+  // otherwise compute as empty and flash a false "no violations" message
+  // before correcting itself once the card data arrives.
+  const isLoadingHoursViolations =
+    currentReportIds.length > 0 && (currentRowsQuery.isLoading || cardGroupsQuery.isLoading);
 
   // Which column drives every metric on this page is a configuration choice,
   // not a view — gated the same way reports.tsx gates uploading/editing: a
@@ -2226,21 +2336,154 @@ function AdminOverview() {
                   t={t}
                 />
               </div>
+            </div>
+          )}
 
-              <div className="rounded-lg border p-3">
-                <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                  <Users className="h-4 w-4 text-primary" />
-                  {t("admin.dashboardAllRidersTitle")}
+          {reports.length > 0 && !isLoadingDashboard && (
+            <div className="rounded-lg border p-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  {t("admin.hoursViolationsTitle")}
                 </div>
-                <RidersPerformanceTable
-                  rows={rows}
-                  metricLabel={metricLabel}
-                  showChange={hasPrevious}
-                  query={highlightQuery}
-                  onQueryChange={setHighlightQuery}
-                  t={t}
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("admin.hoursViolationsColumnLabel")}
+                  </Label>
+                  <Select value={hoursColumn} onValueChange={setHoursColumn}>
+                    <SelectTrigger className="h-8 w-44 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{t("admin.dashboardMetricColumnAuto")}</SelectItem>
+                      {availableColumns.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <p className="mb-2 text-xs text-muted-foreground">{t("admin.hoursViolationsDesc")}</p>
+              <div className="relative mb-2 sm:w-80">
+                <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={hoursSearch}
+                  onChange={(e) => setHoursSearch(e.target.value)}
+                  placeholder={t("admin.hoursViolationsSearchPlaceholder")}
+                  className="ps-9"
                 />
               </div>
+              {isLoadingHoursViolations ? (
+                <div className="flex justify-center py-6">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
+                </div>
+              ) : filteredHoursGroups.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  {hoursViolationGroups.length === 0
+                    ? t("admin.hoursViolationsEmpty")
+                    : t("expiryAlerts.empty")}
+                </p>
+              ) : (
+                <div className="overflow-hidden rounded-lg border">
+                  <div className="max-h-96 overflow-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:h-9 [&_th]:text-xs">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="whitespace-nowrap">
+                            {t("operatingCards.tableRiders")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("admin.tableIqama")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("admin.hoursViolationsHoursLabel")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("admin.riderAreaLabel")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("operatingCards.tableCardNumber")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("documents.plateNumberLabel")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("admin.tableMonth")}
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            {t("admin.hoursViolationsMaxLabel")}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredHoursGroups.map((g) => (
+                          <TableRow key={g.key}>
+                            <TableCell className="text-sm font-medium">
+                              <div className="space-y-0.5">
+                                {g.riders.map((r) => (
+                                  <div key={r.id} className="whitespace-nowrap">
+                                    {r.name}
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell
+                              className="font-mono text-xs text-muted-foreground"
+                              dir="ltr"
+                            >
+                              <div className="space-y-0.5">
+                                {g.riders.map((r) => (
+                                  <div key={r.id} className="whitespace-nowrap">
+                                    {r.iqamaNumber || r.idNumber || "—"}
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              <div className="space-y-0.5">
+                                {g.riders.map((r) => (
+                                  <div
+                                    key={r.id}
+                                    className={
+                                      "whitespace-nowrap font-medium" +
+                                      (r.exceeded ? " text-amber-700 dark:text-amber-500" : "")
+                                    }
+                                  >
+                                    {r.hours === null ? "—" : Math.round(r.hours * 10) / 10}
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                              {g.area || "—"}
+                            </TableCell>
+                            <TableCell
+                              className="whitespace-nowrap font-mono text-xs text-muted-foreground"
+                              dir="ltr"
+                            >
+                              {g.cardNumber}
+                            </TableCell>
+                            <TableCell
+                              className="whitespace-nowrap font-mono text-xs text-muted-foreground"
+                              dir="ltr"
+                            >
+                              {g.plateNumber || "—"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                              {g.date}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                              {g.maxAllowed}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

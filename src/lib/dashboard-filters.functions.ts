@@ -44,6 +44,7 @@ const ScopeFiltersPatchSchema = z.object({
   metricColumns: z.array(z.string()).optional(),
   donutColumn: z.string().nullable().optional(),
   barColumn: z.string().nullable().optional(),
+  hoursColumn: z.string().nullable().optional(),
 });
 
 export const updateDashboardFilters = createServerFn({ method: "POST" })

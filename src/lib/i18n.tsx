@@ -221,6 +221,25 @@ const dict = {
     ar: "مقدرش أكتشف عمود أداء واضح (زي عدد الطلبات) في تقرير الشهر ده",
     en: "Couldn't detect a clear performance column (like order count) in this month's report",
   },
+  "admin.hoursViolationsTitle": {
+    ar: "تجاوز ساعات العمل على كرت التشغيل",
+    en: "Operating card working-hours violations",
+  },
+  "admin.hoursViolationsDesc": {
+    ar: "مناديب رفعوا ساعات عمل أكتر من نصيبهم على الكرت المشترك (24 ساعة مقسومة على عدد المناديب على الكرت)",
+    en: "Riders whose reported hours exceed their share of the shared card's 24 hours (split across every rider on that card)",
+  },
+  "admin.hoursViolationsHoursLabel": { ar: "الساعات المسجّلة", en: "Hours logged" },
+  "admin.hoursViolationsMaxLabel": { ar: "الحد المسموح", en: "Allowed max" },
+  "admin.hoursViolationsColumnLabel": { ar: "عمود الساعات", en: "Hours column" },
+  "admin.hoursViolationsSearchPlaceholder": {
+    ar: "دوّر برقم الكرت أو اللوحة أو الاسم أو الـ ID أو الإقامة",
+    en: "Search by card number, plate, name, ID, or Iqama",
+  },
+  "admin.hoursViolationsEmpty": {
+    ar: "مفيش تجاوزات في ساعات العمل في الفترة المختارة",
+    en: "No working-hours violations in the selected period",
+  },
   "admin.dashboardMetricCaption": { ar: "المؤشر المستخدم:", en: "Metric used:" },
   "admin.dashboardComparedTo": { ar: "بالمقارنة بـ", en: "Compared to" },
   "admin.dashboardRangeFrom": { ar: "من", en: "From" },
@@ -948,10 +967,6 @@ const dict = {
     en: "of 3 riders on this card",
   },
   "documents.plateNumberLabel": { ar: "رقم اللوحة", en: "Plate number" },
-  "documents.plateNumberOptionalLabel": {
-    ar: "رقم اللوحة (اختياري)",
-    en: "Plate number (optional)",
-  },
   "documents.cardPendingFile": {
     ar: "تم تحديد رقم الكرت — بانتظار رفع الملف",
     en: "Card number assigned — file not uploaded yet",
@@ -977,6 +992,10 @@ const dict = {
   "documents.toastCardNumberInvalid": {
     ar: "رقم كرت التشغيل لازم يكون بالشكل 38-00000000 بالظبط (رقمين، شرطة، ثم 8 أرقام)",
     en: "The operating card number must be exactly like 38-00000000 (two digits, a dash, then 8 digits)",
+  },
+  "documents.toastPlateNumberRequired": {
+    ar: "أدخل رقم اللوحة",
+    en: "Enter the plate number",
   },
   "documents.toastLabelRequired": { ar: "اكتب اسم المستند", en: "Enter a name for the document" },
   "documents.toastUploadSuccess": { ar: "تم رفع المستند", en: "Document uploaded" },
@@ -1041,8 +1060,8 @@ const dict = {
     en: "Upload operating cards sheet",
   },
   "operatingCards.bulkUploadDesc": {
-    ar: "ملف فيه رقم كرت التشغيل ورقم إقامة المندوب، وممكن كمان رقم اللوحة وتاريخ الانتهاء — هيتحط لكل مندوب في صفحة المستندات بتاعته. الملف نفسه (بي دي إف أو صورة) بيترفع بعدين مرة واحدة من هنا لكل كرت.",
-    en: "A file with the operating card number and the rider's Iqama number, plus optionally the plate number and expiry date — assigned to each rider's documents page. The actual file (PDF or photo) is uploaded afterward, once per card, from here.",
+    ar: "ملف فيه رقم كرت التشغيل ورقم إقامة المندوب ورقم اللوحة، وممكن كمان تاريخ الانتهاء — هيتحط لكل مندوب في صفحة المستندات بتاعته. الملف نفسه (بي دي إف أو صورة) بيترفع بعدين مرة واحدة من هنا لكل كرت.",
+    en: "A file with the operating card number, the rider's Iqama number, and the plate number, plus optionally the expiry date — assigned to each rider's documents page. The actual file (PDF or photo) is uploaded afterward, once per card, from here.",
   },
   "operatingCards.bulkFileLabel": {
     ar: "الملف (Excel أو CSV)",
@@ -1055,6 +1074,10 @@ const dict = {
   "operatingCards.toastNoCardColumn": {
     ar: "الملف لازم يحتوي على عمود رقم كرت التشغيل",
     en: "The file must have an operating card number column",
+  },
+  "operatingCards.toastNoPlateColumn": {
+    ar: "الملف لازم يحتوي على عمود رقم اللوحة",
+    en: "The file must have a plate number column",
   },
   "operatingCards.toastBulkSuccess": {
     ar: "تم تعيين {count} كرت تشغيل بنجاح",
