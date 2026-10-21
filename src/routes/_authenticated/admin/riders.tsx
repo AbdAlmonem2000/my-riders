@@ -312,17 +312,22 @@ function DeleteRiderDialog({
 // Same idea as DeleteRiderDialog, but for a whole selection from the bulk
 // toolbar: checks the total report count across every selected rider before
 // asking whether to take their reports with them or leave those alone.
+// Externally controlled (open/onOpenChange) since its trigger now lives in
+// the selection toolbar's "⋮" dropdown rather than its own button.
 function BulkDeleteRidersDialog({
   riderIds,
+  open,
+  onOpenChange,
   t,
   onDelete,
 }: {
   riderIds: string[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   t: (key: TranslationKey) => string;
   onDelete: (riderIds: string[], deleteReports: boolean) => Promise<boolean>;
 }) {
   const getCountFn = useServerFn(getRidersReportCount);
-  const [open, setOpen] = useState(false);
   const [reportCount, setReportCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -339,33 +344,30 @@ function BulkDeleteRidersDialog({
     }
   };
 
+  // Radix never calls onOpenChange for a dialog that mounts already open
+  // from outside (only for an open/close IT perceives, like its own
+  // trigger) — so loading the report count has to run here instead of
+  // inside onOpenChange, or it would silently never run.
+  useEffect(() => {
+    if (open) {
+      setReportCount(null);
+      loadCount();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, riderIds.join(",")]);
+
   const submit = async (deleteReports: boolean) => {
     setDeleting(true);
     try {
       const ok = await onDelete(riderIds, deleteReports);
-      if (ok) setOpen(false);
+      if (ok) onOpenChange(false);
     } finally {
       setDeleting(false);
     }
   };
 
   return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(v) => {
-        setOpen(v);
-        if (v) {
-          setReportCount(null);
-          loadCount();
-        }
-      }}
-    >
-      <AlertDialogTrigger asChild>
-        <Button size="sm" variant="outline" className="text-destructive hover:text-destructive">
-          <Trash2 className="ms-1.5 h-4 w-4" />
-          {t("admin.bulkDeleteTooltip")}
-        </Button>
-      </AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>
@@ -782,6 +784,15 @@ function AdminRiders() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBlocking, setBulkBlocking] = useState(false);
   const [blockingAll, setBlockingAll] = useState(false);
+  // The whole-roster toolbar's own actions (block all/delete roster) live
+  // in a single "⋮" dropdown alongside Export Excel — these drive the two
+  // confirm dialogs it opens.
+  const [blockAllConfirmOpen, setBlockAllConfirmOpen] = useState(false);
+  const [rosterDeleteConfirmOpen, setRosterDeleteConfirmOpen] = useState(false);
+  // The selection toolbar's actions (export/block/delete) live in a single
+  // "⋮" dropdown — these drive the two confirm dialogs it opens.
+  const [bulkBlockConfirmOpen, setBulkBlockConfirmOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   // Row actions live in a single "⋮" dropdown now — each of these tracks
   // which rider's dialog (if any) is open, so only one instance of each
   // dialog needs to exist at all, instead of one per row.
@@ -1178,12 +1189,6 @@ function AdminRiders() {
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-                {(ridersQuery.data?.length ?? 0) > 0 && (
-                  <Button size="sm" variant="outline" onClick={handleExportExcel}>
-                    <Download className="ms-1.5 h-4 w-4" />
-                    {t("admin.exportExcelButton")}
-                  </Button>
-                )}
                 {canManageRoster && (
                   <RiderFormDialog
                     mode="create"
@@ -1192,83 +1197,89 @@ function AdminRiders() {
                     onSubmit={handleCreateRider}
                   />
                 )}
-                {canBlockRiders && (ridersQuery.data?.length ?? 0) > 0 && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        disabled={blockingAll}
-                      >
-                        {blockingAll ? (
+                {(ridersQuery.data?.length ?? 0) > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" disabled={blockingAll || rosterDeleting}>
+                        {blockingAll || rosterDeleting ? (
                           <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
                         ) : (
-                          <Ban className="ms-1.5 h-4 w-4" />
+                          <MoreVertical className="ms-1.5 h-4 w-4" />
                         )}
-                        {t("admin.blockAllButton")}
+                        {t("admin.selectionActionsButton")}
                       </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>{t("admin.blockAllConfirmTitle")}</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {t("admin.blockAllConfirmDesc").replace(
-                            "{count}",
-                            String(ridersQuery.data?.length ?? 0),
-                          )}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={handleBlockAllRiders}
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem onClick={handleExportExcel}>
+                        <Download className="h-3.5 w-3.5" />
+                        {t("admin.exportExcelButton")}
+                      </DropdownMenuItem>
+                      {canBlockRiders && (
+                        <DropdownMenuItem
+                          onClick={() => setBlockAllConfirmOpen(true)}
+                          className="text-destructive focus:text-destructive"
                         >
+                          <Ban className="h-3.5 w-3.5" />
                           {t("admin.blockAllButton")}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-                {canManageRoster && (ridersQuery.data?.length ?? 0) > 0 && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive"
-                        disabled={rosterDeleting}
-                      >
-                        {rosterDeleting ? (
-                          <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="ms-1.5 h-4 w-4" />
-                        )}
-                        {t("admin.rosterDeleteButton")}
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>{t("admin.rosterDeleteTitle")}</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {t("admin.rosterDeleteDesc")}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={handleRosterDelete}
+                        </DropdownMenuItem>
+                      )}
+                      {canManageRoster && (
+                        <DropdownMenuItem
+                          onClick={() => setRosterDeleteConfirmOpen(true)}
+                          className="text-destructive focus:text-destructive"
                         >
-                          {t("admin.delete")}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {t("admin.rosterDeleteButton")}
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
             </div>
+            {canBlockRiders && (
+              <AlertDialog open={blockAllConfirmOpen} onOpenChange={setBlockAllConfirmOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t("admin.blockAllConfirmTitle")}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t("admin.blockAllConfirmDesc").replace(
+                        "{count}",
+                        String(ridersQuery.data?.length ?? 0),
+                      )}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={handleBlockAllRiders}
+                    >
+                      {t("admin.blockAllButton")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {canManageRoster && (
+              <AlertDialog open={rosterDeleteConfirmOpen} onOpenChange={setRosterDeleteConfirmOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t("admin.rosterDeleteTitle")}</AlertDialogTitle>
+                    <AlertDialogDescription>{t("admin.rosterDeleteDesc")}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={handleRosterDelete}
+                    >
+                      {t("admin.delete")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
             {ridersQuery.isLoading && (
               <div className="flex justify-center py-6">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1321,63 +1332,80 @@ function AdminRiders() {
                     </label>
                     {selectedIds.size > 0 && (
                       <div className="flex flex-wrap items-center gap-2">
-                        <Button size="sm" variant="outline" onClick={handleExportSelected}>
-                          <Download className="ms-1.5 h-4 w-4" />
-                          {t("admin.exportSelectedButton")}
-                        </Button>
-                        {canBlockRiders && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={bulkBlocking}
-                                className="text-destructive hover:text-destructive"
-                              >
-                                {bulkBlocking ? (
-                                  <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Ban className="ms-1.5 h-4 w-4" />
-                                )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="outline" disabled={bulkBlocking}>
+                              {bulkBlocking ? (
+                                <Loader2 className="ms-1.5 h-4 w-4 animate-spin" />
+                              ) : (
+                                <MoreVertical className="ms-1.5 h-4 w-4" />
+                              )}
+                              {t("admin.selectionActionsButton")}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuItem onClick={handleExportSelected}>
+                              <Download className="h-3.5 w-3.5" />
+                              {t("admin.exportSelectedButton")}
+                            </DropdownMenuItem>
+                            {canBlockRiders && (
+                              <DropdownMenuItem onClick={() => setBulkBlockConfirmOpen(true)}>
+                                <Ban className="h-3.5 w-3.5" />
                                 {t("admin.bulkBlockButton")}
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  {t("admin.bulkBlockConfirmTitle")}
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {t("admin.bulkBlockConfirmDesc").replace(
-                                    "{count}",
-                                    String(selectedIds.size),
-                                  )}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
-                                <AlertDialogAction
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={handleBulkBlock}
-                                >
-                                  {t("admin.bulkBlockButton")}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
-                        {canDeleteRiders && (
-                          <BulkDeleteRidersDialog
-                            riderIds={[...selectedIds]}
-                            t={t}
-                            onDelete={handleBulkDelete}
-                          />
-                        )}
+                              </DropdownMenuItem>
+                            )}
+                            {canDeleteRiders && (
+                              <DropdownMenuItem
+                                onClick={() => setBulkDeleteOpen(true)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                {t("admin.bulkDeleteTooltip")}
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button size="sm" variant="ghost" onClick={clearSelection}>
                           <X className="ms-1.5 h-4 w-4" />
                           {t("admin.clearSelectionButton")}
                         </Button>
                       </div>
+                    )}
+                    {canBlockRiders && (
+                      <AlertDialog
+                        open={bulkBlockConfirmOpen}
+                        onOpenChange={setBulkBlockConfirmOpen}
+                      >
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t("admin.bulkBlockConfirmTitle")}</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {t("admin.bulkBlockConfirmDesc").replace(
+                                "{count}",
+                                String(selectedIds.size),
+                              )}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t("admin.cancel")}</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={handleBulkBlock}
+                            >
+                              {t("admin.bulkBlockButton")}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                    {canDeleteRiders && (
+                      <BulkDeleteRidersDialog
+                        riderIds={[...selectedIds]}
+                        open={bulkDeleteOpen}
+                        onOpenChange={setBulkDeleteOpen}
+                        t={t}
+                        onDelete={handleBulkDelete}
+                      />
                     )}
                   </div>
                 )}

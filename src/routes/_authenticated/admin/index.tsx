@@ -67,6 +67,7 @@ import {
 import { reportDateLabel } from "@/lib/month-label";
 import { HIGHLIGHT_KEYS, isNumericLike, metricNumber, pickMetric } from "@/lib/rider-metrics";
 import { DateInputDMY } from "@/components/date-input-dmy";
+import { AreaFilterPicker } from "@/components/area-filter-picker";
 import { usePrintNode } from "@/lib/print-node";
 import { checkIsAdmin } from "@/lib/reports.functions";
 import { updateDashboardFilters } from "@/lib/dashboard-filters.functions";
@@ -1628,6 +1629,36 @@ function AdminOverview() {
     return map;
   }, [ridersQuery.data]);
 
+  // Narrows the whole dashboard (KPIs, charts, trend, hours alert, table,
+  // Excel export) down to one or more areas — an empty selection means "no
+  // filter" (every area), same convention as every other area picker in
+  // this app. Applied once here, by pre-filtering the raw report rows
+  // before anything else reads them, so every downstream computation
+  // respects it automatically instead of needing its own area check.
+  const [areaFilter, setAreaFilter] = useState<Set<string>>(new Set());
+  const areas = useMemo(
+    () =>
+      [
+        ...new Set(
+          (ridersQuery.data ?? []).map((r) => r.area?.trim()).filter((a): a is string => !!a),
+        ),
+      ].sort((a, b) => a.localeCompare(b, "ar")),
+    [ridersQuery.data],
+  );
+  const riderPassesAreaFilter = useCallback(
+    (riderId: string) =>
+      areaFilter.size === 0 || areaFilter.has(riderMetaById.get(riderId)?.area?.trim() || ""),
+    [areaFilter, riderMetaById],
+  );
+  const filteredCurrentRows = useMemo(
+    () => (currentRowsQuery.data ?? []).filter((rr) => riderPassesAreaFilter(rr.rider_id)),
+    [currentRowsQuery.data, riderPassesAreaFilter],
+  );
+  const filteredPreviousRows = useMemo(
+    () => (previousRowsQuery.data ?? []).filter((rr) => riderPassesAreaFilter(rr.rider_id)),
+    [previousRowsQuery.data, riderPassesAreaFilter],
+  );
+
   // Whether this account may change the shared dashboard column filters at
   // all (real admin/super admin always can; a staff account only with
   // dashboardFiltersEditAccess) — true while adminCheck is still loading so
@@ -1675,14 +1706,14 @@ function AdminOverview() {
   const [highlightQuery, setHighlightQuery] = useState("");
   const availableColumns = useMemo(() => {
     const set = new Set<string>();
-    for (const rr of currentRowsQuery.data ?? []) {
+    for (const rr of filteredCurrentRows) {
       const cols = Array.isArray(rr.columns)
         ? (rr.columns as unknown[]).map(String)
         : Object.keys((rr.data ?? {}) as object);
       for (const c of cols) set.add(c);
     }
     return [...set];
-  }, [currentRowsQuery.data]);
+  }, [filteredCurrentRows]);
 
   // Which column the working-hours alert below reads as "hours worked" —
   // independent of the primary metric column above, since a company's
@@ -1735,7 +1766,7 @@ function AdminOverview() {
       const seen: string[] = [];
       let allNumeric = true;
       let sum = 0;
-      for (const rr of currentRowsQuery.data ?? []) {
+      for (const rr of filteredCurrentRows) {
         if (!riderMatchesQuery(riderMetaById.get(rr.rider_id), q)) continue;
         const row = (rr.data ?? {}) as Record<string, unknown>;
         const raw = row[col];
@@ -1757,7 +1788,7 @@ function AdminOverview() {
       return { column: col, display: display || "—" };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRowsQuery.data, extraMetricColumns.join("|"), highlightQuery, riderMetaById]);
+  }, [filteredCurrentRows, extraMetricColumns.join("|"), highlightQuery, riderMetaById]);
 
   // A rider can have more than one row within the chosen range now (one per
   // day uploaded), so each period's per-rider value is the SUM of every row
@@ -1768,6 +1799,13 @@ function AdminOverview() {
     const sumByRider = (list: { rider_id: string; data: unknown }[]) => {
       const sums = new Map<string, number>();
       let label: string | null = null;
+      // Seed every rider who appears in this period's report(s) at 0
+      // first — otherwise a rider whose row has no resolvable value for
+      // the picked metric (a blank cell, a different header that period,
+      // non-numeric text) never got a `sums` entry at all and silently
+      // vanished from the whole dashboard (rider count, KPIs, table)
+      // instead of showing up as a real rider with 0.
+      for (const rr of list) sums.set(rr.rider_id, sums.get(rr.rider_id) ?? 0);
       for (const rr of list) {
         const m = pickMetricValue((rr.data ?? {}) as Record<string, unknown>);
         if (!m) continue;
@@ -1778,8 +1816,8 @@ function AdminOverview() {
       }
       return { sums, label };
     };
-    const prev = sumByRider(previousRowsQuery.data ?? []);
-    const curr = sumByRider(currentRowsQuery.data ?? []);
+    const prev = sumByRider(filteredPreviousRows);
+    const curr = sumByRider(filteredCurrentRows);
     const out: PerfRow[] = [];
     for (const [riderId, n] of curr.sums) {
       // A restricted staff account's rider list (riderMetaById, RLS-scoped
@@ -1801,7 +1839,7 @@ function AdminOverview() {
       });
     }
     return { metricLabel: curr.label ?? prev.label, rows: out };
-  }, [currentRowsQuery.data, previousRowsQuery.data, riderMetaById, pickMetricValue]);
+  }, [filteredCurrentRows, filteredPreviousRows, riderMetaById, pickMetricValue]);
 
   // Everything the KPI tiles show narrows to match the "all riders" table's
   // own search box, driven by the same highlightQuery.
@@ -1843,7 +1881,7 @@ function AdminOverview() {
     // at all and silently vanished from the chart instead of showing as a
     // real, if empty, day.
     const sums = new Map<string, number>(currentReportIds.map((id) => [id, 0]));
-    for (const rr of currentRowsQuery.data ?? []) {
+    for (const rr of filteredCurrentRows) {
       if (!riderMatchesQuery(riderMetaById.get(rr.rider_id), q)) continue;
       const m = pickMetricValue((rr.data ?? {}) as Record<string, unknown>);
       if (!m) continue;
@@ -1870,7 +1908,7 @@ function AdminOverview() {
       .filter((x): x is { ms: number; label: string; value: number } => x !== null)
       .sort((a, b) => a.ms - b.ms);
   }, [
-    currentRowsQuery.data,
+    filteredCurrentRows,
     currentReportIds,
     reports,
     pickMetricValue,
@@ -1885,7 +1923,7 @@ function AdminOverview() {
   // didn't work that day splits 12/12 between the other two, not 8/8).
   const presentRidersByReport = useMemo(() => {
     const map = new Map<string, Set<string>>();
-    for (const rr of currentRowsQuery.data ?? []) {
+    for (const rr of filteredCurrentRows) {
       let present = map.get(rr.report_id);
       if (!present) {
         present = new Set();
@@ -1894,7 +1932,7 @@ function AdminOverview() {
       present.add(rr.rider_id);
     }
     return map;
-  }, [currentRowsQuery.data]);
+  }, [filteredCurrentRows]);
 
   // A shared operating card is only on the road 24 hours a day total, split
   // across however many of its riders actually worked that day — so a rider
@@ -1908,7 +1946,7 @@ function AdminOverview() {
   const hoursViolationGroups = useMemo(() => {
     const reportById = new Map(reports.map((r) => [r.id, r]));
     const rowByReportRider = new Map<string, Record<string, unknown>>();
-    for (const rr of currentRowsQuery.data ?? []) {
+    for (const rr of filteredCurrentRows) {
       rowByReportRider.set(
         `${rr.report_id}:${rr.rider_id}`,
         (rr.data ?? {}) as Record<string, unknown>,
@@ -1937,7 +1975,7 @@ function AdminOverview() {
       }
     >();
 
-    for (const rr of currentRowsQuery.data ?? []) {
+    for (const rr of filteredCurrentRows) {
       const cards = cardByRider.get(rr.rider_id);
       if (!cards) continue;
       for (const card of cards) {
@@ -1989,7 +2027,7 @@ function AdminOverview() {
     }
     return [...groups.values()].sort((a, b) => b.ms - a.ms);
   }, [
-    currentRowsQuery.data,
+    filteredCurrentRows,
     cardByRider,
     presentRidersByReport,
     pickHoursMetric,
@@ -2042,7 +2080,7 @@ function AdminOverview() {
     const columnOrder: string[] = [];
     const seenCols = new Set<string>();
     const exportRows: Record<string, unknown>[] = [];
-    for (const rr of currentRowsQuery.data ?? []) {
+    for (const rr of filteredCurrentRows) {
       const meta = riderMetaById.get(rr.rider_id);
       if (!meta) continue;
       const rep = reportById.get(rr.report_id);
@@ -2135,25 +2173,35 @@ function AdminOverview() {
         style={{ animationDelay: "260ms" }}
       >
         <CardHeader className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3">
             <div>
               <CardTitle>{t("admin.dashboardTitle")}</CardTitle>
               <CardDescription>{t("admin.dashboardDesc")}</CardDescription>
             </div>
             {reports.length > 0 && (
               <div className="flex flex-wrap items-end gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">
-                    {t("admin.dashboardRangeFrom")}
-                  </Label>
-                  <DateInputDMY value={rangeFrom} onChange={setRangeFrom} />
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">
+                      {t("admin.dashboardRangeFrom")}
+                    </Label>
+                    <DateInputDMY value={rangeFrom} onChange={setRangeFrom} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">
+                      {t("admin.dashboardRangeTo")}
+                    </Label>
+                    <DateInputDMY value={rangeTo} onChange={setRangeTo} />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">
-                    {t("admin.dashboardRangeTo")}
-                  </Label>
-                  <DateInputDMY value={rangeTo} onChange={setRangeTo} />
-                </div>
+                {areas.length > 0 && (
+                  <AreaFilterPicker
+                    areas={areas}
+                    selected={areaFilter}
+                    onChange={setAreaFilter}
+                    t={t}
+                  />
+                )}
                 {rows.length > 0 && (
                   <Button
                     type="button"
@@ -2302,7 +2350,7 @@ function AdminOverview() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <BreakdownDonutChart
-                  rows={currentRowsQuery.data ?? []}
+                  rows={filteredCurrentRows}
                   availableColumns={availableColumns}
                   riderMetaById={riderMetaById}
                   highlightQuery={highlightQuery}
@@ -2319,7 +2367,7 @@ function AdminOverview() {
                   t={t}
                 />
                 <BreakdownBarChart
-                  rows={currentRowsQuery.data ?? []}
+                  rows={filteredCurrentRows}
                   availableColumns={availableColumns}
                   riderMetaById={riderMetaById}
                   highlightQuery={highlightQuery}

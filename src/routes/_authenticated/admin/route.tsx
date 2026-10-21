@@ -742,8 +742,8 @@ function AdminLayout() {
       </div>
 
       <header className="relative border-b bg-background">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3 md:gap-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3 md:gap-4">
             <MobileNavDrawer title={companyName ?? t("admin.headerTitle")}>
               {visibleNavTabs.map((tab) => renderNavEntry(tab, false))}
             </MobileNavDrawer>
@@ -751,16 +751,18 @@ function AdminLayout() {
               <img
                 src={companyLogoUrl}
                 alt={companyName ?? ""}
-                className="h-14 w-14 shrink-0 rounded-xl border border-border bg-background object-contain p-1"
+                className="h-10 w-10 shrink-0 rounded-xl border border-border bg-background object-contain p-1 sm:h-14 sm:w-14"
               />
             ) : (
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <Building2 className="h-7 w-7" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary sm:h-14 sm:w-14">
+                <Building2 className="h-5 w-5 sm:h-7 sm:w-7" />
               </div>
             )}
-            <h1 className="text-lg font-semibold">{companyName ?? t("admin.headerTitle")}</h1>
+            <h1 className="min-w-0 truncate text-base font-semibold sm:text-lg">
+              {companyName ?? t("admin.headerTitle")}
+            </h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             {documentsAccess !== "none" && (
               <ExpiryAlertsBell alerts={expiryAlerts} notifyDays={expiryNotifyDays} t={t} />
             )}

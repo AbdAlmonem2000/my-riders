@@ -403,6 +403,7 @@ const dict = {
   "admin.selectAllRidersLabel": { ar: "تحديد الكل", en: "Select all" },
   "admin.selectedCount": { ar: "{count} محدد", en: "{count} selected" },
   "admin.clearSelectionButton": { ar: "إلغاء التحديد", en: "Clear selection" },
+  "admin.selectionActionsButton": { ar: "إجراءات", en: "Actions" },
   "admin.bulkBlockButton": { ar: "منع المحددين", en: "Block selected" },
   "admin.bulkBlockConfirmTitle": { ar: "منع المناديب المحددين؟", en: "Block selected riders?" },
   "admin.bulkBlockConfirmDesc": {

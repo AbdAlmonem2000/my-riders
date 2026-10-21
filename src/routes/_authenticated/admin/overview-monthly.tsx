@@ -63,6 +63,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { monthLabel, reportDateLabel } from "@/lib/month-label";
+import { AreaFilterPicker } from "@/components/area-filter-picker";
 import { HIGHLIGHT_KEYS, isNumericLike, metricNumber, pickMetric } from "@/lib/rider-metrics";
 import { usePrintNode } from "@/lib/print-node";
 import { checkIsAdmin } from "@/lib/reports.functions";
@@ -1428,6 +1429,7 @@ function AdminOverviewMonthly() {
         rider_name: string | null;
         photo_url: string | null;
         photo_rotation: number;
+        area: string | null;
         extra: unknown;
         is_blocked: boolean;
         password_hash: string | null;
@@ -1435,7 +1437,7 @@ function AdminOverviewMonthly() {
         supabase
           .from("riders")
           .select(
-            "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, extra, is_blocked, password_hash",
+            "id, iqama_number, id_number, rider_name, photo_url, photo_rotation, area, extra, is_blocked, password_hash",
           )
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
@@ -1535,6 +1537,7 @@ function AdminOverviewMonthly() {
         idText: string | null;
         idNumber: string | null;
         iqamaNumber: string | null;
+        area: string | null;
       }
     >();
     for (const r of ridersQuery.data ?? []) {
@@ -1547,10 +1550,41 @@ function AdminOverviewMonthly() {
         idText: r.iqama_number || r.id_number || null,
         idNumber: r.id_number,
         iqamaNumber: r.iqama_number,
+        area: r.area,
       });
     }
     return map;
   }, [ridersQuery.data]);
+
+  // Narrows the whole dashboard (KPIs, charts, table, Excel export) down to
+  // one or more areas — an empty selection means "no filter" (every area),
+  // same convention as every other area picker in this app. Applied once
+  // here, by pre-filtering the raw report rows before anything else reads
+  // them, so every downstream computation respects it automatically
+  // instead of needing its own area check.
+  const [areaFilter, setAreaFilter] = useState<Set<string>>(new Set());
+  const areas = useMemo(
+    () =>
+      [
+        ...new Set(
+          (ridersQuery.data ?? []).map((r) => r.area?.trim()).filter((a): a is string => !!a),
+        ),
+      ].sort((a, b) => a.localeCompare(b, "ar")),
+    [ridersQuery.data],
+  );
+  const riderPassesAreaFilter = useCallback(
+    (riderId: string) =>
+      areaFilter.size === 0 || areaFilter.has(riderMetaById.get(riderId)?.area?.trim() || ""),
+    [areaFilter, riderMetaById],
+  );
+  const filteredCurrentRows = useMemo(
+    () => (currentRowsQuery.data ?? []).filter((rr) => riderPassesAreaFilter(rr.rider_id)),
+    [currentRowsQuery.data, riderPassesAreaFilter],
+  );
+  const filteredPreviousRows = useMemo(
+    () => (previousRowsQuery.data ?? []).filter((rr) => riderPassesAreaFilter(rr.rider_id)),
+    [previousRowsQuery.data, riderPassesAreaFilter],
+  );
 
   // Whether this account may change the shared dashboard column filters at
   // all (real admin/super admin always can; a staff account only with
@@ -1598,14 +1632,14 @@ function AdminOverviewMonthly() {
   const [highlightQuery, setHighlightQuery] = useState("");
   const availableColumns = useMemo(() => {
     const set = new Set<string>();
-    for (const rr of currentRowsQuery.data ?? []) {
+    for (const rr of filteredCurrentRows) {
       const cols = Array.isArray(rr.columns)
         ? (rr.columns as unknown[]).map(String)
         : Object.keys((rr.data ?? {}) as object);
       for (const c of cols) set.add(c);
     }
     return [...set];
-  }, [currentRowsQuery.data]);
+  }, [filteredCurrentRows]);
 
   const pickMetricValue = useCallback(
     (row: Record<string, unknown>) => {
@@ -1629,7 +1663,7 @@ function AdminOverviewMonthly() {
       const seen: string[] = [];
       let allNumeric = true;
       let sum = 0;
-      for (const rr of currentRowsQuery.data ?? []) {
+      for (const rr of filteredCurrentRows) {
         if (!riderMatchesQuery(riderMetaById.get(rr.rider_id), q)) continue;
         const row = (rr.data ?? {}) as Record<string, unknown>;
         const raw = row[col];
@@ -1651,7 +1685,7 @@ function AdminOverviewMonthly() {
       return { column: col, display: display || "—" };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRowsQuery.data, extraMetricColumns.join("|"), highlightQuery, riderMetaById]);
+  }, [filteredCurrentRows, extraMetricColumns.join("|"), highlightQuery, riderMetaById]);
 
   // A rider can have more than one row within the chosen range now (one per
   // day uploaded), so each period's per-rider value is the SUM of every row
@@ -1662,6 +1696,13 @@ function AdminOverviewMonthly() {
     const sumByRider = (list: { rider_id: string; data: unknown }[]) => {
       const sums = new Map<string, number>();
       let label: string | null = null;
+      // Seed every rider who appears in this period's report(s) at 0
+      // first — otherwise a rider whose row has no resolvable value for
+      // the picked metric (a blank cell, a different header that period,
+      // non-numeric text) never got a `sums` entry at all and silently
+      // vanished from the whole dashboard (rider count, KPIs, table)
+      // instead of showing up as a real rider with 0.
+      for (const rr of list) sums.set(rr.rider_id, sums.get(rr.rider_id) ?? 0);
       for (const rr of list) {
         const m = pickMetricValue((rr.data ?? {}) as Record<string, unknown>);
         if (!m) continue;
@@ -1672,8 +1713,8 @@ function AdminOverviewMonthly() {
       }
       return { sums, label };
     };
-    const prev = sumByRider(previousRowsQuery.data ?? []);
-    const curr = sumByRider(currentRowsQuery.data ?? []);
+    const prev = sumByRider(filteredPreviousRows);
+    const curr = sumByRider(filteredCurrentRows);
     const out: PerfRow[] = [];
     for (const [riderId, n] of curr.sums) {
       // A restricted staff account's rider list (riderMetaById, RLS-scoped
@@ -1695,7 +1736,7 @@ function AdminOverviewMonthly() {
       });
     }
     return { metricLabel: curr.label ?? prev.label, rows: out };
-  }, [currentRowsQuery.data, previousRowsQuery.data, riderMetaById, pickMetricValue]);
+  }, [filteredCurrentRows, filteredPreviousRows, riderMetaById, pickMetricValue]);
 
   // Everything the KPI tiles show narrows to match the "all riders" table's
   // own search box, driven by the same highlightQuery.
@@ -1739,7 +1780,7 @@ function AdminOverviewMonthly() {
     const columnOrder: string[] = [];
     const seenCols = new Set<string>();
     const exportRows: Record<string, unknown>[] = [];
-    for (const rr of currentRowsQuery.data ?? []) {
+    for (const rr of filteredCurrentRows) {
       const meta = riderMetaById.get(rr.rider_id);
       if (!meta) continue;
       const rep = reportById.get(rr.report_id);
@@ -1837,7 +1878,7 @@ function AdminOverviewMonthly() {
         style={{ animationDelay: "260ms" }}
       >
         <CardHeader className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3">
             <div>
               <CardTitle className="flex items-center gap-2">
                 {t("admin.dashboardTitle")}
@@ -1864,6 +1905,14 @@ function AdminOverviewMonthly() {
                     </SelectContent>
                   </Select>
                 </div>
+                {areas.length > 0 && (
+                  <AreaFilterPicker
+                    areas={areas}
+                    selected={areaFilter}
+                    onChange={setAreaFilter}
+                    t={t}
+                  />
+                )}
                 {rows.length > 0 && (
                   <Button
                     type="button"
@@ -2010,7 +2059,7 @@ function AdminOverviewMonthly() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <BreakdownDonutChart
-                  rows={currentRowsQuery.data ?? []}
+                  rows={filteredCurrentRows}
                   availableColumns={availableColumns}
                   riderMetaById={riderMetaById}
                   highlightQuery={highlightQuery}
@@ -2029,7 +2078,7 @@ function AdminOverviewMonthly() {
                   t={t}
                 />
                 <BreakdownBarChart
-                  rows={currentRowsQuery.data ?? []}
+                  rows={filteredCurrentRows}
                   availableColumns={availableColumns}
                   riderMetaById={riderMetaById}
                   highlightQuery={highlightQuery}
