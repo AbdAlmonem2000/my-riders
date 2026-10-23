@@ -90,12 +90,17 @@ export type Database = {
           created_at: string
           dashboard_filters: Json
           expiry_notify_days: number
+          first_payment_fee: number | null
+          first_payment_month: number | null
+          first_payment_year: number | null
           id: string
           is_suspended: boolean
           logo_url: string | null
           monthly_fee: number | null
           name: string
           one_time_fee: number | null
+          one_time_payment_month: number | null
+          one_time_payment_year: number | null
           payment_plan_type: string
           plan_company_profile_access: boolean
           plan_documents_access: string
@@ -122,12 +127,17 @@ export type Database = {
           created_at?: string
           dashboard_filters?: Json
           expiry_notify_days?: number
+          first_payment_fee?: number | null
+          first_payment_month?: number | null
+          first_payment_year?: number | null
           id?: string
           is_suspended?: boolean
           logo_url?: string | null
           monthly_fee?: number | null
           name: string
           one_time_fee?: number | null
+          one_time_payment_month?: number | null
+          one_time_payment_year?: number | null
           payment_plan_type?: string
           plan_company_profile_access?: boolean
           plan_documents_access?: string
@@ -154,12 +164,17 @@ export type Database = {
           created_at?: string
           dashboard_filters?: Json
           expiry_notify_days?: number
+          first_payment_fee?: number | null
+          first_payment_month?: number | null
+          first_payment_year?: number | null
           id?: string
           is_suspended?: boolean
           logo_url?: string | null
           monthly_fee?: number | null
           name?: string
           one_time_fee?: number | null
+          one_time_payment_month?: number | null
+          one_time_payment_year?: number | null
           payment_plan_type?: string
           plan_company_profile_access?: boolean
           plan_documents_access?: string

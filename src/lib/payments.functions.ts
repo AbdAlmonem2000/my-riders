@@ -25,7 +25,9 @@ export const listCompaniesForPayments = createServerFn({ method: "GET" })
     await assertSuperAdmin(context.supabase, context.userId);
     const { data, error } = await context.supabase
       .from("companies")
-      .select("id, name, logo_url, created_at, payment_plan_type, monthly_fee, one_time_fee")
+      .select(
+        "id, name, logo_url, created_at, payment_plan_type, monthly_fee, first_payment_fee, first_payment_month, first_payment_year, one_time_fee, one_time_payment_month, one_time_payment_year",
+      )
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return data ?? [];
@@ -67,7 +69,7 @@ const MarkPaidInput = z.object({
   companyId: z.string().uuid(),
   year: z.number().int(),
   month: z.number().int().min(1).max(12),
-  paymentType: z.enum(["cash", "free"]),
+  paymentType: z.enum(["cash", "transfer", "free"]),
   storagePath: z.string().min(1).nullable().optional(),
   fileName: z.string().min(1).nullable().optional(),
 });
@@ -175,16 +177,26 @@ export const getPaymentReceiptUrl = createServerFn({ method: "POST" })
 
 // A company's overall billing arrangement (see the migration's comment on
 // companies.payment_plan_type) — set independently of any month's own
-// paid/free mark. monthlyFee is relevant to a "monthly" company (what
-// they're expected to pay each month); oneTimeFee is relevant to a
-// "one_time" company (the lump sum they paid). Both are kept even when not
-// relevant to the current plan type, so switching back doesn't lose what
-// was typed in.
+// paid/free mark. monthlyFee/firstPaymentFee are relevant to a "monthly"
+// company (what they pay every month, plus a one-off first payment such as
+// an onboarding fee, on top of — not instead of — that monthly fee);
+// oneTimeFee is relevant to a "one_time" company (the lump sum they paid
+// instead of any recurring fee). All three are kept even when not relevant
+// to the current plan type, so switching back doesn't lose what was typed
+// in. The first payment and the one-time payment each happened in exactly
+// one specific month — firstPaymentMonth/Year and
+// oneTimePaymentMonth/Year record which, so the dashboard can count the
+// amount toward that one month instead of repeating it on every month.
 const UpdatePaymentPlanInput = z.object({
   companyId: z.string().uuid(),
   planType: z.enum(["monthly", "exempt", "one_time"]),
   monthlyFee: z.number().nonnegative().nullable(),
+  firstPaymentFee: z.number().nonnegative().nullable(),
+  firstPaymentMonth: z.number().int().min(1).max(12).nullable(),
+  firstPaymentYear: z.number().int().nullable(),
   oneTimeFee: z.number().nonnegative().nullable(),
+  oneTimePaymentMonth: z.number().int().min(1).max(12).nullable(),
+  oneTimePaymentYear: z.number().int().nullable(),
 });
 
 export const updateCompanyPaymentPlan = createServerFn({ method: "POST" })
@@ -198,7 +210,12 @@ export const updateCompanyPaymentPlan = createServerFn({ method: "POST" })
       .update({
         payment_plan_type: data.planType,
         monthly_fee: data.monthlyFee,
+        first_payment_fee: data.firstPaymentFee,
+        first_payment_month: data.firstPaymentFee != null ? data.firstPaymentMonth : null,
+        first_payment_year: data.firstPaymentFee != null ? data.firstPaymentYear : null,
         one_time_fee: data.oneTimeFee,
+        one_time_payment_month: data.oneTimeFee != null ? data.oneTimePaymentMonth : null,
+        one_time_payment_year: data.oneTimeFee != null ? data.oneTimePaymentYear : null,
       })
       .eq("id", data.companyId);
     if (error) throw new Error(error.message);

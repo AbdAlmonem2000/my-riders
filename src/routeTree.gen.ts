@@ -20,6 +20,7 @@ import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authentic
 import { Route as AuthenticatedSuperAdminIndexRouteImport } from './routes/_authenticated/super-admin/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedSuperAdminPaymentsRouteImport } from './routes/_authenticated/super-admin/payments'
+import { Route as AuthenticatedSuperAdminCompaniesRouteImport } from './routes/_authenticated/super-admin/companies'
 import { Route as AuthenticatedSuperAdminAnnouncementsRouteImport } from './routes/_authenticated/super-admin/announcements'
 import { Route as AuthenticatedSuperAdminAccountsRouteImport } from './routes/_authenticated/super-admin/accounts'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
@@ -90,6 +91,12 @@ const AuthenticatedSuperAdminPaymentsRoute =
   AuthenticatedSuperAdminPaymentsRouteImport.update({
     id: '/payments',
     path: '/payments',
+    getParentRoute: () => AuthenticatedSuperAdminRouteRoute,
+  } as any)
+const AuthenticatedSuperAdminCompaniesRoute =
+  AuthenticatedSuperAdminCompaniesRouteImport.update({
+    id: '/companies',
+    path: '/companies',
     getParentRoute: () => AuthenticatedSuperAdminRouteRoute,
   } as any)
 const AuthenticatedSuperAdminAnnouncementsRoute =
@@ -198,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/super-admin/accounts': typeof AuthenticatedSuperAdminAccountsRoute
   '/super-admin/announcements': typeof AuthenticatedSuperAdminAnnouncementsRoute
+  '/super-admin/companies': typeof AuthenticatedSuperAdminCompaniesRoute
   '/super-admin/payments': typeof AuthenticatedSuperAdminPaymentsRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/super-admin/': typeof AuthenticatedSuperAdminIndexRoute
@@ -222,6 +230,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/super-admin/accounts': typeof AuthenticatedSuperAdminAccountsRoute
   '/super-admin/announcements': typeof AuthenticatedSuperAdminAnnouncementsRoute
+  '/super-admin/companies': typeof AuthenticatedSuperAdminCompaniesRoute
   '/super-admin/payments': typeof AuthenticatedSuperAdminPaymentsRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/super-admin': typeof AuthenticatedSuperAdminIndexRoute
@@ -250,6 +259,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/super-admin/accounts': typeof AuthenticatedSuperAdminAccountsRoute
   '/_authenticated/super-admin/announcements': typeof AuthenticatedSuperAdminAnnouncementsRoute
+  '/_authenticated/super-admin/companies': typeof AuthenticatedSuperAdminCompaniesRoute
   '/_authenticated/super-admin/payments': typeof AuthenticatedSuperAdminPaymentsRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/super-admin/': typeof AuthenticatedSuperAdminIndexRoute
@@ -278,6 +288,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/super-admin/accounts'
     | '/super-admin/announcements'
+    | '/super-admin/companies'
     | '/super-admin/payments'
     | '/admin/'
     | '/super-admin/'
@@ -302,6 +313,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/super-admin/accounts'
     | '/super-admin/announcements'
+    | '/super-admin/companies'
     | '/super-admin/payments'
     | '/admin'
     | '/super-admin'
@@ -329,6 +341,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/super-admin/accounts'
     | '/_authenticated/super-admin/announcements'
+    | '/_authenticated/super-admin/companies'
     | '/_authenticated/super-admin/payments'
     | '/_authenticated/admin/'
     | '/_authenticated/super-admin/'
@@ -420,6 +433,13 @@ declare module '@tanstack/react-router' {
       path: '/payments'
       fullPath: '/super-admin/payments'
       preLoaderRoute: typeof AuthenticatedSuperAdminPaymentsRouteImport
+      parentRoute: typeof AuthenticatedSuperAdminRouteRoute
+    }
+    '/_authenticated/super-admin/companies': {
+      id: '/_authenticated/super-admin/companies'
+      path: '/companies'
+      fullPath: '/super-admin/companies'
+      preLoaderRoute: typeof AuthenticatedSuperAdminCompaniesRouteImport
       parentRoute: typeof AuthenticatedSuperAdminRouteRoute
     }
     '/_authenticated/super-admin/announcements': {
@@ -568,6 +588,7 @@ const AuthenticatedAdminRouteRouteWithChildren =
 interface AuthenticatedSuperAdminRouteRouteChildren {
   AuthenticatedSuperAdminAccountsRoute: typeof AuthenticatedSuperAdminAccountsRoute
   AuthenticatedSuperAdminAnnouncementsRoute: typeof AuthenticatedSuperAdminAnnouncementsRoute
+  AuthenticatedSuperAdminCompaniesRoute: typeof AuthenticatedSuperAdminCompaniesRoute
   AuthenticatedSuperAdminPaymentsRoute: typeof AuthenticatedSuperAdminPaymentsRoute
   AuthenticatedSuperAdminIndexRoute: typeof AuthenticatedSuperAdminIndexRoute
 }
@@ -577,6 +598,8 @@ const AuthenticatedSuperAdminRouteRouteChildren: AuthenticatedSuperAdminRouteRou
     AuthenticatedSuperAdminAccountsRoute: AuthenticatedSuperAdminAccountsRoute,
     AuthenticatedSuperAdminAnnouncementsRoute:
       AuthenticatedSuperAdminAnnouncementsRoute,
+    AuthenticatedSuperAdminCompaniesRoute:
+      AuthenticatedSuperAdminCompaniesRoute,
     AuthenticatedSuperAdminPaymentsRoute: AuthenticatedSuperAdminPaymentsRoute,
     AuthenticatedSuperAdminIndexRoute: AuthenticatedSuperAdminIndexRoute,
   }

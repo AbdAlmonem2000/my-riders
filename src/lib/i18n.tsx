@@ -1631,10 +1631,64 @@ const dict = {
   },
   "push.toastFailed": { ar: "تعذّر تفعيل الإشعارات", en: "Couldn't set up notifications" },
 
+  "superAdmin.navDashboard": { ar: "الرئيسية", en: "Dashboard" },
   "superAdmin.navCompanies": { ar: "الشركات", en: "Companies" },
   "superAdmin.navAccounts": { ar: "الحسابات", en: "Accounts" },
   "superAdmin.navAnnouncements": { ar: "الإشعارات", en: "Announcements" },
   "superAdmin.navPayments": { ar: "المدفوعات", en: "Payments" },
+
+  "superAdmin.dashboardPageTitle": { ar: "الرئيسية", en: "Dashboard" },
+  "superAdmin.dashboardPageDesc": {
+    ar: "ملخص سريع عن الشركات ومدفوعاتها",
+    en: "A quick summary of companies and their payments",
+  },
+  "superAdmin.dashboardMonthLabel": { ar: "الشهر", en: "Month" },
+  "superAdmin.dashboardTotalCompanies": { ar: "إجمالي الشركات", en: "Total companies" },
+  "superAdmin.dashboardPaidThisMonth": { ar: "دفعوا الشهر ده", en: "Paid this month" },
+  "superAdmin.dashboardUnpaidThisMonth": { ar: "لسه ما دفعوش", en: "Not paid yet" },
+  "superAdmin.dashboardExpectedRevenue": {
+    ar: "الإيراد الشهري المتوقع",
+    en: "Expected monthly revenue",
+  },
+  "superAdmin.dashboardTotalCollected": {
+    ar: "إجمالي المحصّل هذا الشهر",
+    en: "Total collected this month",
+  },
+  "superAdmin.dashboardCollectedRevenue": {
+    ar: "من الاشتراك الشهري (كاش + حوالة)",
+    en: "From monthly subscriptions (cash + transfer)",
+  },
+  "superAdmin.dashboardTransferCount": { ar: "دفعوا بالحوالة", en: "Paid by transfer" },
+  "superAdmin.dashboardExemptCount": { ar: "شركات معفاة", en: "Exempt companies" },
+  "superAdmin.dashboardFirstPaymentTotal": {
+    ar: "دفعات أولى هذا الشهر",
+    en: "First payments this month",
+  },
+  "superAdmin.dashboardOneTimeTotal": {
+    ar: "دفعات واحدة هذا الشهر",
+    en: "One-time payments this month",
+  },
+  "superAdmin.dashboardTrendChartTitle": {
+    ar: "إجمالي المحصّل شهريًا",
+    en: "Total collected per month",
+  },
+  "superAdmin.dashboardStatusChartTitle": {
+    ar: "حالة الدفع هذا الشهر",
+    en: "Payment status this month",
+  },
+  "superAdmin.dashboardNoMonthlyCompanies": {
+    ar: "لا توجد شركات شهرية",
+    en: "No monthly companies",
+  },
+  "superAdmin.dashboardUnpaidListTitle": {
+    ar: "شركات لسه ما دفعتش الشهر ده",
+    en: "Companies that haven't paid this month",
+  },
+  "superAdmin.dashboardGoToPaymentsButton": { ar: "صفحة المدفوعات", en: "Payments page" },
+  "superAdmin.dashboardAllPaidMessage": {
+    ar: "كل الشركات الشهرية دفعت الشهر ده",
+    en: "Every monthly company has paid this month",
+  },
 
   "superAdmin.paymentsPageTitle": { ar: "مدفوعات الشركات", en: "Company payments" },
   "superAdmin.paymentsPageDesc": {
@@ -1651,6 +1705,7 @@ const dict = {
   },
   "superAdmin.paymentsCompanyColumn": { ar: "الشركة", en: "Company" },
   "superAdmin.paymentsMarkCashButton": { ar: "دفع (كاش)", en: "Paid (cash)" },
+  "superAdmin.paymentsMarkTransferButton": { ar: "دفع (حوالة)", en: "Paid (transfer)" },
   "superAdmin.paymentsMarkFreeButton": { ar: "مجاني هذا الشهر", en: "Free this month" },
   "superAdmin.paymentsUnmarkButton": { ar: "إلغاء الدفع", en: "Unmark as paid" },
   "superAdmin.paymentsViewReceiptButton": { ar: "عرض الإيصال", en: "View receipt" },
@@ -1660,6 +1715,7 @@ const dict = {
     en: "Payment receipt or transfer screenshot (optional)",
   },
   "superAdmin.paymentsCashBadge": { ar: "دفع كاش", en: "Paid cash" },
+  "superAdmin.paymentsTransferBadge": { ar: "دفع حوالة", en: "Paid by transfer" },
   "superAdmin.paymentsFreeBadge": { ar: "شهر مجاني", en: "Free month" },
   "superAdmin.paymentsToastMarkedSuccess": {
     ar: "تم تحديد الشهر كمدفوع",
@@ -1679,14 +1735,22 @@ const dict = {
   "superAdmin.paymentsPlanMonthly": { ar: "شهري", en: "Monthly" },
   "superAdmin.paymentsPlanExempt": { ar: "معفى من الدفع", en: "Exempt" },
   "superAdmin.paymentsPlanOneTime": { ar: "دفعة واحدة", en: "One-time payment" },
+  "superAdmin.paymentsFirstFeeLabel": {
+    ar: "قيمة الدفعة الأولى (اختياري)",
+    en: "First payment amount (optional)",
+  },
+  "superAdmin.paymentsFirstFeeMonthLabel": { ar: "حصلت في شهر", en: "Happened in" },
   "superAdmin.paymentsMonthlyFeeLabel": { ar: "قيمة الاشتراك الشهري", en: "Monthly fee" },
   "superAdmin.paymentsOneTimeFeeLabel": {
     ar: "قيمة الدفعة الواحدة",
     en: "One-time payment amount",
   },
+  "superAdmin.paymentsOneTimeFeeMonthLabel": { ar: "حصلت في شهر", en: "Happened in" },
+  "superAdmin.paymentsFirstFeeShort": { ar: "الدفعة الأولى:", en: "First payment:" },
   "superAdmin.paymentsMonthlyFeeShort": { ar: "الاشتراك:", en: "Fee:" },
   "superAdmin.paymentsExemptBadge": { ar: "معفى من الدفع", en: "Exempt" },
   "superAdmin.paymentsOneTimeBadge": { ar: "دفعة واحدة", en: "One-time payment" },
+  "superAdmin.paymentsFirstPaymentBadge": { ar: "دفعة أولى", en: "First payment" },
 } satisfies Record<string, { ar: string; en: string }>;
 
 export type TranslationKey = keyof typeof dict;

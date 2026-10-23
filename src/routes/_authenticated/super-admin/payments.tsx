@@ -3,7 +3,17 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Building2, Check, Gift, Loader2, Receipt, Settings, X } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Building2,
+  Check,
+  Gift,
+  Loader2,
+  Receipt,
+  Settings,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,7 +57,7 @@ export const Route = createFileRoute("/_authenticated/super-admin/payments")({
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 type PlanType = "monthly" | "exempt" | "one_time";
-type PaymentType = "cash" | "free";
+type PaymentType = "cash" | "transfer" | "free";
 
 interface CompanyRow {
   id: string;
@@ -56,7 +66,12 @@ interface CompanyRow {
   created_at: string;
   payment_plan_type: string;
   monthly_fee: number | null;
+  first_payment_fee: number | null;
+  first_payment_month: number | null;
+  first_payment_year: number | null;
   one_time_fee: number | null;
+  one_time_payment_month: number | null;
+  one_time_payment_year: number | null;
 }
 
 interface PaymentInfo {
@@ -65,31 +80,105 @@ interface PaymentInfo {
   file_name: string | null;
 }
 
+// A month+year pair, used by both the first-payment and one-time-payment
+// fields below — each is a one-off that happened in exactly one specific
+// month, not a recurring thing, so the amount only has to be set once but
+// still needs to say when.
+function MonthYearPicker({
+  month,
+  year,
+  years,
+  monthNames,
+  onMonthChange,
+  onYearChange,
+}: {
+  month: number;
+  year: number;
+  years: number[];
+  monthNames: string[];
+  onMonthChange: (month: number) => void;
+  onYearChange: (year: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Select value={String(month)} onValueChange={(v) => onMonthChange(Number(v))}>
+        <SelectTrigger className="flex-1">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {MONTHS.map((m) => (
+            <SelectItem key={m} value={String(m)}>
+              {monthNames[m - 1]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={String(year)} onValueChange={(v) => onYearChange(Number(v))}>
+        <SelectTrigger className="w-24">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {years.map((y) => (
+            <SelectItem key={y} value={String(y)}>
+              {y}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 // Per-company billing arrangement — independent of any single month's own
 // mark. Switching to "exempt"/"one_time" here is what hides the monthly
 // grid for this company below (see PaymentsPage), since neither is a
 // recurring thing to check off month by month.
 function CompanySettingsPopover({
   company,
+  years,
+  monthNames,
   t,
 }: {
   company: CompanyRow;
+  years: number[];
+  monthNames: string[];
   t: (key: TranslationKey) => string;
 }) {
   const queryClient = useQueryClient();
   const updateFn = useServerFn(updateCompanyPaymentPlan);
+  const now = new Date();
   const [open, setOpen] = useState(false);
   const [planType, setPlanType] = useState<PlanType>(
     (company.payment_plan_type as PlanType) ?? "monthly",
   );
   const [monthlyFee, setMonthlyFee] = useState(company.monthly_fee?.toString() ?? "");
+  const [firstPaymentFee, setFirstPaymentFee] = useState(
+    company.first_payment_fee?.toString() ?? "",
+  );
+  const [firstPaymentMonth, setFirstPaymentMonth] = useState(
+    company.first_payment_month ?? now.getMonth() + 1,
+  );
+  const [firstPaymentYear, setFirstPaymentYear] = useState(
+    company.first_payment_year ?? now.getFullYear(),
+  );
   const [oneTimeFee, setOneTimeFee] = useState(company.one_time_fee?.toString() ?? "");
+  const [oneTimePaymentMonth, setOneTimePaymentMonth] = useState(
+    company.one_time_payment_month ?? now.getMonth() + 1,
+  );
+  const [oneTimePaymentYear, setOneTimePaymentYear] = useState(
+    company.one_time_payment_year ?? now.getFullYear(),
+  );
   const [saving, setSaving] = useState(false);
 
   const resetFromCompany = () => {
     setPlanType((company.payment_plan_type as PlanType) ?? "monthly");
     setMonthlyFee(company.monthly_fee?.toString() ?? "");
+    setFirstPaymentFee(company.first_payment_fee?.toString() ?? "");
+    setFirstPaymentMonth(company.first_payment_month ?? now.getMonth() + 1);
+    setFirstPaymentYear(company.first_payment_year ?? now.getFullYear());
     setOneTimeFee(company.one_time_fee?.toString() ?? "");
+    setOneTimePaymentMonth(company.one_time_payment_month ?? now.getMonth() + 1);
+    setOneTimePaymentYear(company.one_time_payment_year ?? now.getFullYear());
   };
 
   const submit = async () => {
@@ -100,7 +189,12 @@ function CompanySettingsPopover({
           companyId: company.id,
           planType,
           monthlyFee: monthlyFee.trim() ? Number(monthlyFee) : null,
+          firstPaymentFee: firstPaymentFee.trim() ? Number(firstPaymentFee) : null,
+          firstPaymentMonth,
+          firstPaymentYear,
           oneTimeFee: oneTimeFee.trim() ? Number(oneTimeFee) : null,
+          oneTimePaymentMonth,
+          oneTimePaymentYear,
         },
       });
       toast.success(t("superAdmin.paymentsToastPlanSaved"));
@@ -126,7 +220,7 @@ function CompanySettingsPopover({
           <Settings className="h-3.5 w-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-72">
+      <PopoverContent className="w-80">
         <div className="space-y-3">
           <p className="truncate text-sm font-medium">{company.name}</p>
           <div className="space-y-1.5">
@@ -145,34 +239,81 @@ function CompanySettingsPopover({
             </Select>
           </div>
           {planType === "monthly" && (
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                {t("superAdmin.paymentsMonthlyFeeLabel")}
-              </Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={monthlyFee}
-                onChange={(e) => setMonthlyFee(e.target.value)}
-                dir="ltr"
-              />
-            </div>
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  {t("superAdmin.paymentsFirstFeeLabel")}
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={firstPaymentFee}
+                  onChange={(e) => setFirstPaymentFee(e.target.value)}
+                  dir="ltr"
+                />
+              </div>
+              {firstPaymentFee.trim() && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("superAdmin.paymentsFirstFeeMonthLabel")}
+                  </Label>
+                  <MonthYearPicker
+                    month={firstPaymentMonth}
+                    year={firstPaymentYear}
+                    years={years}
+                    monthNames={monthNames}
+                    onMonthChange={setFirstPaymentMonth}
+                    onYearChange={setFirstPaymentYear}
+                  />
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  {t("superAdmin.paymentsMonthlyFeeLabel")}
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={monthlyFee}
+                  onChange={(e) => setMonthlyFee(e.target.value)}
+                  dir="ltr"
+                />
+              </div>
+            </>
           )}
           {planType === "one_time" && (
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                {t("superAdmin.paymentsOneTimeFeeLabel")}
-              </Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={oneTimeFee}
-                onChange={(e) => setOneTimeFee(e.target.value)}
-                dir="ltr"
-              />
-            </div>
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  {t("superAdmin.paymentsOneTimeFeeLabel")}
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={oneTimeFee}
+                  onChange={(e) => setOneTimeFee(e.target.value)}
+                  dir="ltr"
+                />
+              </div>
+              {oneTimeFee.trim() && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("superAdmin.paymentsOneTimeFeeMonthLabel")}
+                  </Label>
+                  <MonthYearPicker
+                    month={oneTimePaymentMonth}
+                    year={oneTimePaymentYear}
+                    years={years}
+                    monthNames={monthNames}
+                    onMonthChange={setOneTimePaymentMonth}
+                    onYearChange={setOneTimePaymentYear}
+                  />
+                </div>
+              )}
+            </>
           )}
           <Button type="button" size="sm" className="w-full" disabled={saving} onClick={submit}>
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t("admin.save")}
@@ -307,7 +448,28 @@ function PaymentCell({
   };
 
   const isPaid = !!payment;
-  const isFree = payment?.payment_type === "free";
+  const cellStyle: Record<PaymentType, { className: string; icon: React.ReactNode }> = {
+    cash: {
+      className:
+        "border-emerald-300 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
+      icon: <Check className="h-4 w-4" />,
+    },
+    transfer: {
+      className:
+        "border-sky-300 bg-sky-50 text-sky-600 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-400",
+      icon: <ArrowLeftRight className="h-4 w-4" />,
+    },
+    free: {
+      className:
+        "border-violet-300 bg-violet-50 text-violet-600 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-400",
+      icon: <Gift className="h-4 w-4" />,
+    },
+  };
+  const badgeKey: Record<PaymentType, TranslationKey> = {
+    cash: "superAdmin.paymentsCashBadge",
+    transfer: "superAdmin.paymentsTransferBadge",
+    free: "superAdmin.paymentsFreeBadge",
+  };
 
   return (
     <Popover
@@ -324,13 +486,11 @@ function PaymentCell({
           className={
             "mx-auto flex h-8 w-8 items-center justify-center rounded-md border transition-colors " +
             (isPaid
-              ? isFree
-                ? "border-sky-300 bg-sky-50 text-sky-600 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-400"
-                : "border-emerald-300 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400"
+              ? cellStyle[payment.payment_type].className
               : "border-dashed border-muted-foreground/30 text-transparent hover:border-muted-foreground/60 hover:bg-muted")
           }
         >
-          {isFree ? <Gift className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+          {isPaid ? cellStyle[payment.payment_type].icon : <Check className="h-4 w-4" />}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-72">
@@ -342,7 +502,7 @@ function PaymentCell({
               {isPaid && (
                 <>
                   {" — "}
-                  {isFree ? t("superAdmin.paymentsFreeBadge") : t("superAdmin.paymentsCashBadge")}
+                  {t(badgeKey[payment.payment_type])}
                 </>
               )}
             </p>
@@ -417,21 +577,33 @@ function PaymentCell({
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2">
                 <Button
                   type="button"
                   size="sm"
+                  className="bg-sky-600 text-white hover:bg-sky-700"
                   disabled={saving}
-                  onClick={() => handleMark("cash")}
+                  onClick={() => handleMark("transfer")}
                 >
                   {saving ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <>
-                      <Check className="ms-1.5 h-3.5 w-3.5" />
-                      {t("superAdmin.paymentsMarkCashButton")}
+                      <ArrowLeftRight className="ms-1.5 h-3.5 w-3.5" />
+                      {t("superAdmin.paymentsMarkTransferButton")}
                     </>
                   )}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                  disabled={saving}
+                  onClick={() => handleMark("cash")}
+                >
+                  <Check className="ms-1.5 h-3.5 w-3.5" />
+                  {t("superAdmin.paymentsMarkCashButton")}
                 </Button>
                 <Button
                   type="button"
@@ -544,7 +716,7 @@ function PaymentsPage() {
                 <Table>
                   <TableHeader className="sticky top-0 z-20 bg-muted [&_th]:h-9 [&_th]:text-xs">
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="sticky start-0 z-20 min-w-[240px] bg-muted">
+                      <TableHead className="sticky start-0 z-20 min-w-[280px] bg-muted">
                         {t("superAdmin.paymentsCompanyColumn")}
                       </TableHead>
                       {MONTHS.map((m) => (
@@ -557,7 +729,7 @@ function PaymentsPage() {
                   <TableBody>
                     {companies.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="sticky start-0 z-10 max-w-[260px] bg-background shadow-[-4px_0_6px_-4px_rgb(0_0_0/0.15)]">
+                        <TableCell className="sticky start-0 z-10 max-w-[300px] bg-background shadow-[-4px_0_6px_-4px_rgb(0_0_0/0.15)]">
                           <div className="flex items-center gap-2">
                             {c.logo_url ? (
                               <img
@@ -571,9 +743,21 @@ function PaymentsPage() {
                               </div>
                             )}
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium">{c.name}</div>
-                              <div className="truncate text-[11px] text-muted-foreground">
+                              <div
+                                className="text-xs leading-tight font-medium break-words"
+                                title={c.name}
+                              >
+                                {c.name}
+                              </div>
+                              <div className="text-[11px] leading-tight break-words text-muted-foreground">
                                 {formatDate(c.created_at)}
+                                {c.payment_plan_type === "monthly" &&
+                                  c.first_payment_fee != null && (
+                                    <>
+                                      {" · "}
+                                      {t("superAdmin.paymentsFirstFeeShort")} {c.first_payment_fee}
+                                    </>
+                                  )}
                                 {c.payment_plan_type === "monthly" && c.monthly_fee != null && (
                                   <>
                                     {" · "}
@@ -582,32 +766,57 @@ function PaymentsPage() {
                                 )}
                               </div>
                             </div>
-                            <CompanySettingsPopover company={c} t={t} />
+                            <CompanySettingsPopover
+                              company={c}
+                              years={years}
+                              monthNames={monthNames}
+                              t={t}
+                            />
                           </div>
                         </TableCell>
                         {c.payment_plan_type === "monthly" ? (
                           MONTHS.map((m) => (
                             <TableCell key={m} className="text-center">
-                              <PaymentCell
-                                companyId={c.id}
-                                companyName={c.name}
-                                year={year}
-                                month={m}
-                                payment={paymentByKey.get(`${c.id}:${m}`)}
-                                monthName={monthNames[m - 1]}
-                                t={t}
-                              />
+                              <div className="flex flex-col items-center gap-1">
+                                <PaymentCell
+                                  companyId={c.id}
+                                  companyName={c.name}
+                                  year={year}
+                                  month={m}
+                                  payment={paymentByKey.get(`${c.id}:${m}`)}
+                                  monthName={monthNames[m - 1]}
+                                  t={t}
+                                />
+                                {c.first_payment_year === year && c.first_payment_month === m && (
+                                  <span
+                                    title={`${t("superAdmin.paymentsFirstPaymentBadge")} — ${c.first_payment_fee ?? ""}`}
+                                    className="flex h-5 items-center justify-center gap-0.5 rounded-md border border-amber-300 bg-amber-50 px-1 text-[10px] font-medium whitespace-nowrap text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400"
+                                  >
+                                    <Sparkles className="h-3 w-3 shrink-0" />
+                                    {c.first_payment_fee}
+                                  </span>
+                                )}
+                              </div>
                             </TableCell>
                           ))
+                        ) : c.payment_plan_type === "one_time" ? (
+                          MONTHS.map((m) =>
+                            c.one_time_payment_year === year && c.one_time_payment_month === m ? (
+                              <TableCell key={m} className="text-center">
+                                <Badge variant="secondary" className="whitespace-nowrap">
+                                  {t("superAdmin.paymentsOneTimeBadge")}
+                                  {c.one_time_fee != null ? ` — ${c.one_time_fee}` : ""}
+                                </Badge>
+                              </TableCell>
+                            ) : (
+                              <TableCell key={m} className="text-center text-muted-foreground">
+                                —
+                              </TableCell>
+                            ),
+                          )
                         ) : (
                           <TableCell colSpan={12} className="text-center">
-                            <Badge variant="secondary">
-                              {c.payment_plan_type === "exempt"
-                                ? t("superAdmin.paymentsExemptBadge")
-                                : `${t("superAdmin.paymentsOneTimeBadge")}${
-                                    c.one_time_fee != null ? ` — ${c.one_time_fee}` : ""
-                                  }`}
-                            </Badge>
+                            <Badge variant="secondary">{t("superAdmin.paymentsExemptBadge")}</Badge>
                           </TableCell>
                         )}
                       </TableRow>
