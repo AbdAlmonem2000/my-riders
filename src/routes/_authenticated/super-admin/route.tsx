@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Loader2, Megaphone, ShieldCheck, Users } from "lucide-react";
+import { Building2, Loader2, Megaphone, ShieldCheck, Users, Wallet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +26,12 @@ const NAV_TABS = [
     to: "/super-admin/accounts" as const,
     key: "superAdmin.navAccounts" as const,
     icon: Users,
+    exact: false,
+  },
+  {
+    to: "/super-admin/payments" as const,
+    key: "superAdmin.navPayments" as const,
+    icon: Wallet,
     exact: false,
   },
   {

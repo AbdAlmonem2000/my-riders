@@ -93,7 +93,10 @@ export type Database = {
           id: string
           is_suspended: boolean
           logo_url: string | null
+          monthly_fee: number | null
           name: string
+          one_time_fee: number | null
+          payment_plan_type: string
           plan_company_profile_access: boolean
           plan_documents_access: string
           plan_expiry_alerts_access: boolean
@@ -122,7 +125,10 @@ export type Database = {
           id?: string
           is_suspended?: boolean
           logo_url?: string | null
+          monthly_fee?: number | null
           name: string
+          one_time_fee?: number | null
+          payment_plan_type?: string
           plan_company_profile_access?: boolean
           plan_documents_access?: string
           plan_expiry_alerts_access?: boolean
@@ -151,7 +157,10 @@ export type Database = {
           id?: string
           is_suspended?: boolean
           logo_url?: string | null
+          monthly_fee?: number | null
           name?: string
+          one_time_fee?: number | null
+          payment_plan_type?: string
           plan_company_profile_access?: boolean
           plan_documents_access?: string
           plan_expiry_alerts_access?: boolean
@@ -173,6 +182,47 @@ export type Database = {
           unified_number?: string | null
         }
         Relationships: []
+      }
+      company_payments: {
+        Row: {
+          company_id: string
+          file_name: string | null
+          id: string
+          month: number
+          paid_at: string
+          payment_type: string
+          storage_path: string | null
+          year: number
+        }
+        Insert: {
+          company_id: string
+          file_name?: string | null
+          id?: string
+          month: number
+          paid_at?: string
+          payment_type?: string
+          storage_path?: string | null
+          year: number
+        }
+        Update: {
+          company_id?: string
+          file_name?: string | null
+          id?: string
+          month?: number
+          paid_at?: string
+          payment_type?: string
+          storage_path?: string | null
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_payments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_documents: {
         Row: {
