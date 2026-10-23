@@ -288,20 +288,25 @@ function DashboardPage() {
     }
 
     // Same idea for a one-time plan company's lump sum — it only belongs
-    // to the one month it was paid in.
+    // to the one month it was scheduled for, and (like a monthly company's
+    // fee) only counts as collected once actually marked cash/transfer.
     const oneTimeThisMonth = companies.filter(
       (c) =>
         c.payment_plan_type === "one_time" &&
         c.one_time_payment_month === month &&
         c.one_time_payment_year === year,
     );
-    const oneTimeTotal = oneTimeThisMonth.reduce((sum, c) => sum + (c.one_time_fee ?? 0), 0);
+    const oneTimePaidThisMonth = oneTimeThisMonth.filter((c) => {
+      const paymentType = paidThisMonth.get(c.id);
+      return paymentType === "cash" || paymentType === "transfer";
+    });
+    const oneTimeTotal = oneTimePaidThisMonth.reduce((sum, c) => sum + (c.one_time_fee ?? 0), 0);
 
     return {
       total: companies.length,
       monthlyCount: monthly.length,
       exemptCount,
-      oneTimeCount: oneTimeThisMonth.length,
+      oneTimeCount: oneTimePaidThisMonth.length,
       oneTimeTotal,
       firstPaymentTotal,
       cashCount,
@@ -329,6 +334,11 @@ function DashboardPage() {
       ]),
     );
     const companyById = new Map(companies.map((c) => [c.id, c]));
+    const paidCompanyMonths = new Set(
+      (paymentsQuery.data ?? [])
+        .filter((p) => p.payment_type === "cash" || p.payment_type === "transfer")
+        .map((p) => `${p.company_id}:${p.month}`),
+    );
 
     return MONTHS.map((m) => {
       let value = 0;
@@ -345,7 +355,8 @@ function DashboardPage() {
         if (
           c.payment_plan_type === "one_time" &&
           c.one_time_payment_month === m &&
-          c.one_time_payment_year === year
+          c.one_time_payment_year === year &&
+          paidCompanyMonths.has(`${c.id}:${m}`)
         ) {
           value += c.one_time_fee ?? 0;
         }

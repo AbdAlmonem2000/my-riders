@@ -336,6 +336,7 @@ function PaymentCell({
   month,
   payment,
   monthName,
+  allowFree = true,
   t,
 }: {
   companyId: string;
@@ -344,6 +345,7 @@ function PaymentCell({
   month: number;
   payment: PaymentInfo | undefined;
   monthName: string;
+  allowFree?: boolean;
   t: (key: TranslationKey) => string;
 }) {
   const queryClient = useQueryClient();
@@ -605,16 +607,18 @@ function PaymentCell({
                   <Check className="ms-1.5 h-3.5 w-3.5" />
                   {t("superAdmin.paymentsMarkCashButton")}
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={saving}
-                  onClick={() => handleMark("free")}
-                >
-                  <Gift className="ms-1.5 h-3.5 w-3.5" />
-                  {t("superAdmin.paymentsMarkFreeButton")}
-                </Button>
+                {allowFree && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={saving}
+                    onClick={() => handleMark("free")}
+                  >
+                    <Gift className="ms-1.5 h-3.5 w-3.5" />
+                    {t("superAdmin.paymentsMarkFreeButton")}
+                  </Button>
+                )}
               </div>
             </>
           )}
@@ -803,10 +807,25 @@ function PaymentsPage() {
                           MONTHS.map((m) =>
                             c.one_time_payment_year === year && c.one_time_payment_month === m ? (
                               <TableCell key={m} className="text-center">
-                                <Badge variant="secondary" className="whitespace-nowrap">
-                                  {t("superAdmin.paymentsOneTimeBadge")}
-                                  {c.one_time_fee != null ? ` — ${c.one_time_fee}` : ""}
-                                </Badge>
+                                <div className="flex flex-col items-center gap-1">
+                                  <PaymentCell
+                                    companyId={c.id}
+                                    companyName={c.name}
+                                    year={year}
+                                    month={m}
+                                    payment={paymentByKey.get(`${c.id}:${m}`)}
+                                    monthName={monthNames[m - 1]}
+                                    allowFree={false}
+                                    t={t}
+                                  />
+                                  <Badge
+                                    variant="secondary"
+                                    className="whitespace-nowrap text-[10px]"
+                                  >
+                                    {t("superAdmin.paymentsOneTimeBadge")}
+                                    {c.one_time_fee != null ? ` — ${c.one_time_fee}` : ""}
+                                  </Badge>
+                                </div>
                               </TableCell>
                             ) : (
                               <TableCell key={m} className="text-center text-muted-foreground">
