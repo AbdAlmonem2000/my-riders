@@ -1064,6 +1064,10 @@ const dict = {
     ar: "ملف فيه رقم كرت التشغيل ورقم إقامة المندوب ورقم اللوحة، وممكن كمان تاريخ الانتهاء — هيتحط لكل مندوب في صفحة المستندات بتاعته. الملف نفسه (بي دي إف أو صورة) بيترفع بعدين مرة واحدة من هنا لكل كرت.",
     en: "A file with the operating card number, the rider's Iqama number, and the plate number, plus optionally the expiry date — assigned to each rider's documents page. The actual file (PDF or photo) is uploaded afterward, once per card, from here.",
   },
+  "operatingCards.bulkTargetLabel": {
+    ar: "نوع الكرت",
+    en: "Card type",
+  },
   "operatingCards.bulkFileLabel": {
     ar: "الملف (Excel أو CSV)",
     en: "File (Excel or CSV)",

@@ -73,6 +73,7 @@ import {
   addRiderToOperatingCard,
   bulkAssignOperatingCards,
   deleteOperatingCardGroup,
+  listCustomOperatingCardLabels,
   removeRiderFromOperatingCard,
   updateOperatingCardGroup,
   uploadOperatingCardForm,
@@ -83,6 +84,8 @@ import {
   hasAllowedDocExtension,
   isValidExpiryDate,
   isValidOperatingCardNumber,
+  looksLikeOperatingCardLabel,
+  OPERATING_CARD_LABEL_PREFIX,
   OPERATING_CARD_TYPES,
   computeDocStatus,
   type DocStatus,
@@ -109,11 +112,26 @@ interface CardDocRow {
   id: string;
   rider_id: string;
   doc_type: string;
+  label: string | null;
   card_number: string | null;
   plate_number: string | null;
   expiry_date: string | null;
   storage_path: string | null;
   file_name: string | null;
+}
+
+// Either the one fixed "operating_card" (or the legacy "operating_card_extra")
+// slot, or a custom "كرت تشغيل <name>" family — the same shape the server's
+// mutation functions expect, see operating-cards.functions.ts.
+interface CardTarget {
+  docType: "operating_card" | "operating_card_extra" | null;
+  label: string | null;
+}
+
+function groupTarget(group: CardGroup): CardTarget {
+  return group.label
+    ? { docType: null, label: group.label }
+    : { docType: group.docType as "operating_card" | "operating_card_extra", label: null };
 }
 
 // Both operating-card slots enforce their own 3-rider cap independently (see
@@ -123,6 +141,10 @@ interface CardDocRow {
 interface CardGroup {
   key: string;
   docType: string;
+  // Set only for a custom "كرت تشغيل <name>" family — the grouping key for
+  // these (see `groups` below) and null for the two fixed slots, where
+  // docType alone already groups correctly.
+  label: string | null;
   cardNumber: string;
   // Only set when every rider in the group shares the exact same file —
   // a group bulk-assigned a card number but never given a file (or one
@@ -155,7 +177,20 @@ interface CardGroup {
     idText: string;
     area: string | null;
     hasFile: boolean;
+    // This rider's own doc_type for this row — identical across every
+    // member for a fixed slot, but unique per rider for a custom family
+    // (each custom document is its own "custom:<uuid>"), so a download/
+    // view action always needs this, never the group's own `docType`.
+    docType: string;
   }[];
+}
+
+// The doc_type to pass when opening/downloading `group.fileRiderId`'s file —
+// that rider's own doc_type, not the group's (which, for a custom family, is
+// just whichever member happened to create the group first and may not be
+// the same rider).
+function fileDocTypeFor(group: CardGroup): string {
+  return group.riders.find((r) => r.riderId === group.fileRiderId)?.docType ?? group.docType;
 }
 
 const STATUS_FILTERS: { value: "all" | DocStatus; key: TranslationKey }[] = [
@@ -215,7 +250,7 @@ function EditCardGroupDialog({
     try {
       await updateMetaFn({
         data: {
-          docType: group.docType as "operating_card" | "operating_card_extra",
+          target: groupTarget(group),
           cardNumber: group.cardNumber,
           newCardNumber: cardNumber.trim() !== group.cardNumber ? cardNumber.trim() : null,
           plateNumber: plateNumber.trim() || null,
@@ -238,7 +273,7 @@ function EditCardGroupDialog({
         if (upErr) throw new Error(upErr.message);
         await uploadFileFn({
           data: {
-            docType: group.docType as "operating_card" | "operating_card_extra",
+            target: groupTarget(group),
             cardNumber: savedCardNumber,
             storagePath: path,
             fileName: file.name,
@@ -436,7 +471,13 @@ function AddRiderToCardDialog({
   const candidates = useMemo(() => {
     const existingIds = new Set(group.riders.map((r) => r.riderId));
     const alreadyAssigned = new Set(
-      cardDocs.filter((d) => d.doc_type === group.docType && d.card_number).map((d) => d.rider_id),
+      cardDocs
+        .filter((d) =>
+          group.label
+            ? d.label === group.label && d.card_number
+            : d.doc_type === group.docType && d.card_number,
+        )
+        .map((d) => d.rider_id),
     );
     const q = search.trim().toLowerCase();
     return riders.filter((r) => {
@@ -457,7 +498,7 @@ function AddRiderToCardDialog({
     try {
       await addRiderFn({
         data: {
-          docType: group.docType as "operating_card" | "operating_card_extra",
+          target: groupTarget(group),
           cardNumber: group.cardNumber,
           riderId,
         },
@@ -544,6 +585,8 @@ interface BulkRowError {
   text: string;
 }
 
+type BulkCardChoice = { kind: "fixed" } | { kind: "custom"; label: string };
+
 // Upload a sheet of card_number + rider Iqama (+ optional plate/expiry) and
 // assign them all at once — same validation rules as a single manual
 // assignment (3 riders max per card, all in the same area), checked across
@@ -551,18 +594,18 @@ interface BulkRowError {
 function BulkUploadDialog({
   open,
   onOpenChange,
+  customLabels,
   t,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  customLabels: string[];
   t: (key: TranslationKey) => string;
 }) {
   const queryClient = useQueryClient();
   const bulkFn = useServerFn(bulkAssignOperatingCards);
   const [file, setFile] = useState<File | null>(null);
-  const [docType, setDocType] = useState<"operating_card" | "operating_card_extra">(
-    "operating_card",
-  );
+  const [choice, setChoice] = useState<BulkCardChoice>({ kind: "fixed" });
   const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState<BulkRowError[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -582,7 +625,10 @@ function BulkUploadDialog({
 
       const res = await bulkFn({
         data: {
-          docType,
+          target:
+            choice.kind === "fixed"
+              ? { docType: "operating_card" as const, label: null }
+              : { docType: null, label: choice.label },
           headers: parsed.headers,
           iqamaColumn: parsed.iqamaColumn,
           cardNumberColumn: parsed.cardNumberColumn,
@@ -625,23 +671,31 @@ function BulkUploadDialog({
           <DialogDescription>{t("operatingCards.bulkUploadDesc")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={docType === "operating_card" ? "default" : "outline"}
-              onClick={() => setDocType("operating_card")}
-            >
-              {t("documents.type.operating_card")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={docType === "operating_card_extra" ? "default" : "outline"}
-              onClick={() => setDocType("operating_card_extra")}
-            >
-              {t("documents.type.operating_card_extra")}
-            </Button>
+          <div className="space-y-1.5">
+            <Label className="text-xs">{t("operatingCards.bulkTargetLabel")}</Label>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={choice.kind === "fixed" ? "default" : "outline"}
+                onClick={() => setChoice({ kind: "fixed" })}
+              >
+                {t("documents.type.operating_card")}
+              </Button>
+              {customLabels.map((label) => (
+                <Button
+                  key={label}
+                  type="button"
+                  size="sm"
+                  variant={
+                    choice.kind === "custom" && choice.label === label ? "default" : "outline"
+                  }
+                  onClick={() => setChoice({ kind: "custom", label })}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("operatingCards.bulkFileLabel")}</Label>
@@ -686,6 +740,7 @@ function AdminOperatingCards() {
   const downloadUrlFn = useServerFn(getRiderDocumentDownloadUrl);
   const deleteGroupFn = useServerFn(deleteOperatingCardGroup);
   const removeRiderFn = useServerFn(removeRiderFromOperatingCard);
+  const customLabelsFn = useServerFn(listCustomOperatingCardLabels);
   const [search, setSearch] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editingGroupKey, setEditingGroupKey] = useState<string | null>(null);
@@ -693,7 +748,7 @@ function AdminOperatingCards() {
   const [deletingGroupKey, setDeletingGroupKey] = useState<string | null>(null);
   const [addingToGroupKey, setAddingToGroupKey] = useState<string | null>(null);
   const [removingRider, setRemovingRider] = useState<{
-    docType: string;
+    target: CardTarget;
     cardNumber: string;
     riderId: string;
     riderName: string;
@@ -744,22 +799,42 @@ function AdminOperatingCards() {
       ),
   });
 
+  const CARD_DOC_COLUMNS =
+    "id, rider_id, doc_type, label, card_number, plate_number, expiry_date, storage_path, file_name";
+
   const cardDocsQuery = useQuery({
     queryKey: ["operating-cards-docs"],
-    queryFn: () =>
+    queryFn: async () => {
       // Same silent-truncation risk as above — a company with enough
       // operating-card/form documents could cross the cap and have whole
-      // card groups just missing from this page.
-      fetchAllRows<CardDocRow>(({ from, to }) =>
+      // card groups just missing from this page. Fetched as two passes —
+      // the two fixed slots (+ the card's form), and any custom "كرت
+      // تشغيل..." family — since a custom doc_type is a one-off per rider
+      // and so can't be matched with a plain .in() the way the fixed ones
+      // are; it's only found by its admin-typed label.
+      const fixed = await fetchAllRows<CardDocRow>(({ from, to }) =>
         supabase
           .from("rider_documents")
-          .select(
-            "id, rider_id, doc_type, card_number, plate_number, expiry_date, storage_path, file_name",
-          )
+          .select(CARD_DOC_COLUMNS)
           .in("doc_type", [...OPERATING_CARD_TYPES, "vehicle_registration"])
           .order("id", { ascending: true })
           .range(from, to),
-      ),
+      );
+      const custom = await fetchAllRows<CardDocRow>(({ from, to }) =>
+        supabase
+          .from("rider_documents")
+          .select(CARD_DOC_COLUMNS)
+          .ilike("label", `${OPERATING_CARD_LABEL_PREFIX}%`)
+          .order("id", { ascending: true })
+          .range(from, to),
+      );
+      return [...fixed, ...custom];
+    },
+  });
+
+  const customLabelsQuery = useQuery({
+    queryKey: ["operating-card-custom-labels"],
+    queryFn: () => customLabelsFn(),
   });
 
   const isLoading = ridersQuery.isLoading || cardDocsQuery.isLoading;
@@ -781,11 +856,17 @@ function AdminOperatingCards() {
     for (const d of cardDocsQuery.data ?? []) {
       const cardNumber = d.card_number?.trim();
       if (!cardNumber) continue;
-      const key = `${d.doc_type}:${cardNumber}`;
+      // A custom family's doc_type is a one-off per rider, so its riders can
+      // only be grouped by the shared label they all typed — a fixed slot's
+      // doc_type is the same for everyone on it, so that alone groups fine.
+      const isCustom = looksLikeOperatingCardLabel(d.label);
+      const label = isCustom ? d.label!.trim() : null;
+      const key = isCustom ? `label:${label}:${cardNumber}` : `${d.doc_type}:${cardNumber}`;
       const rider = riderById.get(d.rider_id);
       const group = byKey.get(key) ?? {
         key,
         docType: d.doc_type,
+        label,
         cardNumber,
         groupFile: null,
         fileRiderId: null,
@@ -806,6 +887,7 @@ function AdminOperatingCards() {
         idText: rider?.id_number || rider?.iqama_number || "—",
         area: rider?.area ?? null,
         hasFile: !!d.storage_path,
+        docType: d.doc_type,
       });
       byKey.set(key, group);
     }
@@ -818,8 +900,10 @@ function AdminOperatingCards() {
       // A group's file is only shown as "the" file once every rider in it
       // points at the exact same storage object — otherwise there's no
       // single file to represent at the group level (groupFile stays null).
-      const docsForGroup = (cardDocsQuery.data ?? []).filter(
-        (d) => d.doc_type === group.docType && d.card_number?.trim() === group.cardNumber,
+      const docsForGroup = (cardDocsQuery.data ?? []).filter((d) =>
+        group.label
+          ? d.label?.trim() === group.label && d.card_number?.trim() === group.cardNumber
+          : d.doc_type === group.docType && d.card_number?.trim() === group.cardNumber,
       );
       const paths = new Set(docsForGroup.map((d) => d.storage_path));
       if (paths.size === 1) {
@@ -877,7 +961,7 @@ function AdminOperatingCards() {
     const rows = filteredGroups.flatMap((g) =>
       g.riders.map((r) => ({
         [t("operatingCards.tableCardNumber")]: g.cardNumber,
-        [t("operatingCards.tableType")]: t(docTypeKey(g.docType as DocType)),
+        [t("operatingCards.tableType")]: g.label ?? t(docTypeKey(g.docType as DocType)),
         [t("documents.plateNumberLabel")]: g.plateNumber ?? "",
         [t("documents.expiryDateLabel")]: g.expiryDate ?? "",
         [t("admin.riderNameLabel")]: r.riderName,
@@ -912,7 +996,7 @@ function AdminOperatingCards() {
     try {
       await deleteGroupFn({
         data: {
-          docType: deletingGroup.docType as "operating_card" | "operating_card_extra",
+          target: groupTarget(deletingGroup),
           cardNumber: deletingGroup.cardNumber,
         },
       });
@@ -934,7 +1018,7 @@ function AdminOperatingCards() {
     try {
       await removeRiderFn({
         data: {
-          docType: removingRider.docType as "operating_card" | "operating_card_extra",
+          target: removingRider.target,
           cardNumber: removingRider.cardNumber,
           riderId: removingRider.riderId,
         },
@@ -977,7 +1061,14 @@ function AdminOperatingCards() {
         </div>
       </div>
 
-      {canUploadSheet && <BulkUploadDialog open={bulkOpen} onOpenChange={setBulkOpen} t={t} />}
+      {canUploadSheet && (
+        <BulkUploadDialog
+          open={bulkOpen}
+          onOpenChange={setBulkOpen}
+          customLabels={customLabelsQuery.data ?? []}
+          t={t}
+        />
+      )}
       {editingGroup && companyId && (
         <EditCardGroupDialog
           group={editingGroup}
@@ -1141,7 +1232,7 @@ function AdminOperatingCards() {
                           {g.cardNumber}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm">
-                          {t(docTypeKey(g.docType as DocType))}
+                          {g.label ?? t(docTypeKey(g.docType as DocType))}
                         </TableCell>
                         <TableCell className="whitespace-nowrap font-mono text-sm" dir="ltr">
                           {g.plateNumber || "—"}
@@ -1188,7 +1279,7 @@ function AdminOperatingCards() {
                                     title={t("operatingCards.removeRiderButton")}
                                     onClick={() =>
                                       setRemovingRider({
-                                        docType: g.docType,
+                                        target: groupTarget(g),
                                         cardNumber: g.cardNumber,
                                         riderId: r.riderId,
                                         riderName: r.riderName,
@@ -1237,13 +1328,15 @@ function AdminOperatingCards() {
                               {g.fileRiderId && (
                                 <>
                                   <DropdownMenuItem
-                                    onClick={() => handleView(g.fileRiderId!, g.docType)}
+                                    onClick={() => handleView(g.fileRiderId!, fileDocTypeFor(g))}
                                   >
                                     <Eye className="h-3.5 w-3.5" />
                                     {t("documents.viewButton")}
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
-                                    onClick={() => handleDownload(g.fileRiderId!, g.docType)}
+                                    onClick={() =>
+                                      handleDownload(g.fileRiderId!, fileDocTypeFor(g))
+                                    }
                                   >
                                     <Download className="h-3.5 w-3.5" />
                                     {t("documents.downloadButton")}

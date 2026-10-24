@@ -540,6 +540,7 @@ function AddCustomDocument({
   const [expiryDate, setExpiryDate] = useState("");
   const [needsExpiry, setNeedsExpiry] = useState(true);
   const [cardNumber, setCardNumber] = useState("");
+  const [plateNumber, setPlateNumber] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const isOperatingCard = looksLikeOperatingCardLabel(label);
@@ -557,6 +558,7 @@ function AddCustomDocument({
       if (!cardNumber.trim()) return toast.error(t("documents.toastCardNumberRequired"));
       if (!isValidOperatingCardNumber(cardNumber))
         return toast.error(t("documents.toastCardNumberInvalid"));
+      if (!plateNumber.trim()) return toast.error(t("documents.toastPlateNumberRequired"));
     }
     const ok = await onUpload(
       newCustomDocType(),
@@ -564,7 +566,7 @@ function AddCustomDocument({
       needsExpiry ? expiryDate : null,
       isOperatingCard ? cardNumber.trim() : null,
       label.trim(),
-      null,
+      isOperatingCard ? plateNumber.trim() || null : null,
       needsExpiry,
     );
     if (ok) {
@@ -574,6 +576,7 @@ function AddCustomDocument({
       setExpiryDate("");
       setNeedsExpiry(true);
       setCardNumber("");
+      setPlateNumber("");
       if (fileRef.current) fileRef.current.value = "";
     }
   };
@@ -613,6 +616,17 @@ function AddCustomDocument({
             dir="ltr"
             maxLength={11}
             placeholder={t("documents.cardNumberPlaceholder")}
+          />
+        </div>
+      )}
+      {isOperatingCard && (
+        <div className="space-y-1">
+          <Label className="text-xs">{t("documents.plateNumberLabel")}</Label>
+          <Input
+            value={plateNumber}
+            onChange={(e) => setPlateNumber(e.target.value)}
+            dir="ltr"
+            maxLength={20}
           />
         </div>
       )}

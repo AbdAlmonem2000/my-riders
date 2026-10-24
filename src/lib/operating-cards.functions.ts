@@ -7,16 +7,84 @@ import {
   resolveDocumentsCompany,
 } from "@/lib/documents.functions";
 import {
+  isOperatingCardDocType,
   isValidExpiryDate,
   isValidOperatingCardNumber,
+  looksLikeOperatingCardLabel,
+  newCustomDocType,
   normalizeSheetDateToIso,
+  OPERATING_CARD_LABEL_PREFIX,
   OPERATING_CARD_NUMBER_FORMAT,
   OPERATING_CARD_TYPES,
 } from "@/lib/document-status";
 import { cellText, looksLikeIdentifier } from "@/lib/rider-identity";
 import { fetchAllRows } from "@/lib/supabase-paginate";
 
-const CardDocTypeSchema = z.enum(["operating_card", "operating_card_extra"]);
+// A card group's target: either one of the two fixed slots, or a custom
+// "كرت تشغيل <name>" family the admin already defined by naming a custom
+// document that way (see OPERATING_CARD_LABEL_PREFIX). Every custom
+// doc_type is a one-off per-rider UUID, so riders sharing a custom card can
+// only be matched by that exact label, never by doc_type — same rule
+// assertOperatingCardAssignment already uses.
+const CardTargetSchema = z.union([
+  z.object({
+    docType: z.enum(["operating_card", "operating_card_extra"]),
+    label: z.null().optional(),
+  }),
+  z.object({
+    docType: z.null().optional(),
+    label: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .refine(
+        looksLikeOperatingCardLabel,
+        `اسم الكرت المخصص لازم يبدأ بـ "${OPERATING_CARD_LABEL_PREFIX}"`,
+      ),
+  }),
+]);
+type CardTarget = z.infer<typeof CardTargetSchema>;
+
+function isFixedTarget(
+  target: CardTarget,
+): target is { docType: "operating_card" | "operating_card_extra"; label?: null } {
+  return target.docType != null;
+}
+
+// Applies a target's filter to a query — doc_type for a fixed slot, label
+// for a custom family. Untyped like the rest of this file's supabase params:
+// the query builder's type narrows per-call in a way a shared helper can't
+// usefully express.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function byTarget(query: any, target: CardTarget): any {
+  return isFixedTarget(target)
+    ? query.eq("doc_type", target.docType)
+    : query.eq("label", target.label);
+}
+
+// Resolves (and, the first time a rider is added to a custom family, mints)
+// the doc_type that rider's own row for this target should use. A fixed
+// slot is always its own literal; a custom family reuses whatever doc_type
+// this rider's own matching-label row already has (so re-adding them never
+// forks off a duplicate row), or mints a fresh "custom:<uuid>" otherwise.
+async function resolveCardDocType(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseAdmin: any,
+  companyId: string,
+  riderId: string,
+  target: CardTarget,
+): Promise<string> {
+  if (isFixedTarget(target)) return target.docType;
+  const { data: existing } = await supabaseAdmin
+    .from("rider_documents")
+    .select("doc_type")
+    .eq("company_id", companyId)
+    .eq("rider_id", riderId)
+    .eq("label", target.label)
+    .maybeSingle();
+  return existing?.doc_type ?? newCustomDocType();
+}
 
 interface RowError {
   rowNumber: number;
@@ -59,6 +127,33 @@ async function assertOperatingCardsAccess(
   }
 }
 
+// Every distinct custom "كرت تشغيل <name>" family currently in use anywhere
+// in the company — lets the bulk-upload dialog and the list page offer them
+// as a target the same way the one fixed slot is offered, without the admin
+// having to retype the exact label. A family only shows up here once at
+// least one rider already has a document named that way (via the regular
+// "add document" flow) — this never invents a new one on its own.
+export const listCustomOperatingCardLabels = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const companyId = await resolveDocumentsCompany(supabase, userId, false);
+    await assertOperatingCardsAccess(supabase, userId);
+
+    const rows = await fetchAllRows<{ label: string | null }>(({ from, to }) =>
+      supabase
+        .from("rider_documents")
+        .select("label")
+        .eq("company_id", companyId)
+        .ilike("label", `${OPERATING_CARD_LABEL_PREFIX}%`)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    return [...new Set(rows.map((r) => r.label?.trim()).filter((l): l is string => !!l))].sort(
+      (a, b) => a.localeCompare(b, "ar"),
+    );
+  });
+
 // Bulk-assigns operating cards from a spreadsheet: card number + the
 // rider's Iqama number + an optional plate number/expiry date, one row per
 // rider. No file is attached here — that's uploaded once per card number
@@ -68,7 +163,7 @@ async function assertOperatingCardsAccess(
 // sends — parsing/validation happens here, not in the browser.
 const RowSchema = z.record(z.string(), z.unknown());
 const BulkInput = z.object({
-  docType: CardDocTypeSchema,
+  target: CardTargetSchema,
   headers: z.array(z.string()),
   iqamaColumn: z.string().nullable(),
   cardNumberColumn: z.string(),
@@ -190,12 +285,14 @@ export const bulkAssignOperatingCards = createServerFn({ method: "POST" })
     // in documents.functions.ts), just evaluated for the whole sheet at once
     // against the full company (not RLS-limited), since a conflict in an
     // area the caller can't even see still has to block the import.
-    const { data: existingRaw } = await supabaseAdmin
-      .from("rider_documents")
-      .select("rider_id, card_number")
-      .eq("company_id", companyId)
-      .eq("doc_type", data.docType)
-      .not("card_number", "is", null);
+    const { data: existingRaw } = await byTarget(
+      supabaseAdmin
+        .from("rider_documents")
+        .select("rider_id, card_number")
+        .eq("company_id", companyId)
+        .not("card_number", "is", null),
+      data.target,
+    );
     const riderById = new Map((ridersRaw ?? []).map((r) => [r.id, r]));
 
     // A rider moving to a different card in this same sheet no longer
@@ -254,15 +351,36 @@ export const bulkAssignOperatingCards = createServerFn({ method: "POST" })
       throw new Error(groupErrors.map((e) => `الصف ${e.rowNumber}: ${e.message}`).join("\n"));
     }
 
+    // A custom family's doc_type is per-rider — reuse whatever this rider's
+    // own row with this exact label already has (resolved in one batched
+    // query, not per-row, since a sheet can carry hundreds of rows), or mint
+    // a fresh one the first time they're on this card family.
+    const target = data.target;
+    const docTypeByRider = new Map<string, string>();
+    if (!isFixedTarget(target)) {
+      const uniqueRiderIds = [...new Set(resolved.map((r) => r.riderId))];
+      const { data: existingCustomRows } = await supabaseAdmin
+        .from("rider_documents")
+        .select("rider_id, doc_type")
+        .eq("company_id", companyId)
+        .eq("label", target.label)
+        .in("rider_id", uniqueRiderIds);
+      for (const row of existingCustomRows ?? []) docTypeByRider.set(row.rider_id, row.doc_type);
+      for (const riderId of uniqueRiderIds) {
+        if (!docTypeByRider.has(riderId)) docTypeByRider.set(riderId, newCustomDocType());
+      }
+    }
+
     // Writes go through the caller's own request-scoped client, not the
     // service role — RLS still gates a restricted staff member to their
     // allowed_areas here, same as every other rider_documents write.
-    // storage_path/file_name/label are deliberately left out of the upsert
-    // payload so an already-uploaded file is never touched by this.
+    // storage_path/file_name are deliberately left out of the upsert payload
+    // so an already-uploaded file is never touched by this.
     const payload = resolved.map((r) => ({
       company_id: companyId,
       rider_id: r.riderId,
-      doc_type: data.docType,
+      doc_type: isFixedTarget(target) ? target.docType : docTypeByRider.get(r.riderId)!,
+      label: isFixedTarget(target) ? null : target.label,
       card_number: r.cardNumber,
       plate_number: r.plateNumber,
       expiry_date: r.expiryDate,
@@ -288,7 +406,7 @@ export const bulkAssignOperatingCards = createServerFn({ method: "POST" })
 // here too (not just client-side) since this is the one call that actually
 // turns a pending card into a real document.
 const GroupFileInput = z.object({
-  docType: CardDocTypeSchema,
+  target: CardTargetSchema,
   cardNumber: z.string().trim().min(1),
   storagePath: z.string().min(1),
   fileName: z.string().min(1),
@@ -307,26 +425,30 @@ export const uploadOperatingCardFile = createServerFn({ method: "POST" })
       throw new Error("تاريخ الانتهاء غير صحيح");
     }
 
-    const { data: prevRows } = await supabase
-      .from("rider_documents")
-      .select("storage_path")
-      .eq("company_id", companyId)
-      .eq("doc_type", data.docType)
-      .eq("card_number", data.cardNumber);
+    const prevResult: { data: { storage_path: string | null }[] | null } = await byTarget(
+      supabase
+        .from("rider_documents")
+        .select("storage_path")
+        .eq("company_id", companyId)
+        .eq("card_number", data.cardNumber),
+      data.target,
+    );
+    const prevRows = prevResult.data;
     const prevPaths = [...new Set((prevRows ?? []).map((r) => r.storage_path).filter(Boolean))];
 
-    const { data: updated, error } = await supabase
-      .from("rider_documents")
-      .update({
-        storage_path: data.storagePath,
-        file_name: data.fileName,
-        expiry_date: data.expiryDate,
-        uploaded_at: new Date().toISOString(),
-      })
-      .eq("company_id", companyId)
-      .eq("doc_type", data.docType)
-      .eq("card_number", data.cardNumber)
-      .select("id");
+    const { data: updated, error } = await byTarget(
+      supabase
+        .from("rider_documents")
+        .update({
+          storage_path: data.storagePath,
+          file_name: data.fileName,
+          expiry_date: data.expiryDate,
+          uploaded_at: new Date().toISOString(),
+        })
+        .eq("company_id", companyId)
+        .eq("card_number", data.cardNumber),
+      data.target,
+    ).select("id");
     if (error) throw new Error(error.message);
     if (!updated || updated.length === 0) throw new Error("رقم الكرت ده مش مرتبط بأي مندوب");
 
@@ -342,7 +464,7 @@ export const uploadOperatingCardFile = createServerFn({ method: "POST" })
 // Edits a card's plate number/expiry date, and optionally its card number
 // itself, without touching its file.
 const GroupMetaInput = z.object({
-  docType: CardDocTypeSchema,
+  target: CardTargetSchema,
   cardNumber: z.string().trim().min(1),
   plateNumber: z.string().trim().max(20).nullable(),
   expiryDate: z.string().nullable(),
@@ -374,22 +496,26 @@ export const updateOperatingCardGroup = createServerFn({ method: "POST" })
       }
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-      const { data: groupRows } = await supabaseAdmin
-        .from("rider_documents")
-        .select("rider_id")
-        .eq("company_id", companyId)
-        .eq("doc_type", data.docType)
-        .eq("card_number", data.cardNumber);
-      const groupRiderIds = [...new Set((groupRows ?? []).map((r) => r.rider_id))];
+      const groupResult: { data: { rider_id: string }[] | null } = await byTarget(
+        supabaseAdmin
+          .from("rider_documents")
+          .select("rider_id")
+          .eq("company_id", companyId)
+          .eq("card_number", data.cardNumber),
+        data.target,
+      );
+      const groupRiderIds = [...new Set((groupResult.data ?? []).map((r) => r.rider_id))];
       if (groupRiderIds.length === 0) throw new Error("رقم الكرت ده مش مرتبط بأي مندوب");
 
-      const { data: targetRows } = await supabaseAdmin
-        .from("rider_documents")
-        .select("rider_id")
-        .eq("company_id", companyId)
-        .eq("doc_type", data.docType)
-        .eq("card_number", newCardNumber);
-      const targetRiderIds = [...new Set((targetRows ?? []).map((r) => r.rider_id))].filter(
+      const targetResult: { data: { rider_id: string }[] | null } = await byTarget(
+        supabaseAdmin
+          .from("rider_documents")
+          .select("rider_id")
+          .eq("company_id", companyId)
+          .eq("card_number", newCardNumber),
+        data.target,
+      );
+      const targetRiderIds = [...new Set((targetResult.data ?? []).map((r) => r.rider_id))].filter(
         (id) => !groupRiderIds.includes(id),
       );
 
@@ -425,17 +551,18 @@ export const updateOperatingCardGroup = createServerFn({ method: "POST" })
       }
     }
 
-    const { data: updated, error } = await supabase
-      .from("rider_documents")
-      .update({
-        plate_number: plateNumber,
-        expiry_date: data.expiryDate,
-        ...(isRenumbering ? { card_number: newCardNumber } : {}),
-      })
-      .eq("company_id", companyId)
-      .eq("doc_type", data.docType)
-      .eq("card_number", data.cardNumber)
-      .select("id");
+    const { data: updated, error } = await byTarget(
+      supabase
+        .from("rider_documents")
+        .update({
+          plate_number: plateNumber,
+          expiry_date: data.expiryDate,
+          ...(isRenumbering ? { card_number: newCardNumber } : {}),
+        })
+        .eq("company_id", companyId)
+        .eq("card_number", data.cardNumber),
+      data.target,
+    ).select("id");
     if (error) throw new Error(error.message);
     if (!updated || updated.length === 0) throw new Error("رقم الكرت ده مش مرتبط بأي مندوب");
 
@@ -446,9 +573,9 @@ export const updateOperatingCardGroup = createServerFn({ method: "POST" })
 // migration) only ever got onto their documents because they were on a
 // card, so once they're off every operating card entirely (removed from
 // one, or their whole group deleted), it no longer represents anything and
-// leaves with the card. A rider still on another card (operating_card vs.
-// operating_card_extra) keeps their form, since it may still belong to that
-// other one.
+// leaves with the card. A rider still on another card — either fixed
+// (operating_card vs. operating_card_extra) or a custom "كرت تشغيل..."
+// family — keeps their form, since it may still belong to that other one.
 async function cleanupOrphanedCardForm(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
@@ -457,12 +584,17 @@ async function cleanupOrphanedCardForm(
 ) {
   const { data: remaining } = await supabase
     .from("rider_documents")
-    .select("id")
+    .select("doc_type, label")
     .eq("rider_id", riderId)
     .eq("company_id", companyId)
-    .in("doc_type", [...OPERATING_CARD_TYPES])
     .not("card_number", "is", null);
-  if (remaining && remaining.length > 0) return;
+  if (
+    (remaining ?? []).some((d: { doc_type: string; label: string | null }) =>
+      isOperatingCardDocType(d.doc_type, d.label),
+    )
+  ) {
+    return;
+  }
 
   const { data: formRow } = await supabase
     .from("rider_documents")
@@ -485,7 +617,7 @@ async function cleanupOrphanedCardForm(
 // their own document one by one in documents.tsx), plus the shared file
 // itself is removed from storage.
 const GroupDeleteInput = z.object({
-  docType: CardDocTypeSchema,
+  target: CardTargetSchema,
   cardNumber: z.string().trim().min(1),
 });
 
@@ -497,20 +629,25 @@ export const deleteOperatingCardGroup = createServerFn({ method: "POST" })
     const companyId = await resolveDocumentsCompany(supabase, userId, true);
     await assertOperatingCardsAccess(supabase, userId, "delete");
 
-    const { data: existing } = await supabase
-      .from("rider_documents")
-      .select("rider_id, storage_path")
-      .eq("company_id", companyId)
-      .eq("doc_type", data.docType)
-      .eq("card_number", data.cardNumber);
+    const existingResult: { data: { rider_id: string; storage_path: string | null }[] | null } =
+      await byTarget(
+        supabase
+          .from("rider_documents")
+          .select("rider_id, storage_path")
+          .eq("company_id", companyId)
+          .eq("card_number", data.cardNumber),
+        data.target,
+      );
+    const existing = existingResult.data;
 
-    const { data: deleted, error } = await supabase
-      .from("rider_documents")
-      .delete()
-      .eq("company_id", companyId)
-      .eq("doc_type", data.docType)
-      .eq("card_number", data.cardNumber)
-      .select("id");
+    const { data: deleted, error } = await byTarget(
+      supabase
+        .from("rider_documents")
+        .delete()
+        .eq("company_id", companyId)
+        .eq("card_number", data.cardNumber),
+      data.target,
+    ).select("id");
     if (error) throw new Error(error.message);
     if (!deleted || deleted.length === 0) throw new Error("رقم الكرت ده مش مرتبط بأي مندوب");
 
@@ -536,7 +673,7 @@ export const deleteOperatingCardGroup = createServerFn({ method: "POST" })
 // file is only removed from storage once no other rider on the card still
 // points at it.
 const RemoveRiderInput = z.object({
-  docType: CardDocTypeSchema,
+  target: CardTargetSchema,
   cardNumber: z.string().trim().min(1),
   riderId: z.string().uuid(),
 });
@@ -549,13 +686,14 @@ export const removeRiderFromOperatingCard = createServerFn({ method: "POST" })
     const companyId = await resolveDocumentsCompany(supabase, userId, true);
     await assertOperatingCardsAccess(supabase, userId, "delete");
 
-    const { data: existing } = await supabase
-      .from("rider_documents")
-      .select("id, storage_path, card_number")
-      .eq("rider_id", data.riderId)
-      .eq("doc_type", data.docType)
-      .eq("company_id", companyId)
-      .maybeSingle();
+    const { data: existing } = await byTarget(
+      supabase
+        .from("rider_documents")
+        .select("id, storage_path, card_number")
+        .eq("rider_id", data.riderId)
+        .eq("company_id", companyId),
+      data.target,
+    ).maybeSingle();
     if (!existing || existing.card_number !== data.cardNumber) {
       throw new Error("المندوب غير مرتبط بهذا الكرت");
     }
@@ -579,7 +717,7 @@ export const removeRiderFromOperatingCard = createServerFn({ method: "POST" })
 // already sitting on a DIFFERENT card of this same doc_type is rejected
 // rather than silently moved (they'd have to be removed from it first).
 const AddRiderInput = z.object({
-  docType: CardDocTypeSchema,
+  target: CardTargetSchema,
   cardNumber: z.string().trim().min(1),
   riderId: z.string().uuid(),
 });
@@ -591,6 +729,7 @@ export const addRiderToOperatingCard = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const companyId = await resolveDocumentsCompany(supabase, userId, true);
     await assertOperatingCardsAccess(supabase, userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: rider } = await supabase
       .from("riders")
@@ -600,13 +739,21 @@ export const addRiderToOperatingCard = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!rider) throw new Error("المندوب غير موجود");
 
-    const { data: existingRow } = await supabase
-      .from("rider_documents")
-      .select("card_number")
-      .eq("rider_id", data.riderId)
-      .eq("doc_type", data.docType)
-      .eq("company_id", companyId)
-      .maybeSingle();
+    const riderDocType = await resolveCardDocType(
+      supabaseAdmin,
+      companyId,
+      data.riderId,
+      data.target,
+    );
+
+    const { data: existingRow } = await byTarget(
+      supabase
+        .from("rider_documents")
+        .select("card_number")
+        .eq("rider_id", data.riderId)
+        .eq("company_id", companyId),
+      data.target,
+    ).maybeSingle();
     if (existingRow?.card_number && existingRow.card_number !== data.cardNumber) {
       throw new Error("المندوب مرتبط بالفعل بكرت تشغيل تاني من نفس النوع — لازم يتشال منه الأول");
     }
@@ -615,22 +762,38 @@ export const addRiderToOperatingCard = createServerFn({ method: "POST" })
       companyId,
       data.riderId,
       rider.area,
-      data.docType,
+      riderDocType,
       data.cardNumber,
+      isFixedTarget(data.target) ? null : data.target.label,
     );
 
-    const { data: groupRow } = await supabase
-      .from("rider_documents")
-      .select("rider_id, storage_path, file_name, expiry_date, plate_number, uploaded_at")
-      .eq("company_id", companyId)
-      .eq("doc_type", data.docType)
-      .eq("card_number", data.cardNumber);
+    const groupRowResult: {
+      data:
+        | {
+            rider_id: string;
+            storage_path: string | null;
+            file_name: string | null;
+            expiry_date: string | null;
+            plate_number: string | null;
+            uploaded_at: string | null;
+          }[]
+        | null;
+    } = await byTarget(
+      supabase
+        .from("rider_documents")
+        .select("rider_id, storage_path, file_name, expiry_date, plate_number, uploaded_at")
+        .eq("company_id", companyId)
+        .eq("card_number", data.cardNumber),
+      data.target,
+    );
+    const groupRow = groupRowResult.data;
 
     const { error } = await supabase.from("rider_documents").upsert(
       {
         company_id: companyId,
         rider_id: data.riderId,
-        doc_type: data.docType,
+        doc_type: riderDocType,
+        label: isFixedTarget(data.target) ? null : data.target.label,
         card_number: data.cardNumber,
         storage_path: groupRow?.[0]?.storage_path ?? null,
         file_name: groupRow?.[0]?.file_name ?? null,
