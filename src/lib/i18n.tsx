@@ -19,14 +19,14 @@ const dict = {
     en: 'Opened the photo in a new tab — right-click it and choose "Save image as"',
   },
 
-  "index.headerTitle": { ar: "نظام مندوبي", en: "My Riders System" },
+  "index.headerTitle": { ar: "نظام مندوبي", en: "My Rider System" },
   "index.adminLogin": { ar: "دخول الإدارة", en: "Admin Login" },
   "index.about": { ar: "عن النظام", en: "About" },
   "index.lookup": { ar: "استعلام مندوب", en: "Rider lookup" },
   "index.liveBadge": { ar: "نظام مباشر ومحدث شهرياً", en: "Live system, updated monthly" },
   "index.heroTitle": {
     ar: "تقارير المناديب من نظام مندوبي",
-    en: "Rider Reports From My Riders System",
+    en: "Rider Reports From My Rider System",
   },
   "index.heroDesc": {
     ar: "أدخل رقم الإقامة أو ID الخاص بك لعرض تقاريرك الشهرية من الأداء والرواتب.",

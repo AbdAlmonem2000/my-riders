@@ -37,7 +37,7 @@ export const ABOUT_HERO = {
   },
   desc: {
     ar: "نظام مندوبي منصة متكاملة لشركات التشغيل اللوجستي: ترفع تقارير الأداء والرواتب الشهرية، وتتابع مستندات المناديب وخطاباتهم، وتصل إلى كل مندوب مباشرة على هاتفه، من دون أوراق ولا ملفات متفرقة ولا رسائل ضائعة.",
-    en: "My Riders is an all-in-one platform for logistics operators: upload monthly performance and salary reports, track rider documents and letters, and reach every rider directly on their phone — no paperwork, scattered files or lost messages.",
+    en: "My Rider is an all-in-one platform for logistics operators: upload monthly performance and salary reports, track rider documents and letters, and reach every rider directly on their phone — no paperwork, scattered files or lost messages.",
   },
   primaryCta: { ar: "دخول الإدارة", en: "Admin login" },
   secondaryCta: { ar: "استعلام مندوب", en: "Rider lookup" },
@@ -63,7 +63,7 @@ export const ABOUT_HIGHLIGHTS: { icon: LucideIcon; label: Localized }[] = [
 ];
 
 export const ABOUT_PROBLEM = {
-  title: { ar: "لماذا مندوبي؟", en: "Why My Riders?" },
+  title: { ar: "لماذا مندوبي؟", en: "Why My Rider?" },
   intro: {
     ar: "إدارة عشرات أو مئات المناديب بالطرق التقليدية تستهلك وقتًا كبيرًا وتترك مجالًا للأخطاء. هذه هي المشكلات التي وُجد النظام لحلّها:",
     en: "Managing dozens or hundreds of riders the traditional way eats time and invites mistakes. These are the problems the system was built to solve:",
