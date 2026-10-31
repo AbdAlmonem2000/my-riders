@@ -1,0 +1,7 @@
+# The app now runs on Cloudflare Workers at https://my-rider.app.
+# This only keeps the old Netlify URL forwarding visitors there.
+[[redirects]]
+  from = "/*"
+  to = "https://my-rider.app/:splat"
+  status = 301
+  force = true
