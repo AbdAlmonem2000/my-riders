@@ -1,0 +1,14 @@
+// Base Cloudflare Workers config. Nitro merges this into the generated
+// .output/server/wrangler.json at build time (main/assets are set by Nitro).
+{
+  "name": "my-rider",
+  // Pinned: Nitro defaults to today's date, which Cloudflare rejects as
+  // "in the future" when the build machine's timezone is ahead of UTC.
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "routes": [
+    { "pattern": "my-rider.app", "custom_domain": true },
+    { "pattern": "www.my-rider.app", "custom_domain": true },
+  ],
+}
