@@ -870,6 +870,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let isStaff = false;
     let overviewAccess = true;
     let ridersAccess: Tier = "full";
+    let ridersCreateAccess = true;
     let ridersDeleteAccess = true;
     let ridersBlockAccess = true;
     let reportsAccess: Tier = "full";
@@ -910,6 +911,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         const [
           { data: overview },
           { data: riders },
+          { data: ridersCreate },
           { data: ridersDelete },
           { data: ridersBlock },
           { data: reports },
@@ -926,6 +928,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         ] = await Promise.all([
           supabase.rpc("get_member_overview_access", { _user_id: userId }),
           supabase.rpc("get_member_riders_access", { _user_id: userId }),
+          supabase.rpc("get_member_riders_create_access", { _user_id: userId }),
           supabase.rpc("get_member_riders_delete_access", { _user_id: userId }),
           supabase.rpc("get_member_riders_block_access", { _user_id: userId }),
           supabase.rpc("get_member_reports_access", { _user_id: userId }),
@@ -942,6 +945,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         ]);
         overviewAccess = !!overview;
         ridersAccess = (riders as Tier | null) ?? "none";
+        ridersCreateAccess = !!ridersCreate;
         ridersDeleteAccess = !!ridersDelete;
         ridersBlockAccess = !!ridersBlock;
         reportsAccess = (reports as Tier | null) ?? "none";
@@ -1036,6 +1040,8 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     // restricts on its own — each is a per-staff-member permission,
     // meaningful only once ridersAccess (after the plan ceiling above) is
     // 'full'. A real admin (or the super admin) always has both.
+    const canCreateRiders =
+      isSuperAdmin || (!isStaff && !!companyId) || (ridersAccess === "full" && ridersCreateAccess);
     const canDeleteRiders =
       isSuperAdmin || (!isStaff && !!companyId) || (ridersAccess === "full" && ridersDeleteAccess);
     const canBlockRiders =
@@ -1052,6 +1058,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       overviewAccess,
       overviewDailyAccess,
       ridersAccess,
+      canCreateRiders,
       canDeleteRiders,
       canBlockRiders,
       reportsAccess,

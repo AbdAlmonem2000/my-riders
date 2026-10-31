@@ -74,6 +74,7 @@ import { updateDashboardFilters } from "@/lib/dashboard-filters.functions";
 import { errText } from "@/lib/error-text";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import { fetchAllRows } from "@/lib/supabase-paginate";
+import { useRiderReportsRows } from "@/lib/use-rider-reports-rows";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   component: AdminOverview,
@@ -1552,55 +1553,13 @@ function AdminOverview() {
     return `${fromLabel} — ${toLabel}`;
   }, [hasPrevious, prevFromMs, prevToMs, lang]);
 
-  const currentRowsQuery = useQuery({
-    queryKey: ["rider-reports-rows", "range", currentReportIds],
-    enabled: currentReportIds.length > 0,
-    queryFn: async () => {
-      // A plain, unpaginated select here silently truncated a wide date
-      // range (many riders × many days can run well past a thousand rows)
-      // at whatever row cap PostgREST applies by default — a day whose
-      // rows got cut off this way simply vanished from every chart/total
-      // that reads this query, with no error anywhere to notice it by.
-      // Paginating through every row, ordered by id for a stable,
-      // non-overlapping cursor, means the range always comes back whole
-      // regardless of how many riders/days it spans.
-      const pageSize = 1000;
-      const rows: { rider_id: string; report_id: string; data: unknown; columns: unknown }[] = [];
-      for (let from = 0; ; from += pageSize) {
-        const { data, error } = await supabase
-          .from("rider_reports")
-          .select("rider_id, report_id, data, columns")
-          .in("report_id", currentReportIds)
-          .order("id", { ascending: true })
-          .range(from, from + pageSize - 1);
-        if (error) throw error;
-        rows.push(...(data ?? []));
-        if (!data || data.length < pageSize) break;
-      }
-      return rows;
-    },
-  });
-
-  const previousRowsQuery = useQuery({
-    queryKey: ["rider-reports-rows", "range", previousReportIds],
-    enabled: previousReportIds.length > 0,
-    queryFn: async () => {
-      const pageSize = 1000;
-      const rows: { rider_id: string; data: unknown }[] = [];
-      for (let from = 0; ; from += pageSize) {
-        const { data, error } = await supabase
-          .from("rider_reports")
-          .select("rider_id, data")
-          .in("report_id", previousReportIds)
-          .order("id", { ascending: true })
-          .range(from, from + pageSize - 1);
-        if (error) throw error;
-        rows.push(...(data ?? []));
-        if (!data || data.length < pageSize) break;
-      }
-      return rows;
-    },
-  });
+  // See use-rider-reports-rows.ts for why this is cached per report_id
+  // instead of per date-range (shared with the monthly overview page, which
+  // has the exact same caching concern over a different kind of selection).
+  const { currentRowsQuery, previousRowsQuery } = useRiderReportsRows(
+    currentReportIds,
+    previousReportIds,
+  );
 
   const riderMetaById = useMemo(() => {
     const map = new Map<

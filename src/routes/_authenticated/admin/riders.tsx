@@ -709,12 +709,14 @@ function AdminRiders() {
     queryFn: () => isAdminFn(),
   });
   const isStaff = !!adminCheck.data?.isStaff;
-  // Roster upload/delete and adding brand-new riders stay admin-only
-  // regardless of riders_access — those are whole-directory operations, not
-  // scoped to a single rider. Editing an existing rider (data, password,
-  // block/unblock) is allowed for staff whose riders_access is 'full'.
+  // Roster upload/delete stays admin-only regardless of riders_access —
+  // that's a whole-directory operation, not scoped to a single rider.
+  // Editing an existing rider (data, password, block/unblock) is allowed
+  // for staff whose riders_access is 'full'; adding a brand-new one is a
+  // further step up, gated by its own riders_create_access permission.
   const canManageRoster = !isStaff;
   const canEditRiders = !isStaff || adminCheck.data?.ridersAccess === "full";
+  const canCreateRiders = !!adminCheck.data?.canCreateRiders;
   const canDeleteRiders = !!adminCheck.data?.canDeleteRiders;
   const canBlockRiders = !!adminCheck.data?.canBlockRiders;
 
@@ -1189,7 +1191,7 @@ function AdminRiders() {
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-                {canManageRoster && (
+                {(canManageRoster || canCreateRiders) && (
                   <RiderFormDialog
                     mode="create"
                     saving={savingRiderId === "new"}

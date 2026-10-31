@@ -84,25 +84,28 @@ export async function resolveActiveCompany(
   return companyId as string;
 }
 
-// Resolves the caller's company for editing/blocking a rider specifically.
-// Unlike resolveActiveCompany (admin-only — still used for roster upload,
-// creating brand-new riders, and everything else in this file), this also
-// accepts a staff account (role 'user') whose riders_access is 'full'.
-// Doesn't check allowed_areas itself — that's enforced by the RLS UPDATE
-// policy on `riders`, which silently touches 0 rows for an out-of-area
-// rider, surfaced below as the same "not found" error a wrong company id
-// would give.
+// Resolves the caller's company for creating/editing/blocking a rider
+// specifically. Unlike resolveActiveCompany (admin-only — still used for
+// roster upload and everything else in this file), this also accepts a
+// staff account (role 'user') whose riders_access is 'full'. Doesn't check
+// allowed_areas itself — that's enforced by the RLS INSERT/UPDATE policies
+// on `riders`. The UPDATE policy's USING clause silently touches 0 rows for
+// an out-of-area rider, surfaced below as the same "not found" error a wrong
+// company id would give; the INSERT policy only has a WITH CHECK clause, so
+// an out-of-area rider instead raises a real RLS-violation error (code
+// 42501), caught in createRider below and turned into the same kind of
+// friendly message.
 //
-// requireDelete/requireBlock each additionally require their own dedicated
-// permission for a staff account — deleting or blocking a rider is a step
-// up from editing one, so a company admin can grant riders_access='full'
-// without automatically trusting that staff member to also remove or block
-// a rider.
+// requireCreate/requireDelete/requireBlock each additionally require their
+// own dedicated permission for a staff account — adding, deleting, or
+// blocking a rider is each a step up from editing one, so a company admin
+// can grant riders_access='full' without automatically trusting that staff
+// member with any of the three.
 async function resolveRidersCompany(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   userId: string,
-  options: { requireDelete?: boolean; requireBlock?: boolean } = {},
+  options: { requireCreate?: boolean; requireDelete?: boolean; requireBlock?: boolean } = {},
 ): Promise<string> {
   const { data: companyId } = await supabase.rpc("get_member_company", { _user_id: userId });
   if (!companyId) {
@@ -121,6 +124,14 @@ async function resolveRidersCompany(
     });
     if (access !== "full") {
       throw new Error("غير مصرح: صلاحيتك على المناديب للعرض فقط");
+    }
+    if (options.requireCreate) {
+      const { data: canCreate } = await supabase.rpc("get_member_riders_create_access", {
+        _user_id: userId,
+      });
+      if (!canCreate) {
+        throw new Error("غير مصرح: ليس لديك صلاحية إضافة مناديب جدد");
+      }
     }
     if (options.requireDelete) {
       const { data: canDelete } = await supabase.rpc("get_member_riders_delete_access", {
@@ -451,7 +462,7 @@ export const createRider = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => RiderFieldsInput.parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const companyId = await resolveActiveCompany(supabase, userId);
+    const companyId = await resolveRidersCompany(supabase, userId, { requireCreate: true });
     const { iqama, idNumber, name, photo, area, extra } = normalizeRiderFields(data);
 
     const { data: existingRaw } = await supabase
@@ -479,7 +490,18 @@ export const createRider = createServerFn({ method: "POST" })
       })
       .select("id")
       .single();
-    if (error || !created) throw new Error(error?.message ?? "فشل إضافة المندوب");
+    if (error || !created) {
+      // Unlike the UPDATE policy (which just silently matches 0 rows for an
+      // out-of-area rider), INSERT only has a WITH CHECK clause, so Postgres
+      // raises an actual RLS violation here (code 42501) instead of quietly
+      // no-op'ing — surface that one case with the same friendly message the
+      // allowed-areas restriction gets everywhere else, instead of leaking
+      // the raw "new row violates row-level security policy" text.
+      if (error?.code === "42501") {
+        throw new Error("غير مصرح: هذه المنطقة خارج نطاق صلاحيتك");
+      }
+      throw new Error(error?.message ?? "فشل إضافة المندوب");
+    }
     return { id: created.id };
   });
 

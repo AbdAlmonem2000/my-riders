@@ -1436,6 +1436,10 @@ const dict = {
     ar: "عرض وتعديل البيانات وكلمة المرور",
     en: "View, edit data & reset password",
   },
+  "users.ridersCreateAccessLabel": {
+    ar: "يقدر يضيف مناديب جدد",
+    en: "Can add new riders",
+  },
   "users.ridersDeleteAccessLabel": {
     ar: "يقدر يحذف المناديب",
     en: "Can delete riders",

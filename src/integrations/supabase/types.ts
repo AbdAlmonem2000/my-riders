@@ -742,6 +742,7 @@ export type Database = {
           reports_access: string
           riders_access: string
           riders_block_access: boolean
+          riders_create_access: boolean
           riders_delete_access: boolean
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
@@ -766,6 +767,7 @@ export type Database = {
           reports_access?: string
           riders_access?: string
           riders_block_access?: boolean
+          riders_create_access?: boolean
           riders_delete_access?: boolean
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
@@ -790,6 +792,7 @@ export type Database = {
           reports_access?: string
           riders_access?: string
           riders_block_access?: boolean
+          riders_create_access?: boolean
           riders_delete_access?: boolean
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
@@ -908,6 +911,7 @@ export type Database = {
           reports_access: string
           riders_access: string
           riders_block_access: boolean
+          riders_create_access: boolean
           riders_delete_access: boolean
           user_id: string
         }[]
@@ -928,6 +932,7 @@ export type Database = {
       }
       get_member_overview_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_riders_access: { Args: { _user_id: string }; Returns: string }
+      get_member_riders_create_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_riders_delete_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_riders_block_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_reports_access: { Args: { _user_id: string }; Returns: string }

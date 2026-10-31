@@ -30,6 +30,7 @@ const PermissionsSchema = z.object({
   // riders.functions.ts's resolveRidersCompany, not here, so saving it
   // while ridersAccess isn't 'full' is harmless (it just has no effect
   // until the admin also grants full riders access).
+  ridersCreateAccess: z.boolean(),
   ridersDeleteAccess: z.boolean(),
   ridersBlockAccess: z.boolean(),
   reportsAccess: TieredAccessSchema,
@@ -71,6 +72,7 @@ export const listCompanyStaff = createServerFn({ method: "GET" })
         allowedAreas: (r.allowed_areas as string[] | null) ?? null,
         overviewAccess: !!r.overview_access,
         ridersAccess: r.riders_access as "none" | "view" | "full",
+        ridersCreateAccess: !!r.riders_create_access,
         ridersDeleteAccess: !!r.riders_delete_access,
         ridersBlockAccess: !!r.riders_block_access,
         reportsAccess: r.reports_access as "none" | "view" | "full",
@@ -130,6 +132,7 @@ export const createCompanyStaff = createServerFn({ method: "POST" })
       allowed_areas: data.allowedAreas,
       overview_access: data.overviewAccess,
       riders_access: data.ridersAccess,
+      riders_create_access: data.ridersCreateAccess,
       riders_delete_access: data.ridersDeleteAccess,
       riders_block_access: data.ridersBlockAccess,
       reports_access: data.reportsAccess,
@@ -165,6 +168,7 @@ export const updateCompanyStaffPermissions = createServerFn({ method: "POST" })
         allowed_areas: data.allowedAreas,
         overview_access: data.overviewAccess,
         riders_access: data.ridersAccess,
+        riders_create_access: data.ridersCreateAccess,
         riders_delete_access: data.ridersDeleteAccess,
         riders_block_access: data.ridersBlockAccess,
         reports_access: data.reportsAccess,

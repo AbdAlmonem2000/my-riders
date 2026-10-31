@@ -82,8 +82,9 @@ interface Permissions {
   allowedAreas: string[] | null;
   overviewAccess: boolean;
   ridersAccess: TieredAccess;
-  // Only meaningful when ridersAccess is 'full' — deleting/blocking a rider
-  // is each a step up from editing one.
+  // Only meaningful when ridersAccess is 'full' — adding/deleting/blocking
+  // a rider is each a step up from editing one.
+  ridersCreateAccess: boolean;
   ridersDeleteAccess: boolean;
   ridersBlockAccess: boolean;
   reportsAccess: TieredAccess;
@@ -209,6 +210,7 @@ function PermissionsFields({
             onChange({
               ...value,
               ridersAccess: v,
+              ridersCreateAccess: v === "full" && value.ridersCreateAccess,
               ridersDeleteAccess: v === "full" && value.ridersDeleteAccess,
               ridersBlockAccess: v === "full" && value.ridersBlockAccess,
             })
@@ -217,6 +219,13 @@ function PermissionsFields({
         />
         {value.ridersAccess === "full" && (
           <>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox
+                checked={value.ridersCreateAccess}
+                onCheckedChange={(v) => onChange({ ...value, ridersCreateAccess: !!v })}
+              />
+              {t("users.ridersCreateAccessLabel")}
+            </label>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <Checkbox
                 checked={value.ridersDeleteAccess}
@@ -353,6 +362,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   allowedAreas: null,
   overviewAccess: false,
   ridersAccess: "none",
+  ridersCreateAccess: false,
   ridersDeleteAccess: false,
   ridersBlockAccess: false,
   reportsAccess: "none",
@@ -374,6 +384,7 @@ const ALL_ACCESS_PERMISSIONS: Permissions = {
   allowedAreas: null,
   overviewAccess: true,
   ridersAccess: "full",
+  ridersCreateAccess: true,
   ridersDeleteAccess: true,
   ridersBlockAccess: true,
   reportsAccess: "full",
@@ -851,6 +862,7 @@ function AdminUsers() {
                               <Badge variant="secondary" className="text-[10px]">
                                 {t("admin.navRiders")}:{" "}
                                 {tierLabel(s.ridersAccess, "users.ridersAccessFullLabel", t)}
+                                {s.ridersCreateAccess && ` + ${t("users.ridersCreateAccessLabel")}`}
                                 {s.ridersDeleteAccess && ` + ${t("users.ridersDeleteAccessLabel")}`}
                                 {s.ridersBlockAccess && ` + ${t("users.ridersBlockAccessLabel")}`}
                               </Badge>
