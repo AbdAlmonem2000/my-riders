@@ -245,10 +245,7 @@ const UnifiedNumberSchema = z
 const CommercialRegistrationSchema = z
   .string()
   .trim()
-  .refine(
-    (v) => v === "" || /^10\d{8}$/.test(v),
-    "رقم السجل التجاري لازم يكون 10 أرقام ويبدأ بـ 10",
-  )
+  .refine((v) => v === "" || /^1\d{9}$/.test(v), "رقم السجل التجاري لازم يكون 10 أرقام ويبدأ بـ 1")
   .nullable();
 
 export const updateCompanyRegistration = createServerFn({ method: "POST" })

@@ -159,8 +159,17 @@ export function normalizeSheetDateToIso(raw: string): string | null {
 }
 
 export const ALLOWED_DOC_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf"];
+export const ALLOWED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png"];
 
 export function hasAllowedDocExtension(fileName: string): boolean {
   const lower = fileName.toLowerCase();
   return ALLOWED_DOC_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+// personal_photo is mirrored straight into riders.photo_url and rendered as
+// a plain <img src> everywhere (roster, riders list, letters) — unlike every
+// other doc slot, a PDF here would just be a broken image, so it's image-only.
+export function hasAllowedImageExtension(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return ALLOWED_IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }

@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   docTypeNeedsExpiry,
   hasAllowedDocExtension,
+  hasAllowedImageExtension,
   isCustomDocType,
   isKnownDocType,
   isOperatingCardDocType,
@@ -174,6 +175,28 @@ export async function deleteDocumentFileIfOrphaned(
   await supabaseAdmin.storage.from("rider-documents").remove([storagePath]);
 }
 
+// Keeps the rider's public profile photo (riders.photo_url, in the public
+// rider-photos bucket — read as a plain <img src> everywhere: roster,
+// riders list, letters, the rider's own page) and the private "الصورة
+// الشخصية" document (rider_documents, behind a signed URL like every other
+// document) showing the exact same image, by copying the bytes across
+// buckets whenever either side changes. Called from here (admin uploads the
+// document) and from rider-photo.functions.ts (the rider uploads their own
+// photo from their public page) — the two directions this needs to run in.
+export async function copyBetweenBuckets(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseAdmin: any,
+  fromBucket: string,
+  fromPath: string,
+  toBucket: string,
+  toPath: string,
+): Promise<void> {
+  const { error } = await supabaseAdmin.storage
+    .from(fromBucket)
+    .copy(fromPath, toPath, { destinationBucket: toBucket });
+  if (error) throw new Error(error.message ?? "تعذر نسخ الصورة");
+}
+
 const UploadInput = z.object({
   riderId: z.string().uuid(),
   docType: DocTypeSchema,
@@ -208,6 +231,9 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
     if (!hasAllowedDocExtension(data.fileName)) {
       throw new Error("امتداد الملف غير مسموح — يُقبل فقط JPG أو PNG أو PDF");
     }
+    if (data.docType === "personal_photo" && !hasAllowedImageExtension(data.fileName)) {
+      throw new Error("الصورة الشخصية لازم تكون JPG أو PNG فقط");
+    }
 
     const { data: rider } = await supabase
       .from("riders")
@@ -216,6 +242,17 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
       .eq("company_id", companyId)
       .maybeSingle();
     if (!rider) throw new Error("المندوب غير موجود");
+
+    // storagePath is client-supplied — the client's own upload just before
+    // this call is RLS-scoped to the admin's company, but nothing stops a
+    // caller from pointing this at some OTHER existing object instead (e.g.
+    // another company's doc, if its path is guessed). Requiring the prefix
+    // this company/rider's own uploads always use keeps the DB row — and,
+    // for personal_photo, the public-bucket mirror below — pinned to a file
+    // this admin was actually allowed to write.
+    if (!data.storagePath.startsWith(`${companyId}/${data.riderId}/`)) {
+      throw new Error("مسار الملف غير صالح");
+    }
 
     const { data: prev } = await supabase
       .from("rider_documents")
@@ -275,6 +312,31 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
     if (prev?.storage_path && prev.storage_path !== data.storagePath) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       await supabaseAdmin.storage.from("rider-documents").remove([prev.storage_path]);
+    }
+
+    // The "personal photo" document IS the rider's profile photo — mirror
+    // it into the public rider-photos bucket and point riders.photo_url at
+    // it, so it shows up as the same image everywhere that field is read
+    // (roster, riders list, the rider's own page), not just in Documents.
+    if (data.docType === "personal_photo") {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const extMatch = /\.[a-zA-Z0-9]+$/.exec(data.fileName);
+      const ext = extMatch ? extMatch[0].toLowerCase() : ".jpg";
+      const publicPath = `${data.riderId}-${Date.now()}${ext}`;
+      await copyBetweenBuckets(
+        supabaseAdmin,
+        "rider-documents",
+        data.storagePath,
+        "rider-photos",
+        publicPath,
+      );
+      const { data: pub } = supabaseAdmin.storage.from("rider-photos").getPublicUrl(publicPath);
+      // A new photo was just uploaded — any rotation set to correct the OLD
+      // image (updateRiderPhotoRotation) no longer applies to it.
+      await supabaseAdmin
+        .from("riders")
+        .update({ photo_url: pub.publicUrl, photo_rotation: 0 })
+        .eq("id", data.riderId);
     }
 
     return { ok: true };

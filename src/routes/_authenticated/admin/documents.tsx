@@ -85,6 +85,7 @@ import {
   computeDocStatus,
   docTypeNeedsExpiry,
   hasAllowedDocExtension,
+  hasAllowedImageExtension,
   isKnownDocType,
   isOperatingCardDocType,
   isValidExpiryDate,
@@ -251,6 +252,8 @@ function DocumentSlot({
     if (!file) return toast.error(t("documents.toastFileRequired"));
     if (!hasAllowedDocExtension(file.name))
       return toast.error(t("documents.toastInvalidExtension"));
+    if (docType === "personal_photo" && !hasAllowedImageExtension(file.name))
+      return toast.error(t("documents.toastInvalidImageExtension"));
     if (needsExpiry && (!expiryDate || !isValidExpiryDate(expiryDate))) {
       return toast.error(t("documents.toastInvalidDate"));
     }
@@ -422,7 +425,11 @@ function DocumentSlot({
             <Input
               ref={fileRef}
               type="file"
-              accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+              accept={
+                docType === "personal_photo"
+                  ? ".jpg,.jpeg,.png,image/jpeg,image/png"
+                  : ".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+              }
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </div>

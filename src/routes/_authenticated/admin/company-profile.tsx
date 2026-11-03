@@ -407,7 +407,7 @@ function RegistrationSection({
     if (unified && !/^7\d{9}$/.test(unified)) {
       return toast.error(t("companyProfile.toastUnifiedNumberInvalid"));
     }
-    if (cr && !/^10\d{8}$/.test(cr)) {
+    if (cr && !/^1\d{9}$/.test(cr)) {
       return toast.error(t("companyProfile.toastCommercialRegistrationInvalid"));
     }
     setSaving(true);

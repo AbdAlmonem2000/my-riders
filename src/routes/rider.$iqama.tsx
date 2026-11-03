@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -10,6 +11,7 @@ import {
   BellRing,
   Building2,
   Calendar,
+  Camera,
   Eye,
   EyeOff,
   FileSignature,
@@ -49,6 +51,8 @@ import { useRiderPush } from "@/lib/push-client";
 import { formatDate, formatDateTime } from "@/lib/date-format";
 import { monthLabel } from "@/lib/month-label";
 import { isNumericLike, metricNumber } from "@/lib/rider-metrics";
+import { errText } from "@/lib/error-text";
+import { requestRiderPhotoUpload, confirmRiderPhotoUpload } from "@/lib/rider-photo.functions";
 import { useLanguage, type Lang, type TranslationKey } from "@/lib/i18n";
 
 const search = z.object({
@@ -308,6 +312,100 @@ function CompanyLogo({
       className={`flex items-center justify-center rounded-lg border border-border bg-primary/10 text-primary ${className ?? ""}`}
     >
       <Building2 className="h-1/2 w-1/2" />
+    </div>
+  );
+}
+
+// Lets the rider replace their own photo from this page — verified by the
+// same password they already unlocked with (riders have no Supabase Auth
+// session, so this goes through the password-gated server functions in
+// rider-photo.functions.ts rather than an authenticated upload). The new
+// photo also becomes the "الصورة الشخصية" document an admin sees in
+// Documents, and vice versa — see those functions' own comments.
+function RiderOwnPhotoUpload({
+  riderId,
+  password,
+  photoUrl,
+  photoRotation,
+  riderName,
+  onUploaded,
+  t,
+}: {
+  riderId: string;
+  password: string;
+  photoUrl: string | null;
+  photoRotation: number;
+  riderName: string;
+  onUploaded: () => void;
+  t: (key: TranslationKey) => string;
+}) {
+  const requestUploadFn = useServerFn(requestRiderPhotoUpload);
+  const confirmUploadFn = useServerFn(confirmRiderPhotoUpload);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (fileRef.current) fileRef.current.value = "";
+    if (!file) return;
+    const extMatch = /\.(jpe?g|png)$/i.exec(file.name);
+    if (!extMatch) {
+      toast.error(t("rider.photoInvalidExtension"));
+      return;
+    }
+    const fileExt = extMatch[0].toLowerCase() as ".jpg" | ".jpeg" | ".png";
+    setUploading(true);
+    try {
+      const { path, token } = await requestUploadFn({
+        data: { riderId, password, fileExt },
+      });
+      const { error: upErr } = await supabase.storage
+        .from("rider-photos")
+        .uploadToSignedUrl(path, token, file);
+      if (upErr) throw new Error(upErr.message);
+      await confirmUploadFn({ data: { riderId, password, path } });
+      toast.success(t("rider.photoUpdated"));
+      onUploaded();
+    } catch (err) {
+      toast.error(errText(err, t("rider.photoUploadFailed")));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="relative shrink-0">
+      {photoUrl ? (
+        <RiderPhoto
+          riderId={riderId}
+          src={photoUrl}
+          alt={riderName}
+          rotation={photoRotation}
+          className="h-14 w-14 rounded-full border border-border"
+        />
+      ) : (
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <User className="h-6 w-6" />
+        </div>
+      )}
+      <label
+        title={t("rider.changePhotoButton")}
+        className="absolute -end-1 -bottom-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-primary"
+      >
+        {uploading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Camera className="h-3.5 w-3.5" />
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+          className="hidden"
+          disabled={uploading}
+          onChange={handleFile}
+        />
+      </label>
     </div>
   );
 }
@@ -892,19 +990,17 @@ function RiderPage() {
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-3">
-                    {activeRider.rider_photo_url ? (
-                      <RiderPhoto
-                        riderId={activeRider.rider_id}
-                        src={activeRider.rider_photo_url}
-                        alt={activeRider.rider_name ?? ""}
-                        rotation={activeRider.rider_photo_rotation}
-                        className="h-14 w-14 shrink-0 rounded-full border border-border"
-                      />
-                    ) : (
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <User className="h-6 w-6" />
-                      </div>
-                    )}
+                    <RiderOwnPhotoUpload
+                      riderId={activeRider.rider_id}
+                      password={activePw}
+                      photoUrl={activeRider.rider_photo_url}
+                      photoRotation={activeRider.rider_photo_rotation}
+                      riderName={activeRider.rider_name ?? ""}
+                      onUploaded={() =>
+                        queryClient.invalidateQueries({ queryKey: ["rider-lookup", iqama] })
+                      }
+                      t={t}
+                    />
                     <div>
                       <div className="text-sm text-muted-foreground">{t("rider.riderLabel")}</div>
                       <div className="font-semibold">{activeRider.rider_name || "—"}</div>
@@ -1076,14 +1172,9 @@ function ReportView({
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 space-y-6 duration-500">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm text-muted-foreground">{t("rider.reportLabel")}</div>
-          <h2 className="text-2xl font-bold">{monthLabel(data.month, data.year, lang)}</h2>
-        </div>
-        <Badge variant="outline" className="font-mono text-xs">
-          {data.file_name}
-        </Badge>
+      <div>
+        <div className="text-sm text-muted-foreground">{t("rider.reportLabel")}</div>
+        <h2 className="text-2xl font-bold">{monthLabel(data.month, data.year, lang)}</h2>
       </div>
 
       {data.note && (

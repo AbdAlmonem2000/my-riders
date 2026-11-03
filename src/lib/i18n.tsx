@@ -156,9 +156,13 @@ const dict = {
   "rider.reportLabel": { ar: "تقرير", en: "Report" },
   "rider.combinedFileLabel": { ar: "{count} تقارير مجمعة", en: "{count} combined reports" },
   "rider.allMonthData": { ar: "جميع بيانات الشهر", en: "All monthly data" },
-  "rider.metricTotal": { ar: "إجمالي الطلبات", en: "Total Orders" },
-  "rider.metricHours": { ar: "ساعات العمل", en: "Work Hours" },
-  "rider.metricSalary": { ar: "صافي الراتب", en: "Net Salary" },
+  "rider.changePhotoButton": { ar: "غيّر صورتك", en: "Change your photo" },
+  "rider.photoUpdated": { ar: "تم تحديث الصورة", en: "Photo updated" },
+  "rider.photoUploadFailed": { ar: "فشل رفع الصورة", en: "Failed to upload the photo" },
+  "rider.photoInvalidExtension": {
+    ar: "لازم تكون الصورة JPG أو PNG",
+    en: "The photo must be JPG or PNG",
+  },
   "rider.noteTitle": { ar: "ملحوظة من الشركة", en: "Note from the company" },
   "rider.riderInfo": { ar: "بيانات المندوب", en: "Rider details" },
   "rider.notificationsTitle": { ar: "الإشعارات", en: "Notifications" },
@@ -980,6 +984,10 @@ const dict = {
     ar: "الملف يجب أن يكون JPG أو PNG أو PDF فقط",
     en: "The file must be JPG, PNG, or PDF only",
   },
+  "documents.toastInvalidImageExtension": {
+    ar: "الصورة الشخصية يجب أن تكون JPG أو PNG فقط",
+    en: "The personal photo must be JPG or PNG only",
+  },
   "documents.toastExpiryRequired": { ar: "أدخل تاريخ الانتهاء", en: "Enter the expiry date" },
   "documents.toastInvalidDate": {
     ar: "التاريخ غير صحيح — تأكد إنك كتبت السنة كاملة (مثال: 2027 مش 27)",
@@ -1315,8 +1323,8 @@ const dict = {
     en: "The unified number must be 10 digits starting with 7",
   },
   "companyProfile.toastCommercialRegistrationInvalid": {
-    ar: "رقم السجل التجاري لازم يكون 10 أرقام ويبدأ بـ 10",
-    en: "The commercial registration must be 10 digits starting with 10",
+    ar: "رقم السجل التجاري لازم يكون 10 أرقام ويبدأ بـ 1",
+    en: "The commercial registration must be 10 digits starting with 1",
   },
   "companyProfile.toastRegistrationFailed": {
     ar: "فشل حفظ البيانات",

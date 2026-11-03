@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -1301,6 +1301,7 @@ function RiderSearchCard({
 
 function AdminOverview() {
   const { t, lang } = useLanguage();
+  const queryClient = useQueryClient();
 
   const isAdminFn = useServerFn(checkIsAdmin);
   const adminCheck = useQuery({
@@ -1664,11 +1665,41 @@ function AdminOverview() {
       if (!canPickMetricColumn || !dailyPeriodKey) return;
       updateDashboardFiltersFn({
         data: { scope: "daily", periodKey: dailyPeriodKey, filters },
-      }).catch((e) => {
-        toast.error(errText(e, t("admin.dashboardFiltersSaveFailed")));
-      });
+      })
+        .then(() => {
+          // Nothing else refetches ["is-admin"], so without this, switching
+          // to another month and back within the same session would read
+          // this stale pre-save snapshot and show the pick as gone even
+          // though it just saved fine — keep the cached copy in sync with
+          // what the server now actually has for this one period.
+          queryClient.setQueryData(["is-admin"], (prev: typeof adminCheck.data) => {
+            if (!prev) return prev;
+            const prevPeriod =
+              prev.dashboardFilters.daily[dailyPeriodKey] ?? EMPTY_DASHBOARD_FILTERS_PERIOD;
+            return {
+              ...prev,
+              dashboardFilters: {
+                ...prev.dashboardFilters,
+                daily: {
+                  ...prev.dashboardFilters.daily,
+                  [dailyPeriodKey]: { ...prevPeriod, ...filters },
+                },
+              },
+            };
+          });
+        })
+        .catch((e) => {
+          toast.error(errText(e, t("admin.dashboardFiltersSaveFailed")));
+        });
     },
-    [canPickMetricColumn, dailyPeriodKey, updateDashboardFiltersFn, t],
+    // `adminCheck` only appears in a `typeof adminCheck.data` type position
+    // above (the setQueryData updater's parameter type), not as an actual
+    // value this callback reads — exhaustive-deps can't tell the two apart
+    // and flags it as a missing dependency; adding the whole (frequently-
+    // changing) query result object here would just make this callback's
+    // identity unstable for no reason.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [canPickMetricColumn, dailyPeriodKey, updateDashboardFiltersFn, queryClient, t],
   );
 
   // Lets the admin pin the comparison to one or more specific columns
