@@ -66,7 +66,7 @@ import { monthLabel, reportDateLabel } from "@/lib/month-label";
 import { AreaFilterPicker } from "@/components/area-filter-picker";
 import { HIGHLIGHT_KEYS, isNumericLike, metricNumber, pickMetric } from "@/lib/rider-metrics";
 import { usePrintNode } from "@/lib/print-node";
-import { checkIsAdmin } from "@/lib/reports.functions";
+import { checkIsAdmin, EMPTY_DASHBOARD_FILTERS_PERIOD } from "@/lib/reports.functions";
 import { updateDashboardFilters } from "@/lib/dashboard-filters.functions";
 import { errText } from "@/lib/error-text";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
@@ -505,11 +505,15 @@ function BreakdownDonutChart({
   t,
 }: BreakdownChartProps) {
   const [pickedColumn, setPickedColumn] = useState<string | null>(null);
-  const syncedRef = useRef(false);
+  // Re-syncs whenever the saved pick actually changes — not just once ever
+  // — so switching the dashboard's month (a new initialColumn, which may
+  // be null if that month never had one saved) replaces whatever was
+  // picked for the previous month instead of leaving it on screen.
+  const syncedColumnRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (syncedRef.current || initialColumn === undefined) return;
-    syncedRef.current = true;
-    if (initialColumn !== null) setPickedColumn(initialColumn);
+    if (initialColumn === undefined || syncedColumnRef.current === initialColumn) return;
+    syncedColumnRef.current = initialColumn;
+    setPickedColumn(initialColumn);
   }, [initialColumn]);
   const activeColumn = pickedColumn ?? defaultColumn ?? availableColumns[0] ?? null;
   const handleColumnChange = (column: string) => {
@@ -617,11 +621,15 @@ function BreakdownBarChart({
   t,
 }: BreakdownChartProps) {
   const [pickedColumn, setPickedColumn] = useState<string | null>(null);
-  const syncedRef = useRef(false);
+  // Re-syncs whenever the saved pick actually changes — not just once ever
+  // — so switching the dashboard's month (a new initialColumn, which may
+  // be null if that month never had one saved) replaces whatever was
+  // picked for the previous month instead of leaving it on screen.
+  const syncedColumnRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (syncedRef.current || initialColumn === undefined) return;
-    syncedRef.current = true;
-    if (initialColumn !== null) setPickedColumn(initialColumn);
+    if (initialColumn === undefined || syncedColumnRef.current === initialColumn) return;
+    syncedColumnRef.current = initialColumn;
+    setPickedColumn(initialColumn);
   }, [initialColumn]);
   const activeColumn = pickedColumn ?? defaultColumn ?? availableColumns[0] ?? null;
   const handleColumnChange = (column: string) => {
@@ -1462,6 +1470,11 @@ function AdminOverviewMonthly() {
   }, [reports, selectedReportId]);
 
   const selectedReport = reports.find((r) => r.id === selectedReportId) ?? null;
+  // Which month the column filters below belong to — a company's columns
+  // can differ month to month, so the picks made while looking at one
+  // month must never leak into (or get silently replaced while looking
+  // at) another.
+  const monthlyPeriodKey = selectedReport ? `${selectedReport.year}-${selectedReport.month}` : null;
   const previousReport = useMemo(() => {
     if (!selectedReport) return null;
     const prevMonthDate = new Date(Date.UTC(selectedReport.year, selectedReport.month - 2, 1));
@@ -1560,12 +1573,14 @@ function AdminOverviewMonthly() {
       donutColumn?: string | null;
       barColumn?: string | null;
     }) => {
-      if (!canPickMetricColumn) return;
-      updateDashboardFiltersFn({ data: { scope: "monthly", filters } }).catch((e) => {
+      if (!canPickMetricColumn || !monthlyPeriodKey) return;
+      updateDashboardFiltersFn({
+        data: { scope: "monthly", periodKey: monthlyPeriodKey, filters },
+      }).catch((e) => {
         toast.error(errText(e, t("admin.dashboardFiltersSaveFailed")));
       });
     },
-    [canPickMetricColumn, updateDashboardFiltersFn, t],
+    [canPickMetricColumn, monthlyPeriodKey, updateDashboardFiltersFn, t],
   );
 
   // Lets the admin pin the comparison to one or more specific columns
@@ -1574,14 +1589,21 @@ function AdminOverviewMonthly() {
   // column (if any) drives the whole comparison (delta/improved/declined/
   // chart/table/trend), same as a single pick always did; any additional
   // ones picked alongside it just get their own summary tile below. Shared
-  // company-wide (see persistDashboardFilters above), not per-browser.
+  // company-wide (see persistDashboardFilters above), not per-browser — and
+  // saved per selected month (see monthlyPeriodKey above), so switching
+  // the selected month re-syncs to THAT month's own picks instead of
+  // keeping whatever was on screen before.
   const [metricColumns, setMetricColumnsState] = useState<Set<string>>(new Set());
-  const metricColumnsSyncedRef = useRef(false);
+  const syncedPeriodRef = useRef<string | null>(null);
   useEffect(() => {
-    if (metricColumnsSyncedRef.current || !adminCheck.data) return;
-    metricColumnsSyncedRef.current = true;
-    setMetricColumnsState(new Set(adminCheck.data.dashboardFilters.monthly.metricColumns));
-  }, [adminCheck.data]);
+    if (!adminCheck.data || !monthlyPeriodKey || syncedPeriodRef.current === monthlyPeriodKey) {
+      return;
+    }
+    syncedPeriodRef.current = monthlyPeriodKey;
+    const period =
+      adminCheck.data.dashboardFilters.monthly[monthlyPeriodKey] ?? EMPTY_DASHBOARD_FILTERS_PERIOD;
+    setMetricColumnsState(new Set(period.metricColumns));
+  }, [adminCheck.data, monthlyPeriodKey]);
   const setMetricColumns = (next: Set<string>) => {
     setMetricColumnsState(next);
     persistDashboardFilters({ metricColumns: [...next] });
@@ -2032,8 +2054,9 @@ function AdminOverviewMonthly() {
                       : (availableColumns[0] ?? null)
                   }
                   initialColumn={
-                    adminCheck.data
-                      ? adminCheck.data.dashboardFilters.monthly.donutColumn
+                    adminCheck.data && monthlyPeriodKey
+                      ? (adminCheck.data.dashboardFilters.monthly[monthlyPeriodKey]?.donutColumn ??
+                        null)
                       : undefined
                   }
                   onColumnPersist={(column) => persistDashboardFilters({ donutColumn: column })}
@@ -2051,7 +2074,10 @@ function AdminOverviewMonthly() {
                       : (availableColumns[0] ?? null)
                   }
                   initialColumn={
-                    adminCheck.data ? adminCheck.data.dashboardFilters.monthly.barColumn : undefined
+                    adminCheck.data && monthlyPeriodKey
+                      ? (adminCheck.data.dashboardFilters.monthly[monthlyPeriodKey]?.barColumn ??
+                        null)
+                      : undefined
                   }
                   onColumnPersist={(column) => persistDashboardFilters({ barColumn: column })}
                   t={t}

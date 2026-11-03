@@ -805,20 +805,26 @@ function minTier<T extends string>(a: T, b: T): T {
   return TIER_RANK[a] <= TIER_RANK[b] ? a : b;
 }
 
-export interface DashboardFiltersScope {
+export interface DashboardFiltersPeriod {
   metricColumns: string[];
   donutColumn: string | null;
   barColumn: string | null;
   // Which column the working-hours alert reads as "hours worked" — only
   // meaningful on the daily scope (that alert has no monthly equivalent),
-  // but kept on the shared scope shape like every other picker here.
+  // but kept on the shared period shape like every other picker here.
   hoursColumn: string | null;
 }
+// Keyed by period ("<year>-<month>", the month the filter was picked for —
+// see persistDashboardFilters in each dashboard page) within each scope, so
+// picking columns while looking at September doesn't carry over (or get
+// silently overwritten) when the admin switches to October — a company
+// upload different columns month to month, so last month's pick may not
+// even exist this month.
 export interface DashboardFilters {
-  daily: DashboardFiltersScope;
-  monthly: DashboardFiltersScope;
+  daily: Record<string, DashboardFiltersPeriod>;
+  monthly: Record<string, DashboardFiltersPeriod>;
 }
-const EMPTY_DASHBOARD_FILTERS_SCOPE: DashboardFiltersScope = {
+export const EMPTY_DASHBOARD_FILTERS_PERIOD: DashboardFiltersPeriod = {
   metricColumns: [],
   donutColumn: null,
   barColumn: null,
@@ -826,13 +832,13 @@ const EMPTY_DASHBOARD_FILTERS_SCOPE: DashboardFiltersScope = {
 };
 
 // The company's one shared dashboard_filters jsonb blob, tolerant of
-// anything missing/malformed (a brand-new company, or a shape from before
-// this feature existed) by just falling back to "no filter picked" per
-// scope instead of throwing.
+// anything missing/malformed (a brand-new company, a shape from before
+// per-month filters existed, or just a month that was never saved) by
+// falling back to "no filter picked" instead of throwing.
 function parseDashboardFilters(raw: unknown): DashboardFilters {
   const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const parseScope = (v: unknown): DashboardFiltersScope => {
-    if (!v || typeof v !== "object") return { ...EMPTY_DASHBOARD_FILTERS_SCOPE };
+  const parsePeriod = (v: unknown): DashboardFiltersPeriod => {
+    if (!v || typeof v !== "object") return { ...EMPTY_DASHBOARD_FILTERS_PERIOD };
     const s = v as Record<string, unknown>;
     return {
       metricColumns: Array.isArray(s.metricColumns) ? s.metricColumns.map(String) : [],
@@ -840,6 +846,21 @@ function parseDashboardFilters(raw: unknown): DashboardFilters {
       barColumn: typeof s.barColumn === "string" ? s.barColumn : null,
       hoursColumn: typeof s.hoursColumn === "string" ? s.hoursColumn : null,
     };
+  };
+  const parseScope = (v: unknown): Record<string, DashboardFiltersPeriod> => {
+    if (!v || typeof v !== "object") return {};
+    const out: Record<string, DashboardFiltersPeriod> = {};
+    for (const [key, val] of Object.entries(v as Record<string, unknown>)) {
+      // The pre-per-month shape stored the scope's fields directly
+      // (metricColumns as an array, donutColumn as a string, ...) instead
+      // of nesting them under a period key — none of THOSE values are
+      // plain objects, so they're skipped here and that company just
+      // starts fresh per month instead of misreading e.g. "donutColumn" as
+      // a period key.
+      if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+      out[key] = parsePeriod(val);
+    }
+    return out;
   };
   return { daily: parseScope(obj.daily), monthly: parseScope(obj.monthly) };
 }
@@ -968,10 +989,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let rosterFileName: string | null = null;
     let rosterUploadedAt: string | null = null;
     let companyExpiryNotifyDays = 30;
-    let dashboardFilters: DashboardFilters = {
-      daily: { ...EMPTY_DASHBOARD_FILTERS_SCOPE },
-      monthly: { ...EMPTY_DASHBOARD_FILTERS_SCOPE },
-    };
+    let dashboardFilters: DashboardFilters = { daily: {}, monthly: {} };
     if (companyId) {
       const { data } = await supabase
         .from("companies")

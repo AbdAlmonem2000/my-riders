@@ -35,12 +35,29 @@ export function DateInputDMY({
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   // Stays in sync when the parent resets/loads a different value, e.g.
-  // switching which document's date is being edited.
+  // switching which document's date is being edited. But emit() below
+  // already fires onChange after just the day/month's FIRST digit (so a
+  // parent watching live sees a provisional value right away) — if that
+  // round-trips back here as a new `value` prop, this effect used to
+  // overwrite the field mid-keystroke with ITS OWN padded echo (typing "1"
+  // of "12" would immediately snap to "01" on screen before the "2" was
+  // even typed). Skipping the resync when the incoming value is just that
+  // echo — the same day/month, zero-padded or not — keeps the on-screen
+  // field exactly as typed until the real pad-on-blur below runs.
   useEffect(() => {
     const p = ISO_RE.exec(value || "");
-    setDay(p ? p[3] : "");
-    setMonth(p ? p[2] : "");
-    setYear(p ? p[1] : "");
+    const newDay = p ? p[3] : "";
+    const newMonth = p ? p[2] : "";
+    const newYear = p ? p[1] : "";
+    const isOwnEcho =
+      (newDay === day || newDay === day.padStart(2, "0")) &&
+      (newMonth === month || newMonth === month.padStart(2, "0")) &&
+      newYear === year;
+    if (isOwnEcho) return;
+    setDay(newDay);
+    setMonth(newMonth);
+    setYear(newYear);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   const monthRef = useRef<HTMLInputElement>(null);

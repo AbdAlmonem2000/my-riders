@@ -48,7 +48,7 @@ import { UserMenu } from "@/components/user-menu";
 import { useRiderPush } from "@/lib/push-client";
 import { formatDate, formatDateTime } from "@/lib/date-format";
 import { monthLabel } from "@/lib/month-label";
-import { HIGHLIGHT_KEYS, isNumericLike, metricNumber, pickMetric } from "@/lib/rider-metrics";
+import { isNumericLike, metricNumber } from "@/lib/rider-metrics";
 import { useLanguage, type Lang, type TranslationKey } from "@/lib/i18n";
 
 const search = z.object({
@@ -295,11 +295,17 @@ function CompanyLogo({
   className?: string;
 }) {
   if (url) {
-    return <img src={url} alt={name} className={`rounded object-contain ${className ?? ""}`} />;
+    return (
+      <img
+        src={url}
+        alt={name}
+        className={`rounded-lg border border-border bg-background object-contain p-1 ${className ?? ""}`}
+      />
+    );
   }
   return (
     <div
-      className={`flex items-center justify-center rounded bg-primary/10 text-primary ${className ?? ""}`}
+      className={`flex items-center justify-center rounded-lg border border-border bg-primary/10 text-primary ${className ?? ""}`}
     >
       <Building2 className="h-1/2 w-1/2" />
     </div>
@@ -873,7 +879,7 @@ function RiderPage() {
                     <CompanyLogo
                       url={activeRider.company_logo_url}
                       name={activeRider.company_name}
-                      className="h-16 w-16 shrink-0"
+                      className="h-20 w-20 shrink-0"
                     />
                     <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">{t("rider.companyLabel")}</div>
@@ -1068,12 +1074,6 @@ function ReportView({
     return allowed ? cols.filter((c) => allowed.has(c)) : cols;
   }, [data.columns, rowData, allowed]);
 
-  const metrics = [
-    { label: t("rider.metricTotal"), metric: pickMetric(rowData, HIGHLIGHT_KEYS.total) },
-    { label: t("rider.metricHours"), metric: pickMetric(rowData, HIGHLIGHT_KEYS.hours) },
-    { label: t("rider.metricSalary"), metric: pickMetric(rowData, HIGHLIGHT_KEYS.salary) },
-  ].filter((m) => m.metric);
-
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 space-y-6 duration-500">
       <div className="flex items-center justify-between">
@@ -1096,26 +1096,6 @@ function ReportView({
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {metrics.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {metrics.map((m, i) => (
-            <Card
-              key={i}
-              className="animate-in fade-in slide-in-from-bottom-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent fill-mode-[backwards] transition-all duration-500 hover:-translate-y-0.5 hover:shadow-md"
-              style={{ animationDelay: `${i * 80}ms` }}
-            >
-              <CardContent className="pt-6">
-                <div className="text-xs text-muted-foreground">{m.label}</div>
-                <div className="mt-1 text-2xl font-bold tabular-nums">
-                  {String(m.metric!.value)}
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">{m.metric!.label}</div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       )}
 
       <Card>

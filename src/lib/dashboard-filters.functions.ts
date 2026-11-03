@@ -53,15 +53,21 @@ export const updateDashboardFilters = createServerFn({ method: "POST" })
     z
       .object({
         scope: z.enum(["daily", "monthly"]),
+        // The month this pick belongs to ("<year>-<month>", e.g. "2026-10")
+        // — a company's columns can differ month to month, so a pick made
+        // while looking at one month must never apply to, or get
+        // overwritten by, a pick made for another.
+        periodKey: z.string().trim().min(1),
         filters: ScopeFiltersPatchSchema,
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
     const companyId = await resolveDashboardFiltersCompany(context.supabase, context.userId);
-    // Merge at both the scope level (daily vs. monthly) and the field level
-    // within that scope, so this save never clobbers the other scope's
-    // filters or a different picker's column within the same scope.
+    // Merge at the scope level (daily vs. monthly), the period level (which
+    // month) within that scope, and the field level within that period, so
+    // this save never clobbers another scope, another month, or a
+    // different picker's column within the same scope/month.
     const { data: row, error: readErr } = await context.supabase
       .from("companies")
       .select("dashboard_filters")
@@ -76,7 +82,14 @@ export const updateDashboardFilters = createServerFn({ method: "POST" })
       current[data.scope] && typeof current[data.scope] === "object"
         ? (current[data.scope] as Record<string, unknown>)
         : {};
-    const nextScope = { ...currentScope, ...data.filters };
+    const currentPeriod =
+      currentScope[data.periodKey] && typeof currentScope[data.periodKey] === "object"
+        ? (currentScope[data.periodKey] as Record<string, unknown>)
+        : {};
+    const nextScope = {
+      ...currentScope,
+      [data.periodKey]: { ...currentPeriod, ...data.filters },
+    };
     const { error } = await context.supabase
       .from("companies")
       .update({ dashboard_filters: { ...current, [data.scope]: nextScope } as Json })

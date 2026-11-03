@@ -69,7 +69,7 @@ import { HIGHLIGHT_KEYS, isNumericLike, metricNumber, pickMetric } from "@/lib/r
 import { DateInputDMY } from "@/components/date-input-dmy";
 import { AreaFilterPicker } from "@/components/area-filter-picker";
 import { usePrintNode } from "@/lib/print-node";
-import { checkIsAdmin } from "@/lib/reports.functions";
+import { checkIsAdmin, EMPTY_DASHBOARD_FILTERS_PERIOD } from "@/lib/reports.functions";
 import { updateDashboardFilters } from "@/lib/dashboard-filters.functions";
 import { errText } from "@/lib/error-text";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
@@ -547,11 +547,15 @@ function BreakdownDonutChart({
   t,
 }: BreakdownChartProps) {
   const [pickedColumn, setPickedColumn] = useState<string | null>(null);
-  const syncedRef = useRef(false);
+  // Re-syncs whenever the saved pick actually changes — not just once ever
+  // — so switching the dashboard's month (a new initialColumn, which may
+  // be null if that month never had one saved) replaces whatever was
+  // picked for the previous month instead of leaving it on screen.
+  const syncedColumnRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (syncedRef.current || initialColumn === undefined) return;
-    syncedRef.current = true;
-    if (initialColumn !== null) setPickedColumn(initialColumn);
+    if (initialColumn === undefined || syncedColumnRef.current === initialColumn) return;
+    syncedColumnRef.current = initialColumn;
+    setPickedColumn(initialColumn);
   }, [initialColumn]);
   const activeColumn = pickedColumn ?? defaultColumn ?? availableColumns[0] ?? null;
   const handleColumnChange = (column: string) => {
@@ -659,11 +663,15 @@ function BreakdownBarChart({
   t,
 }: BreakdownChartProps) {
   const [pickedColumn, setPickedColumn] = useState<string | null>(null);
-  const syncedRef = useRef(false);
+  // Re-syncs whenever the saved pick actually changes — not just once ever
+  // — so switching the dashboard's month (a new initialColumn, which may
+  // be null if that month never had one saved) replaces whatever was
+  // picked for the previous month instead of leaving it on screen.
+  const syncedColumnRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (syncedRef.current || initialColumn === undefined) return;
-    syncedRef.current = true;
-    if (initialColumn !== null) setPickedColumn(initialColumn);
+    if (initialColumn === undefined || syncedColumnRef.current === initialColumn) return;
+    syncedColumnRef.current = initialColumn;
+    setPickedColumn(initialColumn);
   }, [initialColumn]);
   const activeColumn = pickedColumn ?? defaultColumn ?? availableColumns[0] ?? null;
   const handleColumnChange = (column: string) => {
@@ -992,6 +1000,8 @@ function RiderSearchCard({
   canRotatePhotos,
   onFound,
   pickMetricValue,
+  fromMs,
+  toMs,
 }: {
   t: (key: TranslationKey) => string;
   lang: "ar" | "en";
@@ -1010,6 +1020,13 @@ function RiderSearchCard({
   // card's own table reads the same metric as the rest of the page instead
   // of always falling back to an auto-detected "total" column.
   pickMetricValue: (row: Record<string, unknown>) => { label: string; value: unknown } | null;
+  // The page's own date-range filter — the table below only ever SHOWS
+  // reports inside it, same as the rest of the dashboard, even though the
+  // full (unfiltered) history is still what the change/delta column
+  // compares against, so a report right at the edge of the range still
+  // gets a correct delta instead of losing its "previous day" reference.
+  fromMs: number | null;
+  toMs: number | null;
 }) {
   const [searchInput, setSearchInput] = useState("");
   const [searching, setSearching] = useState(false);
@@ -1076,6 +1093,14 @@ function RiderSearchCard({
       };
     });
   }, [historyData, pickMetricValue]);
+
+  const visibleHistory = useMemo(() => {
+    if (fromMs == null || toMs == null) return historyWithTrend;
+    return historyWithTrend.filter(({ entry }) => {
+      const ms = Date.UTC(entry.year, entry.month - 1, entry.day ?? 1);
+      return ms >= fromMs && ms <= toMs;
+    });
+  }, [historyWithTrend, fromMs, toMs]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1205,7 +1230,7 @@ function RiderSearchCard({
               <div className="flex justify-center py-6">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
               </div>
-            ) : historyWithTrend.length === 0 ? (
+            ) : visibleHistory.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
                 {t("admin.dashboardSearchNoReports")}
               </p>
@@ -1221,7 +1246,7 @@ function RiderSearchCard({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {historyWithTrend.map(({ entry, metricLabel, current, delta }) => (
+                    {visibleHistory.map(({ entry, metricLabel, current, delta }) => (
                       <TableRow key={entry.reportId}>
                         <TableCell className="font-medium">
                           {reportDateLabel(entry.day, entry.month, entry.year, lang)}
@@ -1476,6 +1501,11 @@ function AdminOverview() {
   const toParsed = parseIsoDate(rangeTo);
   const fromMs = fromParsed ? Date.UTC(fromParsed.y, fromParsed.m - 1, fromParsed.d) : null;
   const toMs = toParsed ? Date.UTC(toParsed.y, toParsed.m - 1, toParsed.d) : null;
+  // Which month the column filters below belong to — a company's columns
+  // can differ month to month, so the picks made while looking at one
+  // month must never leak into (or get silently replaced while looking
+  // at) another.
+  const dailyPeriodKey = fromParsed ? `${fromParsed.y}-${fromParsed.m}` : null;
   const rangeValid = fromMs !== null && toMs !== null && fromMs <= toMs;
   const rangeDays = rangeValid ? Math.round((toMs! - fromMs!) / DAY_MS) + 1 : 0;
   // A whole calendar month (day 1 to that month's last day) compares against
@@ -1631,12 +1661,14 @@ function AdminOverview() {
       barColumn?: string | null;
       hoursColumn?: string | null;
     }) => {
-      if (!canPickMetricColumn) return;
-      updateDashboardFiltersFn({ data: { scope: "daily", filters } }).catch((e) => {
+      if (!canPickMetricColumn || !dailyPeriodKey) return;
+      updateDashboardFiltersFn({
+        data: { scope: "daily", periodKey: dailyPeriodKey, filters },
+      }).catch((e) => {
         toast.error(errText(e, t("admin.dashboardFiltersSaveFailed")));
       });
     },
-    [canPickMetricColumn, updateDashboardFiltersFn, t],
+    [canPickMetricColumn, dailyPeriodKey, updateDashboardFiltersFn, t],
   );
 
   // Lets the admin pin the comparison to one or more specific columns
@@ -1645,14 +1677,21 @@ function AdminOverview() {
   // column (if any) drives the whole comparison (delta/improved/declined/
   // chart/table/trend), same as a single pick always did; any additional
   // ones picked alongside it just get their own summary tile below. Shared
-  // company-wide (see persistDashboardFilters above), not per-browser.
+  // company-wide (see persistDashboardFilters above), not per-browser —
+  // and saved per selected month (see dailyPeriodKey above), so switching
+  // months re-syncs to THAT month's own picks instead of keeping
+  // whatever was on screen before.
   const [metricColumns, setMetricColumnsState] = useState<Set<string>>(new Set());
-  const metricColumnsSyncedRef = useRef(false);
+  const [hoursColumnState, setHoursColumnState] = useState<string>("auto");
+  const syncedPeriodRef = useRef<string | null>(null);
   useEffect(() => {
-    if (metricColumnsSyncedRef.current || !adminCheck.data) return;
-    metricColumnsSyncedRef.current = true;
-    setMetricColumnsState(new Set(adminCheck.data.dashboardFilters.daily.metricColumns));
-  }, [adminCheck.data]);
+    if (!adminCheck.data || !dailyPeriodKey || syncedPeriodRef.current === dailyPeriodKey) return;
+    syncedPeriodRef.current = dailyPeriodKey;
+    const period =
+      adminCheck.data.dashboardFilters.daily[dailyPeriodKey] ?? EMPTY_DASHBOARD_FILTERS_PERIOD;
+    setMetricColumnsState(new Set(period.metricColumns));
+    setHoursColumnState(period.hoursColumn ?? "auto");
+  }, [adminCheck.data, dailyPeriodKey]);
   const setMetricColumns = (next: Set<string>) => {
     setMetricColumnsState(next);
     persistDashboardFilters({ metricColumns: [...next] });
@@ -1677,17 +1716,10 @@ function AdminOverview() {
   // Which column the working-hours alert below reads as "hours worked" —
   // independent of the primary metric column above, since a company's
   // performance metric (orders/deliveries) and its hours column are never
-  // the same one. Shared company-wide and persisted exactly like
-  // metricColumns above (same dashboard_filters.daily blob, same
-  // load-once-then-sync pattern) — whoever opens the dashboard next, on any
-  // device, sees the same pick.
-  const [hoursColumnState, setHoursColumnState] = useState<string>("auto");
-  const hoursColumnSyncedRef = useRef(false);
-  useEffect(() => {
-    if (hoursColumnSyncedRef.current || !adminCheck.data) return;
-    hoursColumnSyncedRef.current = true;
-    setHoursColumnState(adminCheck.data.dashboardFilters.daily.hoursColumn ?? "auto");
-  }, [adminCheck.data]);
+  // the same one. Shared company-wide and persisted/synced exactly like
+  // metricColumns above (same dashboard_filters.daily[dailyPeriodKey]
+  // object, same effect) — whoever opens the dashboard next, on any
+  // device, sees the same pick for that month.
   const setHoursColumn = (next: string) => {
     setHoursColumnState(next);
     persistDashboardFilters({ hoursColumn: next === "auto" ? null : next });
@@ -2125,6 +2157,8 @@ function AdminOverview() {
         canRotatePhotos={adminCheck.data?.ridersAccess === "full"}
         onFound={(riderQuery) => setHighlightQuery(riderQuery ?? "")}
         pickMetricValue={pickMetricValue}
+        fromMs={fromMs}
+        toMs={toMs}
       />
 
       <Card
@@ -2320,7 +2354,10 @@ function AdminOverview() {
                       : (availableColumns[0] ?? null)
                   }
                   initialColumn={
-                    adminCheck.data ? adminCheck.data.dashboardFilters.daily.donutColumn : undefined
+                    adminCheck.data && dailyPeriodKey
+                      ? (adminCheck.data.dashboardFilters.daily[dailyPeriodKey]?.donutColumn ??
+                        null)
+                      : undefined
                   }
                   onColumnPersist={(column) => persistDashboardFilters({ donutColumn: column })}
                   t={t}
@@ -2337,7 +2374,9 @@ function AdminOverview() {
                       : (availableColumns[0] ?? null)
                   }
                   initialColumn={
-                    adminCheck.data ? adminCheck.data.dashboardFilters.daily.barColumn : undefined
+                    adminCheck.data && dailyPeriodKey
+                      ? (adminCheck.data.dashboardFilters.daily[dailyPeriodKey]?.barColumn ?? null)
+                      : undefined
                   }
                   onColumnPersist={(column) => persistDashboardFilters({ barColumn: column })}
                   t={t}
