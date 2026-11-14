@@ -898,6 +898,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
     let documentsAccess: DocTier = "full";
     let lettersAccess: Tier = "full";
     let allowedAreas: string[] | null = null;
+    let allowedRiders: string[] | null = null;
     let notificationsAccess = true;
     // Plan-only sub-toggles (no per-staff permission exists for either —
     // the super admin controls these per company, same shape as
@@ -946,6 +947,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           { data: expiryAlerts },
           { data: dashboardFiltersEdit },
           { data: areas },
+          { data: ridersAllowList },
         ] = await Promise.all([
           supabase.rpc("get_member_overview_access", { _user_id: userId }),
           supabase.rpc("get_member_riders_access", { _user_id: userId }),
@@ -963,6 +965,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
           supabase.rpc("get_member_expiry_alerts_access", { _user_id: userId }),
           supabase.rpc("get_member_dashboard_filters_edit_access", { _user_id: userId }),
           supabase.rpc("get_member_allowed_areas", { _user_id: userId }),
+          supabase.rpc("get_member_allowed_riders", { _user_id: userId }),
         ]);
         overviewAccess = !!overview;
         ridersAccess = (riders as Tier | null) ?? "none";
@@ -980,6 +983,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
         expiryAlertsAccess = !!expiryAlerts;
         canEditDashboardFilters = !!dashboardFiltersEdit;
         allowedAreas = (areas as string[] | null) ?? null;
+        allowedRiders = (ridersAllowList as string[] | null) ?? null;
       }
     }
 
@@ -1094,6 +1098,7 @@ export const checkIsAdmin = createServerFn({ method: "GET" })
       usersAccess,
       companyProfileAccess,
       allowedAreas,
+      allowedRiders,
       personalExpiryNotifyDays,
       companyExpiryNotifyDays,
       expiryNotifyDays,

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { BellRing, KeyRound, Loader2, Mail, ShieldCheck, User } from "lucide-react";
@@ -225,6 +225,27 @@ function AdminAccount() {
     queryFn: async () => (await supabase.auth.getUser()).data.user,
   });
 
+  // Resolves names for the staff member's own allowedRiders ids — only the
+  // riders RLS already lets this account see, so this can never leak a
+  // rider outside its own restriction.
+  const allowedRiderIds = adminCheck.data?.allowedRiders ?? null;
+  const allowedRidersQuery = useQuery({
+    queryKey: ["account-allowed-riders", allowedRiderIds],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("riders")
+        .select("id, rider_name, iqama_number")
+        .in("id", allowedRiderIds ?? []);
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    },
+    enabled: !!allowedRiderIds && allowedRiderIds.length > 0,
+  });
+  const allowedRiderLabels = useMemo(
+    () => (allowedRidersQuery.data ?? []).map((r) => r.rider_name || r.iqama_number || "—"),
+    [allowedRidersQuery.data],
+  );
+
   const d = adminCheck.data;
   const permissionBadges: { key: TranslationKey; tierKey: TranslationKey }[] = [];
   if (d) {
@@ -326,6 +347,12 @@ function AdminAccount() {
                         ? d.allowedAreas.join("، ")
                         : "—"}
                   </p>
+                  {d.allowedRiders !== null && (
+                    <p className="text-xs text-muted-foreground">
+                      {t("users.ridersScopeLabel")}:{" "}
+                      {allowedRiderLabels.length > 0 ? allowedRiderLabels.join("، ") : "—"}
+                    </p>
+                  )}
                 </>
               )
             ) : (

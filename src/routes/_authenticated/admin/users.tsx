@@ -80,6 +80,9 @@ export const Route = createFileRoute("/_authenticated/admin/users")({
 
 interface Permissions {
   allowedAreas: string[] | null;
+  // Same shape as allowedAreas (null = no restriction) but an allow-list of
+  // exact rider ids instead of area names.
+  allowedRiders: string[] | null;
   overviewAccess: boolean;
   ridersAccess: TieredAccess;
   // Only meaningful when ridersAccess is 'full' — adding/deleting/blocking
@@ -156,17 +159,92 @@ function AreasPicker({
   );
 }
 
+interface RiderOption {
+  id: string;
+  label: string;
+  iqama: string | null;
+}
+
+function RidersPicker({
+  allRiders,
+  onAllRidersChange,
+  selectedRiderIds,
+  onToggleRider,
+  availableRiders,
+  t,
+}: {
+  allRiders: boolean;
+  onAllRidersChange: (v: boolean) => void;
+  selectedRiderIds: string[];
+  onToggleRider: (riderId: string) => void;
+  availableRiders: RiderOption[];
+  t: (key: TranslationKey) => string;
+}) {
+  const [search, setSearch] = useState("");
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return availableRiders;
+    return availableRiders.filter(
+      (r) => r.label.toLowerCase().includes(q) || (r.iqama ?? "").includes(q),
+    );
+  }, [availableRiders, search]);
+
+  return (
+    <div className="space-y-2">
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <Checkbox checked={allRiders} onCheckedChange={(v) => onAllRidersChange(!!v)} />
+        {t("users.ridersAllToggle")}
+      </label>
+      {!allRiders &&
+        (availableRiders.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t("users.ridersNoneAvailable")}</p>
+        ) : (
+          <div className="space-y-1.5">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("users.ridersSearchPlaceholder")}
+              className="h-8 text-xs"
+            />
+            <div className="max-h-48 space-y-0.5 overflow-y-auto rounded-md border p-2">
+              {filtered.length === 0 ? (
+                <p className="px-2 py-1 text-xs text-muted-foreground">
+                  {t("users.ridersSearchEmpty")}
+                </p>
+              ) : (
+                filtered.map((r) => (
+                  <label
+                    key={r.id}
+                    className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-accent"
+                  >
+                    <Checkbox
+                      checked={selectedRiderIds.includes(r.id)}
+                      onCheckedChange={() => onToggleRider(r.id)}
+                    />
+                    <span className="truncate">{r.label}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
+        ))}
+    </div>
+  );
+}
+
 // The full permission set, shared by the create dialog and the manage
 // dialog's "permissions" tab.
 function PermissionsFields({
   value,
   onChange,
   availableAreas,
+  availableRiders,
   t,
 }: {
   value: Permissions;
   onChange: (next: Permissions) => void;
   availableAreas: string[];
+  availableRiders: RiderOption[];
   t: (key: TranslationKey) => string;
 }) {
   return (
@@ -354,12 +432,30 @@ function PermissionsFields({
           t={t}
         />
       </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">{t("users.ridersScopeLabel")}</Label>
+        <RidersPicker
+          allRiders={value.allowedRiders === null}
+          onAllRidersChange={(all) => onChange({ ...value, allowedRiders: all ? null : [] })}
+          selectedRiderIds={value.allowedRiders ?? []}
+          onToggleRider={(riderId) => {
+            const current = value.allowedRiders ?? [];
+            const next = current.includes(riderId)
+              ? current.filter((id) => id !== riderId)
+              : [...current, riderId];
+            onChange({ ...value, allowedRiders: next });
+          }}
+          availableRiders={availableRiders}
+          t={t}
+        />
+      </div>
     </div>
   );
 }
 
 const DEFAULT_PERMISSIONS: Permissions = {
   allowedAreas: null,
+  allowedRiders: null,
   overviewAccess: false,
   ridersAccess: "none",
   ridersCreateAccess: false,
@@ -382,6 +478,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
 // they just want a staff member to have the run of the place.
 const ALL_ACCESS_PERMISSIONS: Permissions = {
   allowedAreas: null,
+  allowedRiders: null,
   overviewAccess: true,
   ridersAccess: "full",
   ridersCreateAccess: true,
@@ -401,11 +498,13 @@ const ALL_ACCESS_PERMISSIONS: Permissions = {
 
 function CreateStaffDialog({
   availableAreas,
+  availableRiders,
   saving,
   t,
   onCreate,
 }: {
   availableAreas: string[];
+  availableRiders: RiderOption[];
   saving: boolean;
   t: (key: TranslationKey) => string;
   onCreate: (
@@ -492,6 +591,7 @@ function CreateStaffDialog({
             value={permissions}
             onChange={setPermissions}
             availableAreas={availableAreas}
+            availableRiders={availableRiders}
             t={t}
           />
           <Button type="submit" disabled={saving} className="w-full">
@@ -506,6 +606,7 @@ function CreateStaffDialog({
 function ManageStaffDialog({
   staff,
   availableAreas,
+  availableRiders,
   savingUserId,
   t,
   onUpdatePermissions,
@@ -517,6 +618,7 @@ function ManageStaffDialog({
 }: {
   staff: StaffRow;
   availableAreas: string[];
+  availableRiders: RiderOption[];
   savingUserId: string | null;
   t: (key: TranslationKey) => string;
   onUpdatePermissions: (userId: string, permissions: Permissions) => Promise<boolean>;
@@ -602,6 +704,7 @@ function ManageStaffDialog({
             value={permissions}
             onChange={setPermissions}
             availableAreas={availableAreas}
+            availableRiders={availableRiders}
             t={t}
           />
           <Button type="submit" size="sm" disabled={saving}>
@@ -695,6 +798,45 @@ function AdminUsers() {
     }
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [areasQuery.data]);
+
+  // The pool an admin picks a staff member's allowed_riders from, and the
+  // lookup used to render names for the ids already saved on a staff row —
+  // kept unfiltered (soft-deleted riders included) so a badge for a rider
+  // who's since been removed still shows their name instead of "—", even
+  // though they're correctly left out of the pickable list below.
+  const ridersQuery = useQuery({
+    queryKey: ["company-riders-picker"],
+    queryFn: () =>
+      fetchAllRows<{
+        id: string;
+        rider_name: string | null;
+        iqama_number: string | null;
+        deleted_at: string | null;
+      }>(({ from, to }) =>
+        supabase
+          .from("riders")
+          .select("id, rider_name, iqama_number, deleted_at")
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
+  });
+  const availableRiders = useMemo<RiderOption[]>(() => {
+    const list = (ridersQuery.data ?? [])
+      .filter((r) => !r.deleted_at)
+      .map((r) => ({
+        id: r.id,
+        label: r.rider_name || r.iqama_number || "—",
+        iqama: r.iqama_number,
+      }));
+    return list.sort((a, b) => a.label.localeCompare(b.label));
+  }, [ridersQuery.data]);
+  const riderLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of ridersQuery.data ?? []) {
+      map.set(r.id, r.rider_name || r.iqama_number || "—");
+    }
+    return map;
+  }, [ridersQuery.data]);
 
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -802,6 +944,7 @@ function AdminUsers() {
           </div>
           <CreateStaffDialog
             availableAreas={availableAreas}
+            availableRiders={availableRiders}
             saving={creating}
             t={t}
             onCreate={handleCreate}
@@ -912,19 +1055,35 @@ function AdminUsers() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {s.allowedAreas === null ? (
-                            <span className="text-xs text-muted-foreground">
-                              {t("users.allAreasBadge")}
-                            </span>
-                          ) : (
-                            <div className="flex flex-wrap gap-1">
-                              {s.allowedAreas.map((a) => (
-                                <Badge key={a} variant="outline" className="text-[10px]">
-                                  {a}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
+                          <div className="flex flex-col gap-1">
+                            {s.allowedAreas === null ? (
+                              <span className="text-xs text-muted-foreground">
+                                {t("users.allAreasBadge")}
+                              </span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {s.allowedAreas.map((a) => (
+                                  <Badge key={a} variant="outline" className="text-[10px]">
+                                    {a}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                            {s.allowedRiders !== null && (
+                              <div className="flex flex-wrap gap-1">
+                                {s.allowedRiders.slice(0, 3).map((id) => (
+                                  <Badge key={id} variant="outline" className="text-[10px]">
+                                    {riderLabelById.get(id) ?? "—"}
+                                  </Badge>
+                                ))}
+                                {s.allowedRiders.length > 3 && (
+                                  <Badge variant="outline" className="text-[10px]">
+                                    +{s.allowedRiders.length - 3}
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                           {s.lastSignInAt
@@ -971,6 +1130,7 @@ function AdminUsers() {
               <ManageStaffDialog
                 staff={staff}
                 availableAreas={availableAreas}
+                availableRiders={availableRiders}
                 savingUserId={savingUserId}
                 t={t}
                 onUpdatePermissions={handleUpdatePermissions}

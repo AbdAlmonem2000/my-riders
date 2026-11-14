@@ -19,11 +19,20 @@ const AllowedAreasSchema = z
   .array(z.string().trim().min(1))
   .nullable()
   .transform((v) => (v && v.length > 0 ? v : null));
+const AllowedRidersSchema = z
+  .array(z.string().uuid())
+  .nullable()
+  .transform((v) => (v && v.length > 0 ? v : null));
 const DocumentsAccessSchema = z.enum(["none", "view_only", "full"]);
 const TieredAccessSchema = z.enum(["none", "view", "full"]);
 
 const PermissionsSchema = z.object({
   allowedAreas: AllowedAreasSchema,
+  // Same shape as allowedAreas (NULL = no restriction) but keyed on exact
+  // riders instead of the area text field — ANDed with allowedAreas in the
+  // RLS policies, so a staff member scoped by both only sees the
+  // intersection.
+  allowedRiders: AllowedRidersSchema,
   overviewAccess: z.boolean(),
   ridersAccess: TieredAccessSchema,
   // Only meaningful when ridersAccess is 'full' — enforced in
@@ -70,6 +79,7 @@ export const listCompanyStaff = createServerFn({ method: "GET" })
         displayName: r.display_name as string | null,
         lastSignInAt: r.last_sign_in_at as string | null,
         allowedAreas: (r.allowed_areas as string[] | null) ?? null,
+        allowedRiders: (r.allowed_riders as string[] | null) ?? null,
         overviewAccess: !!r.overview_access,
         ridersAccess: r.riders_access as "none" | "view" | "full",
         ridersCreateAccess: !!r.riders_create_access,
@@ -130,6 +140,7 @@ export const createCompanyStaff = createServerFn({ method: "POST" })
       company_id: companyId,
       display_name: data.displayName,
       allowed_areas: data.allowedAreas,
+      allowed_riders: data.allowedRiders,
       overview_access: data.overviewAccess,
       riders_access: data.ridersAccess,
       riders_create_access: data.ridersCreateAccess,
@@ -166,6 +177,7 @@ export const updateCompanyStaffPermissions = createServerFn({ method: "POST" })
       .from("user_roles")
       .update({
         allowed_areas: data.allowedAreas,
+        allowed_riders: data.allowedRiders,
         overview_access: data.overviewAccess,
         riders_access: data.ridersAccess,
         riders_create_access: data.ridersCreateAccess,

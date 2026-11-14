@@ -724,6 +724,7 @@ export type Database = {
       user_roles: {
         Row: {
           allowed_areas: string[] | null
+          allowed_riders: string[] | null
           company_id: string | null
           created_at: string
           dashboard_filters_edit_access: boolean
@@ -749,6 +750,7 @@ export type Database = {
         }
         Insert: {
           allowed_areas?: string[] | null
+          allowed_riders?: string[] | null
           company_id?: string | null
           created_at?: string
           dashboard_filters_edit_access?: boolean
@@ -774,6 +776,7 @@ export type Database = {
         }
         Update: {
           allowed_areas?: string[] | null
+          allowed_riders?: string[] | null
           company_id?: string | null
           created_at?: string
           dashboard_filters_edit_access?: boolean
@@ -894,6 +897,7 @@ export type Database = {
         Args: { _company_id: string }
         Returns: {
           allowed_areas: string[] | null
+          allowed_riders: string[] | null
           created_at: string
           dashboard_filters_edit_access: boolean
           display_name: string | null
@@ -946,6 +950,7 @@ export type Database = {
       get_member_expiry_alerts_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_dashboard_filters_edit_access: { Args: { _user_id: string }; Returns: boolean }
       get_member_allowed_areas: { Args: { _user_id: string }; Returns: string[] }
+      get_member_allowed_riders: { Args: { _user_id: string }; Returns: string[] }
       get_company_plan_overview_access: { Args: { _company_id: string }; Returns: boolean }
       get_company_plan_riders_access: { Args: { _company_id: string }; Returns: string }
       get_company_plan_reports_access: { Args: { _company_id: string }; Returns: string }
