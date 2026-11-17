@@ -424,30 +424,62 @@ function StatusDonutChart({
 // The chosen metric's total across every rider, one point per day in the
 // selected range — a full-width strip under the breakdown panels, reading
 // left-to-right as oldest -> newest like the other trend chart on this page.
+// Clicking (or tapping) a day narrows the whole dashboard's date range down
+// to that single day — the dot for the day currently narrowed to is drawn
+// larger so it stays visible as a form of feedback, not just a tooltip.
 function DailyTrendChart({
   data,
   metricLabel,
+  selectedMs,
+  canReset,
+  onSelectDay,
   t,
 }: {
-  data: { label: string; value: number }[];
+  data: { ms: number; label: string; value: number }[];
   metricLabel: string | null;
+  selectedMs: number | null;
+  // Whether a second click actually has somewhere to go back to — distinct
+  // from selectedMs (purely "is a single day narrowed, for the dot") since
+  // a manually-typed same from/to date narrows the range with no prior
+  // range saved to restore, where the hint below would otherwise lie.
+  canReset: boolean;
+  onSelectDay: (ms: number) => void;
   t: (key: TranslationKey) => string;
 }) {
   const config: ChartConfig = { value: { label: metricLabel ?? "" } };
 
   // Keeps its own card mounted at all times (title + fixed-height frame),
   // even with 0 or 1 points — a search that narrows the range down no
-  // longer makes this whole panel vanish and reappear as you type.
+  // longer makes this whole panel vanish and reappear as you type. A lone
+  // point is still rendered (not treated as "no results") — narrowing the
+  // range to a single day by clicking one is exactly how it gets here.
   return (
     <div className="rounded-lg border p-3">
-      <div className="mb-2 text-sm font-medium">{t("admin.dashboardDailyTrendTitle")}</div>
-      {data.length < 2 ? (
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-sm font-medium">{t("admin.dashboardDailyTrendTitle")}</div>
+        {canReset && (
+          <span className="text-xs text-muted-foreground">
+            {t("admin.dashboardDailyTrendResetHint")}
+          </span>
+        )}
+      </div>
+      {data.length === 0 ? (
         <div className="flex h-48 items-center justify-center">
           <span className="text-xs text-muted-foreground">{t("documents.searchNoResults")}</span>
         </div>
       ) : (
-        <ChartContainer config={config} className="aspect-auto h-48 w-full">
-          <LineChart data={data} margin={{ top: 20, right: 8, left: 8, bottom: 0 }}>
+        <ChartContainer config={config} className="aspect-auto h-48 w-full cursor-pointer">
+          <LineChart
+            data={data}
+            margin={{ top: 20, right: 8, left: 8, bottom: 0 }}
+            onClick={(state) => {
+              // activePayload snaps to the nearest point along the x-axis,
+              // so this fires on a click anywhere in the plot area — a much
+              // more forgiving target than the 3px dot itself.
+              const point = state?.activePayload?.[0]?.payload as { ms: number } | undefined;
+              if (point) onSelectDay(point.ms);
+            }}
+          >
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={11} />
             <YAxis hide />
@@ -457,7 +489,20 @@ function DailyTrendChart({
               dataKey="value"
               stroke={CHART_PALETTE[0]}
               strokeWidth={2}
-              dot={{ r: 3, fill: CHART_PALETTE[0] }}
+              dot={(props: { cx: number; cy: number; payload: { ms: number } }) => {
+                const isSelected = selectedMs !== null && props.payload.ms === selectedMs;
+                return (
+                  <circle
+                    key={props.payload.ms}
+                    cx={props.cx}
+                    cy={props.cy}
+                    r={isSelected ? 6 : 3}
+                    fill={CHART_PALETTE[0]}
+                    stroke="var(--background)"
+                    strokeWidth={isSelected ? 2 : 0}
+                  />
+                );
+              }}
             >
               <LabelList dataKey="value" position="top" fontSize={11} className="fill-foreground" />
             </Line>
@@ -1502,6 +1547,45 @@ function AdminOverview() {
   const toParsed = parseIsoDate(rangeTo);
   const fromMs = fromParsed ? Date.UTC(fromParsed.y, fromParsed.m - 1, fromParsed.d) : null;
   const toMs = toParsed ? Date.UTC(toParsed.y, toParsed.m - 1, toParsed.d) : null;
+  const isoFromMs = (ms: number) => {
+    const d = new Date(ms);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+  // Lets a day clicked on the daily-trend chart below narrow the whole
+  // dashboard down to it, with a one-step way back to whatever range was
+  // picked just before — cleared the moment the admin edits either date
+  // field by hand, so a stale "back" button never lingers.
+  const [prevRange, setPrevRange] = useState<{ from: string; to: string } | null>(null);
+  const handleRangeFromChange = (v: string) => {
+    setRangeFrom(v);
+    setPrevRange(null);
+  };
+  const handleRangeToChange = (v: string) => {
+    setRangeTo(v);
+    setPrevRange(null);
+  };
+  const selectedDayMs = fromMs !== null && toMs !== null && fromMs === toMs ? fromMs : null;
+  // Once narrowed to a single day, the chart only ever has that one point
+  // left to click — so a second click anywhere in it (there's nowhere else
+  // to click) is read as "undo", restoring the range from just before the
+  // first click instead of re-narrowing to the same day again.
+  const handleSelectDay = (ms: number) => {
+    if (selectedDayMs !== null) {
+      if (prevRange) {
+        setRangeFrom(prevRange.from);
+        setRangeTo(prevRange.to);
+        setPrevRange(null);
+      }
+      return;
+    }
+    const iso = isoFromMs(ms);
+    setPrevRange({ from: rangeFrom, to: rangeTo });
+    setRangeFrom(iso);
+    setRangeTo(iso);
+  };
   // Which month the column filters below belong to — a company's columns
   // can differ month to month, so the picks made while looking at one
   // month must never leak into (or get silently replaced while looking
@@ -2075,9 +2159,15 @@ function AdminOverview() {
     );
   }, [hoursViolationGroups, hoursSearch]);
 
-  const isLoadingDashboard =
-    currentReportIds.length > 0 &&
-    (currentRowsQuery.isLoading || (hasPrevious && previousRowsQuery.isLoading));
+  // Only waits on the CURRENT period — narrowing to a single day (e.g. by
+  // clicking a point on the daily trend chart) very often needs a fresh
+  // fetch for the comparison day alone (the current day's own row is
+  // usually already cached from the wider range just narrowed from), and
+  // blocking the whole panel on that would turn an instant re-filter into a
+  // visible freeze. The comparison-only parts below gate on
+  // isLoadingPrevious instead, so only they show a brief loading state.
+  const isLoadingDashboard = currentReportIds.length > 0 && currentRowsQuery.isLoading;
+  const isLoadingPrevious = hasPrevious && previousRowsQuery.isLoading;
 
   // Separate from isLoadingDashboard above (which only waits on the rows
   // the metric/chart section needs) — while cardGroupsQuery is still in
@@ -2209,13 +2299,13 @@ function AdminOverview() {
                     <Label className="text-xs text-muted-foreground">
                       {t("admin.dashboardRangeFrom")}
                     </Label>
-                    <DateInputDMY value={rangeFrom} onChange={setRangeFrom} />
+                    <DateInputDMY value={rangeFrom} onChange={handleRangeFromChange} />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs text-muted-foreground">
                       {t("admin.dashboardRangeTo")}
                     </Label>
-                    <DateInputDMY value={rangeTo} onChange={setRangeTo} />
+                    <DateInputDMY value={rangeTo} onChange={handleRangeToChange} />
                   </div>
                 </div>
                 {areas.length > 0 && (
@@ -2306,16 +2396,22 @@ function AdminOverview() {
                   <>
                     <MiniStat
                       label={t("admin.dashboardImproved")}
-                      value={improved.length}
+                      value={isLoadingPrevious ? "…" : improved.length}
                       tone="up"
                     />
                     <MiniStat
                       label={t("admin.dashboardDeclined")}
-                      value={declined.length}
+                      value={isLoadingPrevious ? "…" : declined.length}
                       tone="down"
                     />
-                    <MiniStat label={t("admin.dashboardSameCount")} value={sameCount} />
-                    <MiniStat label={t("admin.dashboardNewCount")} value={newCount} />
+                    <MiniStat
+                      label={t("admin.dashboardSameCount")}
+                      value={isLoadingPrevious ? "…" : sameCount}
+                    />
+                    <MiniStat
+                      label={t("admin.dashboardNewCount")}
+                      value={isLoadingPrevious ? "…" : newCount}
+                    />
                   </>
                 )}
                 {extraMetricTotals.map((m) => (
@@ -2323,54 +2419,66 @@ function AdminOverview() {
                 ))}
               </div>
 
-              {hasPrevious && (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg border p-3">
-                      <div className="mb-2 text-sm font-medium">
-                        {t("admin.dashboardStatusChartTitle")}
+              {hasPrevious &&
+                (isLoadingPrevious ? (
+                  <div className="flex justify-center py-4">
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border p-3">
+                        <div className="mb-2 text-sm font-medium">
+                          {t("admin.dashboardStatusChartTitle")}
+                        </div>
+                        <StatusSummaryChart
+                          improvedCount={improved.length}
+                          declinedCount={declined.length}
+                          sameCount={sameCount}
+                          newCount={newCount}
+                          t={t}
+                        />
                       </div>
-                      <StatusSummaryChart
-                        improvedCount={improved.length}
-                        declinedCount={declined.length}
-                        sameCount={sameCount}
-                        newCount={newCount}
-                        t={t}
+                      <div className="rounded-lg border p-3">
+                        <div className="mb-2 text-sm font-medium">
+                          {t("admin.dashboardStatusDonutTitle")}
+                        </div>
+                        <StatusDonutChart
+                          improvedCount={improved.length}
+                          declinedCount={declined.length}
+                          sameCount={sameCount}
+                          newCount={newCount}
+                          t={t}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <PerformanceList
+                        title={t("admin.dashboardImproved")}
+                        icon={TrendingUp}
+                        tone="up"
+                        rows={improved}
+                        emptyLabel={t("admin.dashboardNoImproved")}
+                      />
+                      <PerformanceList
+                        title={t("admin.dashboardDeclined")}
+                        icon={TrendingDown}
+                        tone="down"
+                        rows={declined}
+                        emptyLabel={t("admin.dashboardNoDeclined")}
                       />
                     </div>
-                    <div className="rounded-lg border p-3">
-                      <div className="mb-2 text-sm font-medium">
-                        {t("admin.dashboardStatusDonutTitle")}
-                      </div>
-                      <StatusDonutChart
-                        improvedCount={improved.length}
-                        declinedCount={declined.length}
-                        sameCount={sameCount}
-                        newCount={newCount}
-                        t={t}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <PerformanceList
-                      title={t("admin.dashboardImproved")}
-                      icon={TrendingUp}
-                      tone="up"
-                      rows={improved}
-                      emptyLabel={t("admin.dashboardNoImproved")}
-                    />
-                    <PerformanceList
-                      title={t("admin.dashboardDeclined")}
-                      icon={TrendingDown}
-                      tone="down"
-                      rows={declined}
-                      emptyLabel={t("admin.dashboardNoDeclined")}
-                    />
-                  </div>
-                </>
-              )}
+                  </>
+                ))}
 
-              <DailyTrendChart data={dailyTrend} metricLabel={metricLabel} t={t} />
+              <DailyTrendChart
+                data={dailyTrend}
+                metricLabel={metricLabel}
+                selectedMs={selectedDayMs}
+                canReset={selectedDayMs !== null && prevRange !== null}
+                onSelectDay={handleSelectDay}
+                t={t}
+              />
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <BreakdownDonutChart

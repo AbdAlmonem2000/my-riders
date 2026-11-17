@@ -259,6 +259,10 @@ const dict = {
   "admin.dashboardStatusChartTitle": { ar: "توزيع الأداء", en: "Performance breakdown" },
   "admin.dashboardStatusDonutTitle": { ar: "نسبة الأداء", en: "Performance share" },
   "admin.dashboardDailyTrendTitle": { ar: "الأداء اليومي", en: "Daily trend" },
+  "admin.dashboardDailyTrendResetHint": {
+    ar: "اضغط تاني للرجوع لكل الأيام",
+    en: "Click again to go back to all days",
+  },
   "admin.dashboardBreakdownColumnLabel": { ar: "العمود", en: "Column" },
   "admin.dashboardBreakdownDonutTitle": { ar: "توزيع القيم", en: "Value distribution" },
   "admin.dashboardBreakdownBarTitle": { ar: "أعلى المناديب", en: "Top riders" },

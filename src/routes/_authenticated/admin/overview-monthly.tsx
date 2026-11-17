@@ -1781,9 +1781,14 @@ function AdminOverviewMonthly() {
   // riders' values in floating point drifts off a clean whole number.
   const totalCurrent = Math.round(visibleRows.reduce((s, r) => s + r.current, 0));
 
-  const isLoadingDashboard =
-    currentReportIds.length > 0 &&
-    (currentRowsQuery.isLoading || (hasPrevious && previousRowsQuery.isLoading));
+  // Only waits on the CURRENT month — switching months very often needs a
+  // fresh fetch for the comparison month alone (the current month's own
+  // rows are frequently already cached), and blocking the whole panel on
+  // that turns an instant month switch into a visible freeze. The
+  // comparison-only parts below gate on isLoadingPrevious instead, so only
+  // they show a brief loading state.
+  const isLoadingDashboard = currentReportIds.length > 0 && currentRowsQuery.isLoading;
+  const isLoadingPrevious = hasPrevious && previousRowsQuery.isLoading;
 
   // One row per rider per uploaded day, exactly as uploaded (every original
   // column, not just the picked metric) — currentRowsQuery.data is already
@@ -2008,16 +2013,22 @@ function AdminOverviewMonthly() {
                   <>
                     <MiniStat
                       label={t("admin.dashboardImproved")}
-                      value={improved.length}
+                      value={isLoadingPrevious ? "…" : improved.length}
                       tone="up"
                     />
                     <MiniStat
                       label={t("admin.dashboardDeclined")}
-                      value={declined.length}
+                      value={isLoadingPrevious ? "…" : declined.length}
                       tone="down"
                     />
-                    <MiniStat label={t("admin.dashboardSameCount")} value={sameCount} />
-                    <MiniStat label={t("admin.dashboardNewCount")} value={newCount} />
+                    <MiniStat
+                      label={t("admin.dashboardSameCount")}
+                      value={isLoadingPrevious ? "…" : sameCount}
+                    />
+                    <MiniStat
+                      label={t("admin.dashboardNewCount")}
+                      value={isLoadingPrevious ? "…" : newCount}
+                    />
                   </>
                 )}
                 {extraMetricTotals.map((m) => (
@@ -2025,52 +2036,57 @@ function AdminOverviewMonthly() {
                 ))}
               </div>
 
-              {hasPrevious && (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg border p-3">
-                      <div className="mb-2 text-sm font-medium">
-                        {t("admin.dashboardStatusChartTitle")}
+              {hasPrevious &&
+                (isLoadingPrevious ? (
+                  <div className="flex justify-center py-4">
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border p-3">
+                        <div className="mb-2 text-sm font-medium">
+                          {t("admin.dashboardStatusChartTitle")}
+                        </div>
+                        <StatusSummaryChart
+                          improvedCount={improved.length}
+                          declinedCount={declined.length}
+                          sameCount={sameCount}
+                          newCount={newCount}
+                          t={t}
+                        />
                       </div>
-                      <StatusSummaryChart
-                        improvedCount={improved.length}
-                        declinedCount={declined.length}
-                        sameCount={sameCount}
-                        newCount={newCount}
-                        t={t}
+                      <div className="rounded-lg border p-3">
+                        <div className="mb-2 text-sm font-medium">
+                          {t("admin.dashboardStatusDonutTitle")}
+                        </div>
+                        <StatusDonutChart
+                          improvedCount={improved.length}
+                          declinedCount={declined.length}
+                          sameCount={sameCount}
+                          newCount={newCount}
+                          t={t}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <PerformanceList
+                        title={t("admin.dashboardImproved")}
+                        icon={TrendingUp}
+                        tone="up"
+                        rows={improved}
+                        emptyLabel={t("admin.dashboardNoImproved")}
+                      />
+                      <PerformanceList
+                        title={t("admin.dashboardDeclined")}
+                        icon={TrendingDown}
+                        tone="down"
+                        rows={declined}
+                        emptyLabel={t("admin.dashboardNoDeclined")}
                       />
                     </div>
-                    <div className="rounded-lg border p-3">
-                      <div className="mb-2 text-sm font-medium">
-                        {t("admin.dashboardStatusDonutTitle")}
-                      </div>
-                      <StatusDonutChart
-                        improvedCount={improved.length}
-                        declinedCount={declined.length}
-                        sameCount={sameCount}
-                        newCount={newCount}
-                        t={t}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <PerformanceList
-                      title={t("admin.dashboardImproved")}
-                      icon={TrendingUp}
-                      tone="up"
-                      rows={improved}
-                      emptyLabel={t("admin.dashboardNoImproved")}
-                    />
-                    <PerformanceList
-                      title={t("admin.dashboardDeclined")}
-                      icon={TrendingDown}
-                      tone="down"
-                      rows={declined}
-                      emptyLabel={t("admin.dashboardNoDeclined")}
-                    />
-                  </div>
-                </>
-              )}
+                  </>
+                ))}
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <BreakdownDonutChart
