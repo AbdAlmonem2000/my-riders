@@ -25,6 +25,13 @@ export type DocType = (typeof DOC_TYPES)[number];
 // expiry date at all — no status badge countdown, no "edit date" action.
 export const NO_EXPIRY_DOC_TYPES = new Set<string>(["personal_photo", "vehicle_registration"]);
 
+// The only two document types a rider may renew themselves from their own
+// lookup page (see rider-renewable-docs.functions.ts) — everything else in
+// rider_documents (operating cards, vehicle registration, ajeer contract,
+// ...) stays admin-only.
+export const RENEWABLE_DOC_TYPES = ["iqama_photo", "driving_license"] as const;
+export type RenewableDocType = (typeof RENEWABLE_DOC_TYPES)[number];
+
 // A custom (admin-named) document has no shared type key — each one is its
 // own fresh "custom:<uuid>", so whether IT needs an expiry date can't come
 // from a static list the way the 7 fixed slots do. It's chosen once, at
@@ -44,17 +51,33 @@ export function docTypeNeedsExpiry(docType: string, customNeedsExpiry?: boolean 
 export const OPERATING_CARD_TYPES = new Set<string>(["operating_card", "operating_card_extra"]);
 
 // A custom document is also treated as an operating card the moment its
-// name starts with "كرت تشغيل" — e.g. "كرت تشغيل لجاهز" — so a company can
-// define its own extra card slots (one per delivery provider, say) without
-// code changes, and they immediately get the same max-3/same-area rule as
-// the two fixed card slots. Matched on the admin-typed label, since a
-// custom doc_type is a one-off UUID with no shared meaning across riders —
-// the label is the only thing that can group "the same card family"
-// together.
+// name starts with "كرت تشغيل" (or, for a company running the English UI,
+// "Operating card") — e.g. "كرت تشغيل لجاهز" / "Operating card Jahez" — so a
+// company can define its own extra card slots (one per delivery provider,
+// say) without code changes, and they immediately get the same
+// max-3/same-area rule as the two fixed card slots. Matched on the
+// admin-typed label, since a custom doc_type is a one-off UUID with no
+// shared meaning across riders — the label is the only thing that can group
+// "the same card family" together. Any caller that queries rider_documents
+// for every custom card by label prefix (listCustomOperatingCardLabels,
+// operating-cards.tsx's customDocsQuery) must match BOTH prefixes too — see
+// operatingCardLabelOrFilter below.
 export const OPERATING_CARD_LABEL_PREFIX = "كرت تشغيل";
+export const OPERATING_CARD_LABEL_PREFIX_EN = "operating card";
 
 export function looksLikeOperatingCardLabel(label: string | null | undefined): boolean {
-  return !!label && label.trim().startsWith(OPERATING_CARD_LABEL_PREFIX);
+  if (!label) return false;
+  const trimmed = label.trim();
+  if (trimmed.startsWith(OPERATING_CARD_LABEL_PREFIX)) return true;
+  return trimmed.toLowerCase().startsWith(OPERATING_CARD_LABEL_PREFIX_EN);
+}
+
+// A PostgREST `.or()` filter string matching either prefix, case-insensitive
+// — pass straight to `.or(operatingCardLabelOrFilter())` wherever a query
+// needs every custom-card-labeled row, instead of a single `.ilike()` that
+// would silently miss the other language's prefix.
+export function operatingCardLabelOrFilter(): string {
+  return `label.ilike.${OPERATING_CARD_LABEL_PREFIX}%,label.ilike.${OPERATING_CARD_LABEL_PREFIX_EN}%`;
 }
 
 export function isOperatingCardDocType(docType: string, label?: string | null): boolean {

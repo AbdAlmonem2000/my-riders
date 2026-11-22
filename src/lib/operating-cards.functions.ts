@@ -14,8 +14,10 @@ import {
   newCustomDocType,
   normalizeSheetDateToIso,
   OPERATING_CARD_LABEL_PREFIX,
+  OPERATING_CARD_LABEL_PREFIX_EN,
   OPERATING_CARD_NUMBER_FORMAT,
   OPERATING_CARD_TYPES,
+  operatingCardLabelOrFilter,
 } from "@/lib/document-status";
 import { cellText, looksLikeIdentifier } from "@/lib/rider-identity";
 import { fetchAllRows } from "@/lib/supabase-paginate";
@@ -40,7 +42,7 @@ const CardTargetSchema = z.union([
       .max(100)
       .refine(
         looksLikeOperatingCardLabel,
-        `اسم الكرت المخصص لازم يبدأ بـ "${OPERATING_CARD_LABEL_PREFIX}"`,
+        `اسم الكرت المخصص لازم يبدأ بـ "${OPERATING_CARD_LABEL_PREFIX}" أو "${OPERATING_CARD_LABEL_PREFIX_EN}"`,
       ),
   }),
 ]);
@@ -145,7 +147,7 @@ export const listCustomOperatingCardLabels = createServerFn({ method: "GET" })
         .from("rider_documents")
         .select("label")
         .eq("company_id", companyId)
-        .ilike("label", `${OPERATING_CARD_LABEL_PREFIX}%`)
+        .or(operatingCardLabelOrFilter())
         .order("id", { ascending: true })
         .range(from, to),
     );

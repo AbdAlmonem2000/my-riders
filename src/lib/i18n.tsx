@@ -163,6 +163,14 @@ const dict = {
     ar: "لازم تكون الصورة JPG أو PNG",
     en: "The photo must be JPG or PNG",
   },
+  "rider.renewableDocsTitle": { ar: "الإقامة ورخصة القيادة", en: "Iqama & driving license" },
+  "rider.docUpdateButton": { ar: "تحديث", en: "Update" },
+  "rider.docViewCurrent": { ar: "عرض الملف الحالي", en: "View current file" },
+  "rider.docViewFailed": { ar: "تعذر فتح الملف", en: "Failed to open the file" },
+  "rider.docDaysLeft": { ar: "متبقي {days} يوم", en: "{days} days left" },
+  "rider.docExpiredSince": { ar: "منتهية منذ {days} يوم", en: "Expired {days} days ago" },
+  "rider.docUpdated": { ar: "تم تحديث المستند", en: "Document updated" },
+  "rider.docUpdateFailed": { ar: "تعذر تحديث المستند", en: "Failed to update the document" },
   "rider.noteTitle": { ar: "ملحوظة من الشركة", en: "Note from the company" },
   "rider.riderInfo": { ar: "بيانات المندوب", en: "Rider details" },
   "rider.notificationsTitle": { ar: "الإشعارات", en: "Notifications" },
@@ -965,7 +973,7 @@ const dict = {
   },
   "documents.customCardHint": {
     ar: "لو سمّيته بـ«كرت تشغيل...» (مثلاً «كرت تشغيل لجاهز») هيتطبّق عليه تلقائيًا نفس شرط كروت التشغيل: 3 مناديب بالحد الأقصى لكل رقم كرت، وكلهم في نفس المنطقة.",
-    en: 'If you name it starting with "كرت تشغيل" (e.g. "كرت تشغيل لجاهز"), the same operating-card rule applies automatically: max 3 riders per card number, all in the same area.',
+    en: 'If you name it starting with "Operating card" (e.g. "Operating card Jahez"), the same operating-card rule applies automatically: max 3 riders per card number, all in the same area.',
   },
   "documents.customNeedsExpiryLabel": {
     ar: "هل لهذا المستند تاريخ انتهاء؟",
@@ -983,6 +991,10 @@ const dict = {
   "documents.fileLabel": { ar: "الملف (JPG أو PNG أو PDF)", en: "File (JPG, PNG, or PDF)" },
   "documents.uploadedAtLabel": { ar: "تاريخ الرفع", en: "Uploaded" },
   "documents.notUploadedYet": { ar: "لم يُرفع بعد", en: "Not uploaded yet" },
+  "documents.updatedByRiderBadge": {
+    ar: "⟳ آخر تحديث من المندوب نفسه",
+    en: "⟳ Last updated by the rider themselves",
+  },
 
   "documents.toastInvalidExtension": {
     ar: "الملف يجب أن يكون JPG أو PNG أو PDF فقط",

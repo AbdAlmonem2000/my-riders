@@ -443,6 +443,7 @@ export type Database = {
           file_name: string | null
           id: string
           label: string | null
+          last_updated_by: string
           needs_expiry: boolean
           plate_number: string | null
           rider_id: string
@@ -457,6 +458,7 @@ export type Database = {
           file_name?: string | null
           id?: string
           label?: string | null
+          last_updated_by?: string
           needs_expiry?: boolean
           plate_number?: string | null
           rider_id: string
@@ -471,6 +473,7 @@ export type Database = {
           file_name?: string | null
           id?: string
           label?: string | null
+          last_updated_by?: string
           needs_expiry?: boolean
           plate_number?: string | null
           rider_id?: string

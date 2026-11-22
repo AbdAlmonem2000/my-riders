@@ -304,6 +304,10 @@ export const uploadRiderDocument = createServerFn({ method: "POST" })
         needs_expiry: needsExpiry,
         label,
         uploaded_at: new Date().toISOString(),
+        // Admin just uploaded this — any "updated by the rider" flag from a
+        // prior self-service renewal (iqama_photo/driving_license) no
+        // longer applies.
+        last_updated_by: "admin",
       },
       { onConflict: "rider_id,doc_type" },
     );
@@ -407,6 +411,9 @@ export const updateRiderDocumentExpiry = createServerFn({ method: "POST" })
         expiry_date: resolveExpiryDate(data.docType, data.expiryDate, existing.needs_expiry),
         card_number: cardNumber,
         ...(isCard ? { plate_number: plateNumber } : {}),
+        // Admin just corrected this by hand — any "updated by the rider"
+        // flag from a prior self-service renewal no longer applies.
+        last_updated_by: "admin",
       })
       .eq("rider_id", data.riderId)
       .eq("doc_type", data.docType)

@@ -85,7 +85,7 @@ import {
   isValidExpiryDate,
   isValidOperatingCardNumber,
   looksLikeOperatingCardLabel,
-  OPERATING_CARD_LABEL_PREFIX,
+  operatingCardLabelOrFilter,
   OPERATING_CARD_TYPES,
   computeDocStatus,
   type DocStatus,
@@ -824,7 +824,7 @@ function AdminOperatingCards() {
         supabase
           .from("rider_documents")
           .select(CARD_DOC_COLUMNS)
-          .ilike("label", `${OPERATING_CARD_LABEL_PREFIX}%`)
+          .or(operatingCardLabelOrFilter())
           .order("id", { ascending: true })
           .range(from, to),
       );

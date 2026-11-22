@@ -126,6 +126,7 @@ interface DocRow {
   expiry_date: string | null;
   uploaded_at: string;
   needs_expiry: boolean;
+  last_updated_by: string;
 }
 
 function docTypeKey(dt: DocType): TranslationKey {
@@ -332,6 +333,9 @@ function DocumentSlot({
             <div>
               {t("documents.uploadedAtLabel")}: {formatDate(doc.uploaded_at)}
             </div>
+          )}
+          {doc.last_updated_by === "rider" && (
+            <div className="font-medium text-primary">{t("documents.updatedByRiderBadge")}</div>
           )}
           {isOperatingCard && doc.card_number && (
             <div>
@@ -845,7 +849,7 @@ function AdminDocuments() {
         const { data, error } = await supabase
           .from("rider_documents")
           .select(
-            "id, rider_id, doc_type, storage_path, file_name, card_number, plate_number, label, expiry_date, uploaded_at, needs_expiry",
+            "id, rider_id, doc_type, storage_path, file_name, card_number, plate_number, label, expiry_date, uploaded_at, needs_expiry, last_updated_by",
           )
           .order("id", { ascending: true })
           .range(from, from + pageSize - 1);

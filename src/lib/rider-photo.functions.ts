@@ -19,7 +19,12 @@ const PHOTO_EXTENSIONS = [".jpg", ".jpeg", ".png"] as const;
 // in the same company-suspended / rider-blocked checks every other
 // rider-initiated read/write in this app already has (e.g. register_rider_push,
 // list_rider_reports) that were missing here entirely.
-async function loadVerifiedRider(
+//
+// Exported for reuse by rider-renewable-docs.functions.ts (the rider's own
+// iqama/license renewal) — same actor, same auth model, so it needs the
+// exact same checks. Anyone changing this function's behavior should check
+// that caller too, not just the photo-upload functions below.
+export async function loadVerifiedRider(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabaseAdmin: any,
   riderId: string,

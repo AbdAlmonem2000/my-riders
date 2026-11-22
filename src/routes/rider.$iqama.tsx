@@ -53,6 +53,16 @@ import { monthLabel } from "@/lib/month-label";
 import { isNumericLike, metricNumber } from "@/lib/rider-metrics";
 import { errText } from "@/lib/error-text";
 import { requestRiderPhotoUpload, confirmRiderPhotoUpload } from "@/lib/rider-photo.functions";
+import {
+  getRiderRenewableDocuments,
+  requestRiderDocumentUpload,
+  confirmRiderDocumentUpload,
+  getRiderDocumentViewUrl,
+  type RenewableDocInfo,
+} from "@/lib/rider-renewable-docs.functions";
+import { computeDocStatus, hasAllowedDocExtension, isValidExpiryDate } from "@/lib/document-status";
+import { StatusBadge } from "@/components/doc-status-badge";
+import { DateInputDMY } from "@/components/date-input-dmy";
 import { useLanguage, type Lang, type TranslationKey } from "@/lib/i18n";
 
 const search = z.object({
@@ -407,6 +417,214 @@ function RiderOwnPhotoUpload({
         />
       </label>
     </div>
+  );
+}
+
+// One renewable document slot (iqama_photo or driving_license) — shows its
+// current status exactly like the admin's own Documents page, and lets the
+// rider replace the file + set its expiry date themselves. Writes land in
+// the same rider_documents row the admin reads/writes, so whichever side
+// updates it next simply overwrites the other.
+function RiderRenewableDoc({
+  riderId,
+  password,
+  info,
+  t,
+  onUpdated,
+}: {
+  riderId: string;
+  password: string;
+  info: RenewableDocInfo;
+  t: (key: TranslationKey) => string;
+  onUpdated: () => void;
+}) {
+  const requestUploadFn = useServerFn(requestRiderDocumentUpload);
+  const confirmUploadFn = useServerFn(confirmRiderDocumentUpload);
+  const getViewUrlFn = useServerFn(getRiderDocumentViewUrl);
+  const [editing, setEditing] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [expiryDate, setExpiryDate] = useState(info.expiryDate ?? "");
+  const [uploading, setUploading] = useState(false);
+  const [viewing, setViewing] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const { status, daysLeft } = computeDocStatus(info.expiryDate);
+
+  // Opens the tab synchronously (within the click gesture, so popup
+  // blockers allow it) and only points it at the real file once the signed
+  // URL comes back — minted fresh on every click instead of ahead of time,
+  // so it can never go stale sitting unused.
+  const handleView = async () => {
+    const win = window.open("", "_blank");
+    setViewing(true);
+    try {
+      const { url } = await getViewUrlFn({ data: { riderId, password, docType: info.docType } });
+      if (win) win.location.href = url;
+      else window.open(url, "_blank");
+    } catch (err) {
+      win?.close();
+      toast.error(errText(err, t("rider.docViewFailed")));
+    } finally {
+      setViewing(false);
+    }
+  };
+
+  const startEdit = () => {
+    setExpiryDate(info.expiryDate ?? "");
+    setFile(null);
+    setEditing(true);
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return toast.error(t("documents.toastFileRequired"));
+    if (!hasAllowedDocExtension(file.name)) {
+      return toast.error(t("documents.toastInvalidExtension"));
+    }
+    if (!expiryDate || !isValidExpiryDate(expiryDate)) {
+      return toast.error(t("documents.toastInvalidDate"));
+    }
+    const extMatch = /\.(jpe?g|png|pdf)$/i.exec(file.name);
+    if (!extMatch) return toast.error(t("documents.toastInvalidExtension"));
+    const fileExt = extMatch[0].toLowerCase() as ".jpg" | ".jpeg" | ".png" | ".pdf";
+    setUploading(true);
+    try {
+      const { path, token } = await requestUploadFn({
+        data: { riderId, password, docType: info.docType, fileExt },
+      });
+      const { error: upErr } = await supabase.storage
+        .from("rider-documents")
+        .uploadToSignedUrl(path, token, file);
+      if (upErr) throw new Error(upErr.message);
+      await confirmUploadFn({
+        data: { riderId, password, docType: info.docType, path, expiryDate },
+      });
+      toast.success(t("rider.docUpdated"));
+      setEditing(false);
+      if (fileRef.current) fileRef.current.value = "";
+      onUpdated();
+    } catch (err) {
+      toast.error(errText(err, t("rider.docUpdateFailed")));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5 rounded-lg border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">
+          {t(`documents.type.${info.docType}` as TranslationKey)}
+        </span>
+        <div className="flex items-center gap-1.5">
+          {info.fileName && !editing && (
+            <button
+              type="button"
+              onClick={handleView}
+              disabled={viewing}
+              title={t("rider.docViewCurrent")}
+              aria-label={t("rider.docViewCurrent")}
+              className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary disabled:opacity-60"
+            >
+              {viewing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Eye className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
+          <StatusBadge status={status} daysLeft={daysLeft} t={t} />
+        </div>
+      </div>
+      {info.expiryDate && (
+        <div className="text-xs text-muted-foreground">
+          {t("documents.expiryDateLabel")}: {formatDate(info.expiryDate)}
+        </div>
+      )}
+      {status === "expired" && daysLeft !== null && (
+        <div className="text-xs font-medium text-destructive">
+          {t("rider.docExpiredSince").replace("{days}", String(Math.abs(daysLeft)))}
+        </div>
+      )}
+      {(status === "ok" || status === "warning") && daysLeft !== null && (
+        <div className="text-xs text-muted-foreground">
+          {t("rider.docDaysLeft").replace("{days}", String(daysLeft))}
+        </div>
+      )}
+      {!editing ? (
+        <Button type="button" size="sm" variant="outline" onClick={startEdit} className="mt-1">
+          {t("rider.docUpdateButton")}
+        </Button>
+      ) : (
+        <form onSubmit={submit} className="mt-1 space-y-2">
+          <Input
+            ref={fileRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            disabled={uploading}
+          />
+          <DateInputDMY value={expiryDate} onChange={setExpiryDate} />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={uploading}>
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t("admin.save")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setEditing(false)}
+              disabled={uploading}
+            >
+              {t("documents.cancelButton")}
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+// The card hosting both renewable slots — only mounted once the rider
+// account is unlocked (same place RiderOwnPhotoUpload's sidebar card
+// lives), so there's no separate lock check here.
+function RiderRenewableDocsCard({
+  riderId,
+  password,
+  t,
+}: {
+  riderId: string;
+  password: string;
+  t: (key: TranslationKey) => string;
+}) {
+  const queryClient = useQueryClient();
+  const getDocsFn = useServerFn(getRiderRenewableDocuments);
+  const queryKey = ["rider-renewable-docs", riderId];
+  const docsQuery = useQuery({
+    queryKey,
+    queryFn: () => getDocsFn({ data: { riderId, password } }),
+  });
+
+  if (!docsQuery.data || docsQuery.data.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm">{t("rider.renewableDocsTitle")}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {docsQuery.data.map((info) => (
+          <RiderRenewableDoc
+            key={info.docType}
+            riderId={riderId}
+            password={password}
+            info={info}
+            t={t}
+            onUpdated={() => queryClient.invalidateQueries({ queryKey })}
+          />
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1042,6 +1260,8 @@ function RiderPage() {
                   )}
                 </CardContent>
               </Card>
+
+              <RiderRenewableDocsCard riderId={activeRider.rider_id} password={activePw} t={t} />
 
               <Card>
                 <CardHeader className="pb-3">
